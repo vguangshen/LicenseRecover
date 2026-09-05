@@ -1,0 +1,20 @@
+# Local diagnostics can contain machine paths, host identifiers, and generated
+# registration request/license values.
+logs/
+*.log
+
+# Bundled runtime copied into local deployments; obtain Java 8 separately.
+jre/
+
+# Generated backups and temporary patch artifacts.
+*.bak
+*.bak.*
+*.tmp
+*.class
+
+# Local editor and OS metadata.
+.idea/
+.vscode/
+*.iml
+Thumbs.db
+Desktop.ini
