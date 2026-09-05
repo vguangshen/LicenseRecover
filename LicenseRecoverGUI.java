@@ -444,13 +444,16 @@ public class LicenseRecoverGUI {
         JPanel gb = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         genBtn.addActionListener(LicenseRecoverGUI::genCode);
         copyBtn.addActionListener(LicenseRecoverGUI::copyCode);
-        gb.add(genBtn); gb.add(copyBtn);
+        gb.add(genBtn);
         w2.add(gb, g);
         g.gridx = 0; g.gridy = 1; g.weightx = 0;
         w2.add(new JLabel("离线授权码:"), g);
         g.gridx = 1; g.gridwidth = 2; g.weightx = 1;
         codeField.setEditable(false);
-        w2.add(codeField, g);
+        JPanel codeBox = new JPanel(new BorderLayout(6, 0));
+        codeBox.add(codeField, BorderLayout.CENTER);
+        codeBox.add(copyBtn, BorderLayout.EAST);
+        w2.add(codeBox, g);
         g.gridx = 0; g.gridy = 2; g.gridwidth = 3; g.weightx = 1;
         JPanel gopt = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         gopt.add(blockNetGenCheck);
