@@ -5,15 +5,15 @@ setlocal
 set "APP=%~1"
 if "%APP%"=="" set "APP=%CD%"
 
-rem 判断应用类型
+rem 判断应用类型（.NET 方式三只处理小写 itmcRegedit.dll）
 set "DOTNET="
 set "JAVA="
-if exist "%APP%\ITMC.Web.dll" if exist "%APP%\ITMC.Regedit.dll" set "DOTNET=1"
-if exist "%APP%\bin\ITMC.Web.dll" if exist "%APP%\bin\ITMC.Regedit.dll" set "DOTNET=1"
+if exist "%APP%\ITMC.Web.dll" if exist "%APP%\itmcRegedit.dll" set "DOTNET=1"
+if exist "%APP%\bin\ITMC.Web.dll" if exist "%APP%\bin\itmcRegedit.dll" set "DOTNET=1"
 if not defined DOTNET if exist "%APP%\WEB-INF\lib\ITMCReg*.jar" set "JAVA=1"
 if not defined DOTNET if not defined JAVA (
   echo.
-  echo   [错误] 未找到授权文件 (ITMCReg*.jar 或 ITMC.Web.dll+ITMC.Regedit.dll)
+  echo   [错误] 未找到授权文件 (ITMCReg*.jar 或 ITMC.Web.dll+itmcRegedit.dll)
   echo   请把应用目录作为参数传入，例如:
   echo     run_removenet.bat D:\server\cloud_training
   echo     run_removenet.bat D:\server\app\bin
@@ -43,7 +43,7 @@ echo    ITMC 移除联网授权代码 (方式三)
 echo   ============================================
 if defined DOTNET (
   echo   应用类型: .NET 版   应用目录: %APP%
-  echo   提示: 执行前请先停止应用服务(IIS 应用池)，工具会备份并替换 ITMC.Regedit.dll。
+  echo   提示: 执行前请先停止应用服务(IIS 应用池)，工具只会备份并替换 itmcRegedit.dll。
   echo.
   "%JAVA%" -Dfile.encoding=UTF-8 -jar "%~dp0LicenseRecover.jar" --remove-net "%APP%"
 ) else (

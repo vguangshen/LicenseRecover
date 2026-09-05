@@ -3,9 +3,9 @@
  *
  * 兼容: Windows 7 / Windows Server 2008 / JRE 8 (Swing/AWT)
  * 功能: 选择应用根目录 -> 自动识别产品号 -> 生成永续本地授权并写入
- *       WEB-INF/lib/config.xml，不修改任何程序代码。
- * 生成与自校验全部复用应用自带类 (itmc.regedit.* / fastjson / dom4j)，
- * 与厂商签发的本地授权格式完全一致。
+ *       WEB-INF/lib/config.xml；ASP.NET .NET 项目也可使用方式三移除联网代码。
+ * 方式一/二的生成与自校验复用应用自带类 (itmc.regedit.* / fastjson / dom4j)，
+ * 方式三由内嵌 C# 助手处理小写 itmcRegedit.dll。
  */
 import itmc.regedit.DesUtil;
 import itmc.regedit.GetRegisterCode;
@@ -420,12 +420,12 @@ public class LicenseRecoverGUI {
 
         c.gridx = 0; c.gridy = 2; c.gridwidth = 4; c.weightx = 1;
         JPanel w1 = new JPanel(new BorderLayout());
-        w1.setBorder(BorderFactory.createTitledBorder("方式一：直接写入本地授权（推荐，零改代码）"));
+        w1.setBorder(BorderFactory.createTitledBorder("方式一：直接写入本地授权（Java/可自校验的独立 .NET；ASP.NET 请用方式三）"));
         JPanel w1b = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         runBtn.addActionListener(LicenseRecoverGUI::run);
         runBtn.setFont(runBtn.getFont().deriveFont(Font.BOLD));
         w1b.add(runBtn);
-        w1b.add(new JLabel("写 config.xml（regType=1 + regName），应用自身校验通过即生效"));
+        w1b.add(new JLabel("写 config.xml（regType=1 + regName）；ASP.NET 项目请使用方式三"));
         w1.add(w1b, BorderLayout.WEST);
         panel.add(w1, c);
 
@@ -437,7 +437,7 @@ public class LicenseRecoverGUI {
         g.anchor = GridBagConstraints.WEST;
         g.fill = GridBagConstraints.HORIZONTAL;
         g.gridx = 0; g.gridy = 0; g.weightx = 0;
-        w2.add(new JLabel("注册申请号(留空自动生成):"), g);
+        w2.add(new JLabel("注册申请号（Java 可留空；ASP.NET 需先从网站获取）:"), g);
         g.gridx = 1; g.weightx = 1;
         w2.add(seqField, g);
         g.gridx = 2; g.weightx = 0;
@@ -519,7 +519,7 @@ public class LicenseRecoverGUI {
     static void browse(ActionEvent e) {
         JFileChooser chooser = new JFileChooser();
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        chooser.setDialogTitle("选择应用目录（Java: 含 WEB-INF；.NET: 含 ITMC.Regedit.dll 的 bin）");
+        chooser.setDialogTitle("选择应用目录（Java: 含 WEB-INF；.NET: 含 itmcRegedit.dll 的 bin）");
         String cur = appRootField.getText().trim();
         if (!cur.isEmpty()) chooser.setSelectedFile(new File(cur));
         if (chooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
@@ -575,7 +575,7 @@ public class LicenseRecoverGUI {
                         return null;
                     }
                     setAppTypeBadge("");
-                    appendLog("[错误] 未在 " + appRoot + " 找到授权文件（Java: WEB-INF/lib/ITMCReg*.jar；.NET: ITMC.Regedit.dll）\n");
+                    appendLog("[错误] 未在 " + appRoot + " 找到授权文件（Java: WEB-INF/lib/ITMCReg*.jar；.NET: itmcRegedit.dll）\n");
                     return null;
                 }
                 setAppTypeBadge("JAVA");
@@ -619,9 +619,15 @@ public class LicenseRecoverGUI {
         if (dotnetBin == null) {
             lib = locateLibDir(new File(appRoot));
             if (lib == null) {
-                appendLog("[错误] 请先选择有效的应用根目录（Java: 含 WEB-INF/lib/ITMCReg*.jar；.NET: 含 ITMC.Regedit.dll 的 bin）。\n");
+                appendLog("[错误] 请先选择有效的应用根目录（Java: 含 WEB-INF/lib/ITMCReg*.jar；.NET: 含 itmcRegedit.dll 的 bin）。\n");
                 return;
             }
+        }
+        if (dotnetBin != null && isAspNetDotNetBin(dotnetBin) && !dryRunCheck.isSelected()) {
+            appendLog("[提示] 检测到 ASP.NET 项目（根目录存在 Web.config）；方式一无法在无 Web 上下文的助手中完成自校验，请使用“移除联网授权代码”（方式三）。\n");
+            statusLabel.setText("状态: 请使用方式三");
+            statusLabel.setForeground(new Color(0xb51d1d));
+            return;
         }
         if (productMain.isEmpty()) productMain = (dotnetBin != null) ? "YX0302" : "QT1001";
         runBtn.setEnabled(false);
@@ -688,8 +694,13 @@ public class LicenseRecoverGUI {
                     if (fDotnet != null) {
                         appendLog("--- 方式二：生成离线授权码（.NET 版） ---\n");
                         String product = productField.getText().trim();
+                        if (seq.trim().isEmpty() && isAspNetDotNetBin(fDotnet)) {
+                            appendLog("[提示] ASP.NET 项目不能在工具进程内自动取申请号；请先在网站的本地注册页获取申请号，再填入申请号生成离线授权码。\n");
+                            return null;
+                        }
                         java.util.List<String> cmd = new java.util.ArrayList<>();
                         cmd.add("gencode");
+                        cmd.add(fDotnet);
                         if (!seq.trim().isEmpty()) { cmd.add("--seq"); cmd.add(seq.trim()); }
                         if (!product.isEmpty() && !product.equals("YX0302")) { cmd.add("--product"); cmd.add(product); }
                         if (blockNetGenCheck.isSelected()) {
@@ -786,30 +797,36 @@ public class LicenseRecoverGUI {
 
     // ---- .NET 版支持（派发给内嵌 C# 助手） ----
 
-    /** 定位 .NET 应用的 bin 目录（需同时含 ITMC.Web.dll 与 ITMC.Regedit.dll，避免残留 stub 误判）。 */
+    /** 定位 .NET 应用的 bin 目录（需同时含 ITMC.Web.dll 与 itmcRegedit.dll）。 */
     static String locateDotNetBin(File start) {
         File cur = start;
         if (cur == null || !cur.isDirectory()) return null;
         while (cur != null) {
-            if (new File(cur, "ITMC.Regedit.dll").exists() && new File(cur, "ITMC.Web.dll").exists())
+            if (hasDotNetFiles(cur))
                 return cur.getAbsolutePath();
             File bin = cur.getName().equalsIgnoreCase("bin") ? cur : new File(cur, "bin");
-            if (bin.isDirectory()
-                    && new File(bin, "ITMC.Regedit.dll").exists() && new File(bin, "ITMC.Web.dll").exists())
+            if (hasDotNetFiles(bin))
                 return bin.getAbsolutePath();
             cur = cur.getParentFile();
         }
         return null;
     }
 
+    /** 当前 .NET 版本固定使用小写授权程序集，避免误改同目录的大写兼容程序集。 */
+    static boolean hasDotNetFiles(File dir) {
+        return dir != null && dir.isDirectory()
+                && new File(dir, "ITMC.Web.dll").isFile()
+                && new File(dir, "itmcRegedit.dll").isFile();
+    }
+
     /** 检测给定目录自身（或其 bin/WEB-INF 子目录）是否为一个 ITMC 应用。
         返回 {type, 关键目录}: JAVA=lib 目录, DOTNET=bin 目录；或 null。
-        .NET 以 ITMC.Web.dll+ITMC.Regedit.dll 为标志（单独一个 ITMC.Regedit.dll 很可能是残留文件）。 */
+        .NET 以 ITMC.Web.dll+itmcRegedit.dll 为标志。 */
     static String[] detectAppLocal(File dir) {
-        if (new File(dir, "ITMC.Web.dll").exists() && new File(dir, "ITMC.Regedit.dll").exists())
+        if (hasDotNetFiles(dir))
             return new String[]{ "DOTNET", dir.getAbsolutePath() };
         File bin = new File(dir, "bin");
-        if (bin.isDirectory() && new File(bin, "ITMC.Web.dll").exists() && new File(bin, "ITMC.Regedit.dll").exists())
+        if (hasDotNetFiles(bin))
             return new String[]{ "DOTNET", bin.getAbsolutePath() };
         for (String rel : new String[]{ "WEB-INF", "WEB-INF" + File.separator + "WEB-INF" }) {
             File lib = new File(dir, rel + File.separator + "lib");
@@ -817,6 +834,30 @@ public class LicenseRecoverGUI {
                 return new String[]{ "JAVA", lib.getAbsolutePath() };
         }
         return null;
+    }
+
+    /** 判断 .NET bin 是否属于 ASP.NET 应用（父目录存在 Web.config）。 */
+    static boolean isAspNetDotNetBin(String binDir) {
+        if (binDir == null || binDir.trim().isEmpty()) return false;
+        File parent = new File(binDir).getAbsoluteFile().getParentFile();
+        return parent != null && new File(parent, "Web.config").isFile();
+    }
+
+    /** 删除助手自校验生成的空占位 XML；用户原有文件不触碰。 */
+    static void cleanupGeneratedDotNetFiles(String binDir, boolean hadConfig, boolean hadRegister) {
+        if (binDir == null) return;
+        if (!hadConfig) deleteEmptyGeneratedXml(new File(binDir, "config.xml"));
+        if (!hadRegister) deleteEmptyGeneratedXml(new File(binDir, "Register.xml"));
+    }
+
+    static void deleteEmptyGeneratedXml(File file) {
+        if (!file.isFile()) return;
+        try {
+            String text = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8)
+                    .replace("\uFEFF", "").replace("\r\n", "\n").trim();
+            if ("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<root>\n</root>".equals(text))
+                file.delete();
+        } catch (Exception ignore) { }
     }
 
     /** 定位 .NET 助手: 工具目录(本 jar/类所在目录)下的 LicenseRecover.NET 子目录。 */
@@ -839,6 +880,10 @@ public class LicenseRecoverGUI {
         java.util.List<String> full = new java.util.ArrayList<>();
         full.add(helper.getAbsolutePath());
         full.addAll(cmd);
+        String binDir = (cmd.size() > 1 && ("config".equals(cmd.get(0))
+                || "patch".equals(cmd.get(0)) || "scan".equals(cmd.get(0)))) ? cmd.get(1) : null;
+        boolean hadConfig = binDir != null && new File(binDir, "config.xml").isFile();
+        boolean hadRegister = binDir != null && new File(binDir, "Register.xml").isFile();
         try {
             appendLog(logTitle);
             ProcessBuilder pb = new ProcessBuilder(full);
@@ -849,8 +894,11 @@ public class LicenseRecoverGUI {
                 String line;
                 while ((line = r.readLine()) != null) appendLog(line + "\n");
             }
-            return p.waitFor() == 0;
+            int rc = p.waitFor();
+            cleanupGeneratedDotNetFiles(binDir, hadConfig, hadRegister);
+            return rc == 0;
         } catch (Exception ex) {
+            cleanupGeneratedDotNetFiles(binDir, hadConfig, hadRegister);
             appendLog("[错误] 调用 .NET 助手失败: " + ex + "\n");
             appendLog("RESULT: FAILED\n");
             return false;
@@ -884,7 +932,7 @@ public class LicenseRecoverGUI {
         String dotnetBin = locateDotNetBin(new File(appRoot));
         if (dotnetBin != null) {
             appendLog("=== 方式三：移除联网授权代码（.NET 版）===\n");
-            appendLog("（执行前请先停止应用服务；工具会自动备份并替换 ITMC.Regedit.dll）\n");
+            appendLog("（执行前请先停止应用服务；工具只会备份并替换 itmcRegedit.dll）\n");
             scanNetBtn.setEnabled(false);
             patchNetBtn.setEnabled(false);
             final String fBin = dotnetBin;
@@ -1041,13 +1089,19 @@ public class LicenseRecoverGUI {
                     appendLog("\n===== [" + name + "]  (" + type + " 版) 开始 =====\n");
                     int rc;
                     if ("DOTNET".equals(type)) {
-                        java.util.List<String> cmd = new java.util.ArrayList<>();
-                        cmd.add("config".equals(method) ? "config" : "patch");
-                        cmd.add((String) t[4]);
-                        if (!productOverride.isEmpty() && !productOverride.equals("YX0302")) {
-                            cmd.add("--product"); cmd.add(productOverride);
+                        String dotnetBin = (String) t[4];
+                        if ("config".equals(method) && isAspNetDotNetBin(dotnetBin)) {
+                            appendLog("[提示] " + name + " 是 ASP.NET 项目，方式一无法完成助手自校验，请改用方式三。\n");
+                            rc = 2;
+                        } else {
+                            java.util.List<String> cmd = new java.util.ArrayList<>();
+                            cmd.add("config".equals(method) ? "config" : "patch");
+                            cmd.add(dotnetBin);
+                            if (!productOverride.isEmpty() && !productOverride.equals("YX0302")) {
+                                cmd.add("--product"); cmd.add(productOverride);
+                            }
+                            rc = runDotNet(cmd, "") ? 0 : 1;
                         }
-                        rc = runDotNet(cmd, "") ? 0 : 1;
                     } else {
                         // Java: 派生子进程（带该应用 lib classpath；打包 jar 由子进程自动脱壳）
                         String appRoot = (String) t[2];

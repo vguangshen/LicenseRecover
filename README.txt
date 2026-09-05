@@ -7,37 +7,38 @@ ITMC 云实训平台 离线授权恢复工具
 （regservice.itmc.cn）校验授权。厂商跑路、授权服务器关闭后，软件因联网
 校验失败而无法正常使用。
 
-本工具不修改任何程序代码，而是利用软件"自带"的本地授权通道
-（config.xml 的 regType=1），生成一份永续本地授权并写入配置。写入后：
+方式一和方式二利用软件"自带"的本地授权通道（config.xml 的 regType=1）写入配置；
+方式三会在备份后修改授权 DLL。方式一/二写入后：
   - 启动时 RegisterMain.checkReInfo() 先走本地校验并直接通过；
   - 联网的 CheckNet()（SOAP 到 regservice.itmc.cn）不会再触发；
   - 每天 01:00 的定时重检同样离线通过。
-软件整体零改动，恢复为"已授权"状态。
+方式一和方式二恢复配置后，软件进入"已授权"状态；方式三则通过修改授权 DLL 达到同样效果。
 
 .NET 版支持
 -----------
-本工具同时支持 ITMC 的 .NET 版（ASP.NET 应用，bin 目录内含 ITMC.Regedit.dll /
+本工具同时支持 ITMC 的 .NET 版（ASP.NET 应用，bin 目录内含 itmcRegedit.dll /
 ITMC.Web.dll，产品号如 YX0302）。.NET 版与 Java 版共用同一套授权机制
 （regservice.itmc.cn / config.xml 的 regType=1 / 密钥 *ITMC{产品}OK*），
-因此三种方式全部适用：
+独立 .NET 程序可尝试方式一，但必须能在工具进程内完成原版自校验；ASP.NET 项目因方式一的原版自校验依赖 Web 上下文，推荐使用方式三：
 
-  - 方式一（写 config.xml，推荐）：对 .NET 版即写 bin 目录下的 config.xml，
-    写入后应用自身 RegeditMain.CheckReInfo() 本地短路，联网 CheckNet() 不再触发；
+  - 方式一（写 config.xml）：独立 .NET 程序可写 bin 目录下的 config.xml，若 DLL 仍有二层方法保护导致自校验失败，工具会自动回滚；
+    ASP.NET 项目需要 Web 上下文才能完成原版 RegeditMain.CheckReInfo() 自校验，
+    本工具对此类项目会提示改用方式三；
   - 方式二（离线授权码）：授权码密钥为 itmc+产品号（如 itmcYX0302），
     字段布局与 Java 版完全一致，走应用「本地注册」界面激活；
   - 方式三（移除联网授权代码）：内嵌 FOAP 脱壳算法（不依赖外部脱壳工具），
-    自动脱壳 ITMC.Regedit.dll 后用 dnlib 补丁 RegeditMain 的
-    CheckReInfo/CheckNet/getNetRegInfo/RegNOWebCheck/DoNetRegistry 并替换。
+    自动脱壳 itmcRegedit.dll 后用 dnlib 补丁 RegeditMain 的
+    CheckReInfo/CheckNet/getNetRegInfo/RegNOWebCheck/CheckLocalReg/getLocalRegInfo 并替换。
     部分新版 DLL（如 GM00401）在 FOAP 壳之上还有商业混淆器的"第二层方法加密"
     （方法体是分发桩、真实体 RC4 加密存于文件，且 RegeditMain 静态构造器带反篡改
     校验）。工具会自动检测并：解开方法加密 → 清空反篡改静态构造器 → 补丁 →
     对引用运行时才解析 token 的混淆器运行时桩自动中和（补丁后为死代码），
     补丁后用应用自身 CheckReInfo 自校验，失败自动恢复 .bak。
 
-使用方法：选择 .NET 应用的 bin 目录（含 ITMC.Regedit.dll 的那个目录，如
+使用方法：选择 .NET 应用的 bin 目录（含 itmcRegedit.dll 的那个目录，如
 D:\...\app\bin），GUI/CLI 自动识别为 .NET 版并调用内嵌助手。
 方式三执行前请先停止 IIS 应用池（否则 DLL 被占用无法替换）；工具会自动备份
-ITMC.Regedit.dll.<时间戳>.bak。
+itmcRegedit.dll.<时间戳>.bak；同目录的大写 `ITMC.Regedit.dll` 不会被修改。
 若部署的 .NET 产品号不是 YX0302，请在「产品主编号」手动填写（会传给助手）。
 
 文件组成
@@ -87,22 +88,25 @@ ITMC.Regedit.dll.<时间戳>.bak。
 
 方式二：生成离线授权码（在应用注册界面激活）
 --------------------------------------------
-软件自带的「本地注册」界面（/softRegister?type=local）需要填写：
+软件自带的「本地注册」界面（Java 常见路径为 /softRegister?type=local，ASP.NET 项目通常为网站内的 Regester.aspx）需要填写：
   - 注册申请号（sequenceNumber）：应用点"获取申请号"生成，绑定本机主板号；
   - 离线授权码（registerCode）：厂商根据申请号签发。
-本工具同样可以生成这两项，填入应用界面即可激活：
+本工具可以根据申请号生成离线授权码，再交由应用页面提交：
 
-  GUI 版：在界面下方的"方式二"区域，填/留空注册申请号后点"生成离线授权码"，
-         得到申请号和授权码，点"复制授权码"，粘贴进应用注册界面提交即可。
-  命令行版：
-         java -cp "<应用根目录>\WEB-INF\lib\*;LicenseRecover.jar" \
-               LicenseRecover --gencode <应用根目录> [--seq <已获取的申请号>]
-         （不带 --seq 则在本机自动生成申请号；把输出的申请号+授权码填入应用界面）
+   GUI 版：在界面下方的"方式二"区域填写申请号后点"生成离线授权码"，
+          得到授权码，点"复制授权码"，粘贴进应用注册界面提交即可。
+   命令行版：
+          java -cp "<应用根目录>\WEB-INF\lib\*;LicenseRecover.jar" \
+                LicenseRecover --gencode <应用根目录> [--seq <已获取的申请号>]
+           （Java 可不带 --seq 在本机自动生成申请号；ASP.NET 必须先从网站本地注册页取得申请号，再传入 --seq）
+           .NET 版也可直接运行：java -jar LicenseRecover.jar --gencode <ASP.NET 根目录> -p YX0302 --seq <申请号>
 
-  说明：授权码由应用自身的 doRegistry() 校验（加密密钥 itmc+产品号 来自代码，
-        与厂商签发格式一致），工具已在测试中验证 doRegistry 接受该授权码并激活成功。
-  提示：应用界面提交注册成功后，config.xml 即写入本地授权；如不想让应用启动时
-        再发起任何联网请求，可再点一次"方式一"（勾选"把授权服务地址指向本地"）。
+   说明：本项目的 Web.config productName 是 YX0302，config.xml 的 SoftVersionID 是 YX030204；
+         方式二使用前者作为产品号（密钥为 itmcYX0302），后者是版本标识。授权码按应用自身
+         doRegistry() 使用的 itmc+产品号密钥生成；ASP.NET 的提交和写入
+         必须在网站本地注册页完成，工具进程无法代替该 Web 上下文执行 DoRegistry 自校验。
+   提示：ASP.NET 应用提交成功后会由网站把授权写入根目录 config.xml；如需彻底移除联网路径，
+         请执行方式三。Java 应用仍可按需使用方式一把授权服务地址指向本地。
 
 跨机器使用（软件在云服务器，本机生成授权码）
 --------------------------------------------
@@ -160,7 +164,7 @@ ITMC.Regedit.dll.<时间戳>.bak。
 适用场景：某个文件夹下按产品代号放了多个 ITMC 软件（如 YX030505、YT00123、
 YX030201 等，每个代号一个文件夹，内含一个 ITMC 应用——Java 或 .NET 版）。
 工具自动扫描每个子目录、识别应用类型（Java: WEB-INF/lib/ITMCReg*.jar——兼容 ITMCReg.jar
-或带版本号的 ITMCReg-1.0.5.jar 等；.NET: ITMC.Regedit.dll），逐个执行所选方式并报告结果。
+或带版本号的 ITMCReg-1.0.5.jar 等；.NET: itmcRegedit.dll），逐个执行所选方式并报告结果。
 
   GUI 版：切到「批量应用」标签 → 选择父目录 → 点"扫描子目录"（列表显示
           每个应用与类型）→ 选方式（方式一写本地授权 / 方式三移除联网）→
@@ -169,7 +173,8 @@ YX030201 等，每个代号一个文件夹，内含一个 ITMC 应用——Java 
     java -jar LicenseRecover.jar --batch <父目录>                # 方式一（写 config.xml）
     java -jar LicenseRecover.jar --batch <父目录> --remove-net   # 方式三（移除联网代码）
     java -jar LicenseRecover.jar --batch <父目录> --scan-net     # 仅扫描识别
-    可选：-p <产品号>（所有应用统一指定产品号）；--dry-run（只预览不写入）
+    可选：-p <产品号>（所有应用统一指定产品号）；--dry-run（只预览不写入，.NET 方式一/三仅扫描）
+    批量存在失败项目时进程返回非 0；成功完成或仅跳过非 ITMC 目录时返回 0。
 
   说明：
   - 每个子目录的识别与恢复与"单个应用"完全一致：Java 应用自动识别产品号，
@@ -177,7 +182,7 @@ YX030201 等，每个代号一个文件夹，内含一个 ITMC 应用——Java 
   - 批量方式三执行前请先停止各应用服务；工具逐个备份后替换；
   - 已补丁过的应用（联网授权代码已移除）再次扫描会代码级识别并标记"已补丁"，执行时跳过重复修补；
   - 目录中含非 ITMC 软件文件夹时，扫描会列出并跳过（状态显示 SKIPPED）。
-  - 批量方式一为逐个子目录写 config.xml，与单应用行为一致。
+  - 批量方式一为逐个子目录写 config.xml，与单应用行为一致；检测到 ASP.NET 项目时提示改用方式三。
 
 工具做了什么
 ------------

@@ -5,17 +5,17 @@ setlocal EnableDelayedExpansion
 set "APP=%~1"
 if "%APP%"=="" set "APP=%CD%"
 
-rem 判断应用类型: Java 版含 WEB-INF\lib\ITMCReg*.jar; .NET 版需同时含 ITMC.Web.dll 与 ITMC.Regedit.dll
+rem 判断应用类型: Java 版含 WEB-INF\lib\ITMCReg*.jar; .NET 版需同时含 ITMC.Web.dll 与 itmcRegedit.dll
 set "DOTNET="
 set "JAVA="
-if exist "%APP%\ITMC.Web.dll" if exist "%APP%\ITMC.Regedit.dll" set "DOTNET=1"
-if exist "%APP%\bin\ITMC.Web.dll" if exist "%APP%\bin\ITMC.Regedit.dll" set "DOTNET=1"
+if exist "%APP%\ITMC.Web.dll" if exist "%APP%\itmcRegedit.dll" set "DOTNET=1"
+if exist "%APP%\bin\ITMC.Web.dll" if exist "%APP%\bin\itmcRegedit.dll" set "DOTNET=1"
 if not defined DOTNET if exist "%APP%\WEB-INF\lib\ITMCReg*.jar" set "JAVA=1"
 if not defined DOTNET if not defined JAVA (
   echo.
   echo   [错误] 未找到授权文件:
   echo     Java 版: "%APP%\WEB-INF\lib\ITMCReg*.jar"
-  echo     .NET 版: "%APP%"(或其中 bin 子目录)内的 ITMC.Web.dll 与 ITMC.Regedit.dll
+  echo     .NET 版: "%APP%"(或其中 bin 子目录)内的 ITMC.Web.dll 与 itmcRegedit.dll
   echo   请把应用目录作为参数传入，例如:
   echo     run.bat D:\server\cloud_training      (Java 版)
   echo     run.bat D:\server\app\bin             (.NET 版)
