@@ -2,8 +2,8 @@
  * ITMC 云实训平台 - 离线授权恢复工具 (GUI 版)
  *
  * 兼容: Windows 7 / Windows Server 2008 / JRE 8 (Swing/AWT)
- * 功能: 选择应用根目录 -> 自动识别产品号 -> 生成永续本地授权并写入
- *       WEB-INF/lib/config.xml；ASP.NET .NET 项目也可使用方式三移除联网代码。
+ * 功能: 选择应用根目录 -> 自动识别产品号 -> Java 写入本地授权；.NET 方式一
+ *       防止软件自动联网校验（只改 config.xml），方式三移除联网授权代码。
  * 方式一/二的生成与自校验复用应用自带类 (itmc.regedit.* / fastjson / dom4j)，
  * 方式三由内嵌 C# 助手处理小写 itmcRegedit.dll。
  */
@@ -13,6 +13,7 @@ import itmc.regedit.XMLFiles;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.border.TitledBorder;
 import javax.swing.plaf.FontUIResource;
 import java.awt.*;
 import java.awt.event.ActionEvent;
@@ -142,7 +143,7 @@ public class LicenseRecoverGUI {
     /** 产品号是否为「检测环境」自动填充的（自动填充的不作为批量/恢复的全局覆盖；仅手动输入才传 -p）。 */
     static boolean productAutoFilled;
     static JCheckBox backupCheck = new JCheckBox("写入前备份原配置", true);
-    static JCheckBox blockNetCheck = new JCheckBox("把授权服务地址指向本地(杜绝联网)", true);
+    static JCheckBox blockNetCheck = new JCheckBox("Java方式一把授权服务地址指向本地", true);
     static JCheckBox dryRunCheck = new JCheckBox("只预览不写入");
     static JTextArea logArea = new JTextArea();
     // 日志文件流：所有日志同时写入 logs 目录下的日期文件，真实记录每次成功/失败
@@ -151,6 +152,9 @@ public class LicenseRecoverGUI {
     static JLabel statusLabel = new JLabel("就绪");
     static JButton runBtn = new JButton("生成离线授权并写入");
     static JButton detectBtn = new JButton("检测环境");
+    static TitledBorder mode1Border;
+    static JLabel mode1Hint;
+    static JPanel mode1Panel;
 
     // 方式二: 生成离线授权码
     static JTextField seqField = new JTextField(34);
@@ -173,7 +177,7 @@ public class LicenseRecoverGUI {
     static JButton batchScanBtn = new JButton("扫描子目录");
     static JButton batchRunBtn = new JButton("批量执行");
     static javax.swing.ButtonGroup batchMethodGroup = new javax.swing.ButtonGroup();
-    static JRadioButton batchMethodCfg = new JRadioButton("方式一：写本地授权", true);
+    static JRadioButton batchMethodCfg = new JRadioButton("方式一：防止.NET联网校验 / Java写本地授权", true);
     static JRadioButton batchMethodPatch = new JRadioButton("方式三：移除联网授权代码");
     static JTable batchTable = new JTable();
     static javax.swing.table.DefaultTableModel batchModel =
@@ -420,12 +424,15 @@ public class LicenseRecoverGUI {
 
         c.gridx = 0; c.gridy = 2; c.gridwidth = 4; c.weightx = 1;
         JPanel w1 = new JPanel(new BorderLayout());
-        w1.setBorder(BorderFactory.createTitledBorder("方式一：直接写入本地授权（Java/可自校验的独立 .NET；ASP.NET 请用方式三）"));
+        mode1Panel = w1;
+        mode1Border = BorderFactory.createTitledBorder("方式一：直接写入本地授权（Java 版）");
+        w1.setBorder(mode1Border);
         JPanel w1b = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         runBtn.addActionListener(LicenseRecoverGUI::run);
         runBtn.setFont(runBtn.getFont().deriveFont(Font.BOLD));
         w1b.add(runBtn);
-        w1b.add(new JLabel("写 config.xml（regType=1 + regName）；ASP.NET 项目请使用方式三"));
+        mode1Hint = new JLabel("写 config.xml（regType=1 + regName）");
+        w1b.add(mode1Hint);
         w1.add(w1b, BorderLayout.WEST);
         panel.add(w1, c);
 
@@ -545,6 +552,7 @@ public class LicenseRecoverGUI {
 
     static void setAppTypeBadge(String type) {
         currentAppType = type;
+        updateMode1Ui(type);
         // 可能在后台线程调用（detect 的 SwingWorker），组件更新必须回到 EDT
         SwingUtilities.invokeLater(() -> {
             if ("DOTNET".equals(type)) {
@@ -558,6 +566,30 @@ public class LicenseRecoverGUI {
                 appTypeBadge.setBackground(new Color(0x9aa0a6));
             }
         });
+    }
+
+    /** 方式一随应用类型切换含义：.NET 只阻断配置中的联网校验，Java 仍写入本地授权。 */
+    static void updateMode1Ui(String type) {
+        Runnable r = () -> {
+            if (mode1Border == null || mode1Hint == null) return;
+            if ("DOTNET".equals(type)) {
+                mode1Border.setTitle("方式一：防止软件自动联网校验");
+                mode1Hint.setText("只修改授权配置文件，不修改 DLL；执行后重启应用服务");
+                runBtn.setText("防止软件自动联网校验");
+                blockNetCheck.setEnabled(false);
+                blockNetGenCheck.setEnabled(false);
+            } else {
+                mode1Border.setTitle("方式一：直接写入本地授权（Java 版）");
+                mode1Hint.setText("写 config.xml（regType=1 + regName）");
+                runBtn.setText("生成离线授权并写入");
+                blockNetCheck.setEnabled(true);
+                blockNetGenCheck.setEnabled(true);
+            }
+            mode1Panel.revalidate();
+            mode1Panel.repaint();
+        };
+        if (SwingUtilities.isEventDispatchThread()) r.run();
+        else SwingUtilities.invokeLater(r);
     }
 
     static void detect(ActionEvent e) {
@@ -626,12 +658,6 @@ public class LicenseRecoverGUI {
                 return;
             }
         }
-        if (dotnetBin != null && isAspNetDotNetBin(dotnetBin) && !dryRunCheck.isSelected()) {
-            appendLog("[提示] 检测到 ASP.NET 项目（根目录存在 Web.config）；方式一无法在无 Web 上下文的助手中完成自校验，请使用“移除联网授权代码”（方式三）。\n");
-            statusLabel.setText("状态: 请使用方式三");
-            statusLabel.setForeground(new Color(0xb51d1d));
-            return;
-        }
         if (productMain.isEmpty()) productMain = (dotnetBin != null) ? "YX0302" : "QT1001";
         runBtn.setEnabled(false);
         detectBtn.setEnabled(false);
@@ -644,14 +670,8 @@ public class LicenseRecoverGUI {
                 appendLog(" 应用目录   : " + appRoot + "\n");
                 appendLog(" 应用类型   : " + (fDotnet != null ? ".NET 版" : "Java 版") + "\n");
                 if (fDotnet != null) {
-                    java.util.List<String> cmd = new java.util.ArrayList<>();
-                    cmd.add("config");
-                    cmd.add(fDotnet);
-                    if (!fProduct.isEmpty() && !fProduct.equals("YX0302")) { cmd.add("--product"); cmd.add(fProduct); }
-                    if (dryRunCheck.isSelected()) cmd.add("--dry-run");
-                    if (!blockNetCheck.isSelected()) cmd.add("--no-block-net");
-                    if (!backupCheck.isSelected()) cmd.add("--no-backup");
-                    return runDotNet(cmd, "");
+                    appendLog("方式一：防止软件自动联网校验（只修改授权配置文件，不修改 DLL）\n");
+                    return runDotNetBlockNet(appRoot, dryRunCheck.isSelected(), backupCheck.isSelected());
                 }
                 appendLog(" 产品主编号 : " + fProduct + "\n");
                 // Java 版走 CLI 子进程（带该应用 WEB-INF/lib classpath）：复用完整恢复逻辑，
@@ -707,7 +727,7 @@ public class LicenseRecoverGUI {
                         if (!seq.trim().isEmpty()) { cmd.add("--seq"); cmd.add(seq.trim()); }
                         if (!product.isEmpty() && !product.equals("YX0302")) { cmd.add("--product"); cmd.add(product); }
                         if (blockNetGenCheck.isSelected()) {
-                            appendLog("（提示：.NET 方式二为纯生成；如需阻止残留联网请求，请在方式一勾选「把授权服务地址指向本地」）\n");
+                            appendLog("（提示：.NET 方式二只生成授权码；如需阻止自动联网校验，请执行方式一。）\n");
                         }
                         runDotNet(cmd, "");
                         return null;
@@ -1067,6 +1087,28 @@ public class LicenseRecoverGUI {
         }
     }
 
+    /** GUI 方式一的 .NET 路径：调用 CLI 的配置阻断模式，不加载或修改目标 DLL。 */
+    static boolean runDotNetBlockNet(String appPath, boolean dryRun, boolean backup) {
+        File cli = new File(guiJarDir(), "LicenseRecover.jar");
+        if (!cli.isFile()) {
+            appendLog("[错误] 未找到 LicenseRecover.jar（应与 GUI JAR 位于同一目录）\n");
+            appendLog("RESULT: FAILED\n");
+            return false;
+        }
+        File javaFile = new File(System.getProperty("java.home"), "bin" + File.separator + "java.exe");
+        if (!javaFile.isFile()) javaFile = new File(System.getProperty("java.home"), "bin" + File.separator + "java");
+        java.util.List<String> cmd = new java.util.ArrayList<>();
+        cmd.add(javaFile.getAbsolutePath());
+        cmd.add("-Dfile.encoding=UTF-8");
+        cmd.add("-jar");
+        cmd.add(cli.getAbsolutePath());
+        cmd.add("--block-net");
+        cmd.add(appPath);
+        if (dryRun) cmd.add("--dry-run");
+        if (!backup) cmd.add("--no-backup");
+        return runGuiProcess(cmd) == 0;
+    }
+
     static void batchRun(ActionEvent e) {
         if (batchTargets.isEmpty()) {
             appendLog("[错误] 请先点击「扫描子目录」识别应用。\n");
@@ -1093,12 +1135,12 @@ public class LicenseRecoverGUI {
                     int rc;
                     if ("DOTNET".equals(type)) {
                         String dotnetBin = (String) t[4];
-                        if ("config".equals(method) && isAspNetDotNetBin(dotnetBin)) {
-                            appendLog("[提示] " + name + " 是 ASP.NET 项目，方式一无法完成助手自校验，请改用方式三。\n");
-                            rc = 2;
+                        if ("config".equals(method)) {
+                            appendLog("方式一：防止软件自动联网校验（只修改授权配置文件，不修改 DLL）\n");
+                            rc = runDotNetBlockNet(dotnetBin, dryRunCheck.isSelected(), backupCheck.isSelected()) ? 0 : 1;
                         } else {
                             java.util.List<String> cmd = new java.util.ArrayList<>();
-                            cmd.add("config".equals(method) ? "config" : "patch");
+                            cmd.add("patch");
                             cmd.add(dotnetBin);
                             if (!productOverride.isEmpty() && !productOverride.equals("YX0302")) {
                                 cmd.add("--product"); cmd.add(productOverride);

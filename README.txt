@@ -7,23 +7,24 @@ ITMC 云实训平台 离线授权恢复工具
 （regservice.itmc.cn）校验授权。厂商跑路、授权服务器关闭后，软件因联网
 校验失败而无法正常使用。
 
-方式一和方式二利用软件"自带"的本地授权通道（config.xml 的 regType=1）写入配置；
-方式三会在备份后修改授权 DLL。方式一/二写入后：
+Java 版方式一和方式二利用软件"自带"的本地授权通道（config.xml 的 regType=1）写入配置；
+.NET 版方式一只修改授权服务地址，防止软件自动联网校验，不修改 DLL；方式三会在备份后修改授权 DLL。
+Java 版方式一/二写入后：
   - 启动时 RegisterMain.checkReInfo() 先走本地校验并直接通过；
   - 联网的 CheckNet()（SOAP 到 regservice.itmc.cn）不会再触发；
   - 每天 01:00 的定时重检同样离线通过。
-方式一和方式二恢复配置后，软件进入"已授权"状态；方式三则通过修改授权 DLL 达到同样效果。
+.NET 版方式一只负责阻断自动联网请求；需要写入本地授权时使用方式二，或使用方式三移除 DLL 中的联网授权代码。
 
 .NET 版支持
 -----------
 本工具同时支持 ITMC 的 .NET 版（ASP.NET 应用，bin 目录内含 itmcRegedit.dll /
-ITMC.Web.dll，产品号如 YX0302）。.NET 版与 Java 版共用同一套授权机制
-（regservice.itmc.cn / config.xml 的 regType=1 / 密钥 *ITMC{产品}OK*），
-独立 .NET 程序可尝试方式一，但必须能在工具进程内完成原版自校验；ASP.NET 项目因方式一的原版自校验依赖 Web 上下文，推荐使用方式三：
+ITMC.Web.dll，产品号如 YX0302）。
 
-  - 方式一（写 config.xml）：独立 .NET 程序可写 bin 目录下的 config.xml，若 DLL 仍有二层方法保护导致自校验失败，工具会自动回滚；
-    ASP.NET 项目需要 Web 上下文才能完成原版 RegeditMain.CheckReInfo() 自校验，
-    本工具对此类项目会提示改用方式三；
+  - 方式一（防止软件自动联网校验）：只修改应用实际使用的授权配置文件，
+    将 `reg/Service` 以及 `Web.config`、`*.dll.config`、`*.exe.config` 中指向
+    `regservice.itmc.cn` 的地址改为 `http://127.0.0.1:9/Service.asmx`；ASP.NET 取网站根目录，
+    独立 .NET 程序优先取 bin 目录。此方式不生成本地授权、不修改任何 DLL，写入前默认备份，
+    可用 `--dry-run` 预览；其它服务地址（例如 AI 服务）不会改动；
   - 方式二（离线授权码）：授权码密钥为 itmc+产品号（如 itmcYX0302），
     字段布局与 Java 版完全一致，走应用「本地注册」界面激活；
   - 方式三（移除联网授权代码）：内嵌 FOAP 脱壳算法（不依赖外部脱壳工具），
@@ -71,20 +72,27 @@ itmcRegedit.dll.<时间戳>.bak；同目录的大写 `ITMC.Regedit.dll` 不会�
   5) 重启应用服务即可正常使用。
   选项说明：
     写入前备份原配置   默认勾选，安全建议保留；
-    把授权服务地址指向本地   默认勾选，杜绝任何联网请求；
+    Java 版把授权服务地址指向本地   默认勾选，杜绝任何联网请求；
     只预览不写入       勾选后可先看效果，不实际写入。
 
 使用方法（命令行版）
 --------------------
-  方式一（推荐，放应用根目录双击）：
+  Java 版方式一（放应用根目录双击）：
     1) 在目标服务器上，把 run.bat 和 LicenseRecover.jar 复制到应用根目录
        （即包含 WEB-INF 的那个目录），双击 run.bat；
     2) 看到 RESULT: OK 即成功，重启应用服务即可正常使用。
-  方式二（带参数运行，可从任意位置）：
+  Java 版方式一（带参数运行，可从任意位置）：
     1) 打开命令行，进入本工具目录；
     2) 执行：  run.bat D:\server\cloud_training
        （参数为应用根目录，即包含 WEB-INF 的目录；工具会自动向上查找）；
-    3) 看到 RESULT: OK 即成功，重启应用服务即可正常使用。
+    3) Java 版看到 RESULT: OK 即成功，重启应用服务即可正常使用；
+       .NET 版默认执行方式一“防止软件自动联网校验”，只修改授权配置文件，不修改 DLL。
+
+  .NET 版方式一（防止软件自动联网校验）：
+    java -jar LicenseRecover.jar --block-net <ASP.NET 根目录或 bin 目录>
+    也可以直接把 .NET 应用目录传给 run.bat；工具会自动定位 bin、网站根目录 config.xml/Web.config
+    和 bin 中的 DLL 配置文件。
+    看到“自动联网授权校验已由配置阻断”后，重启应用服务使配置生效。
 
 方式二：生成离线授权码（在应用注册界面激活）
 --------------------------------------------
@@ -168,12 +176,12 @@ YX030201 等，每个代号一个文件夹，内含一个 ITMC 应用——Java 
 
   GUI 版：切到「批量应用」标签 → 选择父目录 → 点"扫描子目录"（列表显示
           每个应用与类型）→ 选方式（方式一写本地授权 / 方式三移除联网）→
-          "批量执行"，每行状态实时更新。
+          "批量执行"，每行状态实时更新；方式一对 .NET 只阻断联网校验，对 Java 写入本地授权。
   命令行版：
-    java -jar LicenseRecover.jar --batch <父目录>                # 方式一（写 config.xml）
+    java -jar LicenseRecover.jar --batch <父目录>                # 方式一（.NET防止联网 / Java写本地授权）
     java -jar LicenseRecover.jar --batch <父目录> --remove-net   # 方式三（移除联网代码）
     java -jar LicenseRecover.jar --batch <父目录> --scan-net     # 仅扫描识别
-    可选：-p <产品号>（所有应用统一指定产品号）；--dry-run（只预览不写入，.NET 方式一/三仅扫描）
+    可选：-p <产品号>（所有应用统一指定产品号）；--dry-run（只预览不写入）
     批量存在失败项目时进程返回非 0；成功完成或仅跳过非 ITMC 目录时返回 0。
 
   说明：
@@ -182,20 +190,23 @@ YX030201 等，每个代号一个文件夹，内含一个 ITMC 应用——Java 
   - 批量方式三执行前请先停止各应用服务；工具逐个备份后替换；
   - 已补丁过的应用（联网授权代码已移除）再次扫描会代码级识别并标记"已补丁"，执行时跳过重复修补；
   - 目录中含非 ITMC 软件文件夹时，扫描会列出并跳过（状态显示 SKIPPED）。
-  - 批量方式一为逐个子目录写 config.xml，与单应用行为一致；检测到 ASP.NET 项目时提示改用方式三。
+  - 批量方式一对 .NET 逐个修改实际使用的授权配置文件以阻断联网，对 Java 逐个写入本地授权；
 
 工具做了什么
 ------------
-在 <应用根目录>\WEB-INF\lib\config.xml 中写入：
+Java 版方式一在 <应用根目录>\WEB-INF\lib\config.xml 中写入：
   reg/regType      = 1                （启用本地授权模式）
   reg/regName      = <加密的永续授权>  （有效期至 2099 年，不限并发/班级）
   reg/WebSerUserID = itmc             （阻止联网申请授权的残留逻辑）
-  reg/Service      = http://127.0.0.1:9/Service.asmx（把授权服务地址指向本地
-                                                 inert 端口，杜绝任何联网请求）
-写入前会先备份原 config.xml（config.xml.<时间戳>.bak）。
+  reg/Service      = http://127.0.0.1:9/Service.asmx（把授权服务地址指向本地端口）
+
+.NET 版方式一会在应用实际使用的配置中写入/更新：
+  config.xml       reg/Service = http://127.0.0.1:9/Service.asmx
+  Web.config 等    仅把 regservice.itmc.cn 的授权服务地址改为上述本机地址
+它不会写入 regType/regName，也不会修改任何 DLL；每个被改动的配置文件都会在写入前备份。
 
 可选参数（CLI / GUI 单应用均可）：
-  --no-block-net   不把 reg/Service 指向本地（默认写，杜绝联网请求）
+  --no-block-net   Java 方式一不把 reg/Service 指向本地（默认写）
   --no-backup      写入前不备份原 config.xml（默认备份，建议保持）
 
 新架构 QT3xxx（Spring Boot，如数据分析平台 QT30103）：
@@ -208,12 +219,13 @@ YX030201 等，每个代号一个文件夹，内含一个 ITMC 应用——Java 
 
 安全性说明
 ----------
-  - 不修改 / 不替换任何 class / jar 文件，不注入代码；
+  - Java 方式一/二不修改 / 不替换任何 class / jar 文件，不注入代码；
+  - .NET 方式一只修改授权配置文件中的服务地址，不修改 / 不替换任何 DLL；
   - 生成的授权密文由软件自带的 itmc.regedit.GetRegisterCode 加密，
     与应用厂商签发的本地授权格式完全一致，软件自身的校验逻辑即可验证通过；
-  - 工具运行后会自动用软件自身的 RegisterMain.checkReInfo() 做自校验，
-    确认授权生效后才提示 OK；
-  - 若误写，可用备份文件还原 config.xml。
+  - Java 方式一运行后会用软件自身的 RegisterMain.checkReInfo() 做自校验；
+    .NET 方式一以配置写入成功为判断依据，重启应用服务后生效；
+  - 若误写，可用各配置文件旁的 `.bak` 备份还原。
 
 产品号说明
 ----------
@@ -224,7 +236,8 @@ YX030201 等，每个代号一个文件夹，内含一个 ITMC 应用——Java 
 
 注意事项
 --------
-  - 方式一（直接写入 config.xml）：必须在部署该软件的服务器上运行；
+  - Java 方式一（直接写入 config.xml）：必须在部署该软件的服务器上运行；
+  - .NET 方式一（防止软件自动联网校验）：只修改授权配置文件，不修改 DLL；
   - 方式二（生成离线授权码）：可在本机运行，但需先用服务器的申请号（见"跨机器使用"）；
   - 方式三（移除联网授权代码）：需停止应用服务后执行，备份在 WEB-INF 内；
   - 需要本机装有 JRE 8（运行该软件本身就需要）；

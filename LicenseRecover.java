@@ -3,20 +3,24 @@
  *
  * 背景: 厂商跑路 / 授权服务器关闭后，已购软件因联网授权校验无法使用。
  * Java 版使用软件自身支持的"本地授权"通道 (config.xml regType=1)，
- * 生成一份永续本地授权并写入 WEB-INF/lib/config.xml；.NET ASP.NET 项目
- * 另提供方式三，直接修改 bin\\itmcRegedit.dll 中的联网授权逻辑。
+ * 生成一份永续本地授权并写入 WEB-INF/lib/config.xml；.NET 版方式一
+ * 只修改授权配置文件中的服务地址，防止软件自动联网校验，不改 DLL。
  *
  * 生成过程全部复用应用自带的类 (itmc.regedit.* / fastjson)，
  * 保证授权格式与应用预期的完全一致。
  *
  * 用法:  java -cp "<应用根目录>\WEB-INF\lib\*;LicenseRecover.jar" LicenseRecover [应用根目录]
  * 可选:  -p <产品主编号>   强制指定产品主编号(默认自动识别, YT00123 系默认 QT1001)
- *        --dry-run         只预览，不修改文件（.NET 方式一/三仅扫描）
+ *        --dry-run         只预览，不修改文件（.NET 方式一/三均为预览）
  *
  * 方式二(生成离线授权码, 走应用"本地注册"界面):
  *  java -cp "...\WEB-INF\lib\*;LicenseRecover.jar" LicenseRecover --gencode [应用根目录] [--seq <申请号>]
  *  Java/独立 .NET 可不传 --seq 在本机生成申请号；ASP.NET 需先从网站本地注册页取得申请号。
  *  把申请号和输出的授权码填入应用注册界面即可激活。
+ *
+ * .NET 方式一(防止软件自动联网校验):
+ *  java -jar LicenseRecover.jar --block-net [应用根目录或 bin 目录]
+ *  修改应用实际使用的授权配置，将服务地址指向本机不可用端口，不修改 DLL。
  *
  * 方式三(暴力: 直接移除联网授权代码, 用 Javassist 改写字节码):
  *  java -cp "...\WEB-INF\lib\*;LicenseRecover.jar" LicenseRecover --remove-net [应用根目录]   # 扫描+移除
@@ -49,6 +53,20 @@ public class LicenseRecover {
 
     /** 是否把授权服务地址指向本地 inert 端口（reg/Service）。默认 true；--no-block-net 可关。 */
     static boolean blockNet = true;
+
+    /** .NET 方式一使用的本地不可用端口；只阻断授权服务请求，不改写 DLL。 */
+    static final String DOTNET_BLOCK_ENDPOINT = "http://127.0.0.1:9/Service.asmx";
+    static final java.util.regex.Pattern REG_BLOCK_PATTERN =
+            java.util.regex.Pattern.compile("(?is)<reg\\b[^>]*>.*?</reg\\s*>");
+    static final java.util.regex.Pattern SERVICE_ELEMENT_PATTERN =
+            java.util.regex.Pattern.compile("(?is)(<Service\\b[^>]*>)(.*?)(</Service\\s*>)");
+    static final java.util.regex.Pattern REG_CLOSE_PATTERN =
+            java.util.regex.Pattern.compile("(?m)([ \\t]*)(</reg\\s*>)");
+    static final java.util.regex.Pattern ROOT_CLOSE_PATTERN =
+            java.util.regex.Pattern.compile("(?m)([ \\t]*)(</ROOT\\s*>)");
+    /** .NET 生成的 SOAP/WCF 配置中使用的授权服务地址。只替换授权域名，不碰其它服务（例如 AI 服务）。 */
+    static final java.util.regex.Pattern DOTNET_REMOTE_SERVICE_PATTERN =
+            java.util.regex.Pattern.compile("(?i)https?://regservice\\.itmc\\.cn(?::\\d+)?(?:/[^\\s<>'\\x22]*)?");
 
     /** 是否在写入前备份原 config.xml。默认 true；--no-backup 可关。 */
     static boolean backupCfg = true;
@@ -425,7 +443,7 @@ public class LicenseRecover {
         xml.writeConfig("reg", "regName", encrypted);
         xml.writeConfig("reg", "WebSerUserID", "itmc");
         // 将授权服务地址指向本地 inert 端口，杜绝任何残留的到 regservice.itmc.cn 的请求（--no-block-net 可关）
-        if (blockNet) xml.writeConfig("reg", "Service", "http://127.0.0.1:9/Service.asmx");
+        if (blockNet) xml.writeConfig("reg", "Service", DOTNET_BLOCK_ENDPOINT);
     }
 
     // ================= 方式二: 生成离线授权码 (走应用"本地注册"界面) =================
@@ -764,11 +782,13 @@ public class LicenseRecover {
         }
     }
 
-    /** 判断 .NET bin 是否属于 ASP.NET 应用（父目录存在 Web.config）。 */
+    /** 判断 .NET bin 是否属于 ASP.NET 应用（应用根目录存在 Web.config）。 */
     static boolean isAspNetDotNetBin(String binDir) {
         if (binDir == null || binDir.trim().isEmpty()) return false;
-        File parent = new File(binDir).getAbsoluteFile().getParentFile();
-        return parent != null && new File(parent, "Web.config").isFile();
+        File bin = new File(binDir).getAbsoluteFile();
+        File root = "bin".equalsIgnoreCase(bin.getName()) && bin.getParentFile() != null
+                ? bin.getParentFile() : bin;
+        return new File(root, "Web.config").isFile();
     }
 
     /** 删除助手自校验生成的空占位 XML；用户原有文件不触碰。 */
@@ -788,24 +808,218 @@ public class LicenseRecover {
         } catch (Exception ignore) { }
     }
 
+    /** 获取 .NET 应用根目录；常规部署为 root\\bin，独立程序也允许 DLL 直接位于根目录。 */
+    static File dotNetAppRoot(String binDir) {
+        File bin = new File(binDir).getAbsoluteFile();
+        return "bin".equalsIgnoreCase(bin.getName()) && bin.getParentFile() != null
+                ? bin.getParentFile() : bin;
+    }
+
+    static void addDotNetConfigFile(java.util.List<File> files, java.util.Set<String> seen, File file) {
+        if (file == null || !file.isFile()) return;
+        try {
+            String key = file.getCanonicalPath().toLowerCase(java.util.Locale.ROOT);
+            if (seen.add(key)) files.add(file);
+        } catch (Exception e) {
+            String key = file.getAbsolutePath().toLowerCase(java.util.Locale.ROOT);
+            if (seen.add(key)) files.add(file);
+        }
+    }
+
+    static void addDotNetSidecarConfigs(java.util.List<File> files, java.util.Set<String> seen, File dir) {
+        if (dir == null || !dir.isDirectory()) return;
+        File[] children = dir.listFiles();
+        if (children == null) return;
+        for (File file : children) {
+            String name = file.getName().toLowerCase(java.util.Locale.ROOT);
+            if (name.endsWith(".dll.config") || name.endsWith(".exe.config"))
+                addDotNetConfigFile(files, seen, file);
+        }
+    }
+
+    /** .NET 方式一实际使用的配置文件：包含自定义 config.xml、网站/程序配置和 DLL 旁的配置。 */
+    static java.util.List<File> locateDotNetConfigFiles(String binDir) {
+        java.util.List<File> files = new java.util.ArrayList<File>();
+        java.util.Set<String> seen = new java.util.HashSet<String>();
+        File bin = new File(binDir).getAbsoluteFile();
+        File root = dotNetAppRoot(binDir);
+        File rootCfg = new File(root, "config.xml");
+        File binCfg = new File(bin, "config.xml");
+        if (isAspNetDotNetBin(binDir)) {
+            addDotNetConfigFile(files, seen, rootCfg);
+            addDotNetConfigFile(files, seen, new File(root, "Web.config"));
+        } else if (binCfg.isFile()) {
+            addDotNetConfigFile(files, seen, binCfg);
+        } else if (rootCfg.isFile()) {
+            addDotNetConfigFile(files, seen, rootCfg);
+        }
+        addDotNetConfigFile(files, seen, new File(root, "Web.config"));
+        addDotNetSidecarConfigs(files, seen, root);
+        addDotNetSidecarConfigs(files, seen, bin);
+        return files;
+    }
+
+    /** 在 XML 的 reg 节点中写入/更新 Service，保留原有 XML 排版和其它配置。 */
+    static String replaceDotNetService(String xml) {
+        if (xml == null) return null;
+        String lineSep = xml.contains("\r\n") ? "\r\n" : "\n";
+        java.util.regex.Matcher regs = REG_BLOCK_PATTERN.matcher(xml);
+        int fallbackStart = -1, fallbackEnd = -1;
+        int selectedStart = -1, selectedEnd = -1;
+        while (regs.find()) {
+            String block = regs.group();
+            if (fallbackStart < 0 || block.toLowerCase(java.util.Locale.ROOT).contains("<regtype")) {
+                fallbackStart = regs.start();
+                fallbackEnd = regs.end();
+            }
+            if (SERVICE_ELEMENT_PATTERN.matcher(block).find()) {
+                selectedStart = regs.start();
+                selectedEnd = regs.end();
+                break;
+            }
+        }
+        if (selectedStart < 0) {
+            selectedStart = fallbackStart;
+            selectedEnd = fallbackEnd;
+        }
+        if (selectedStart >= 0) {
+            String block = xml.substring(selectedStart, selectedEnd);
+            java.util.regex.Matcher service = SERVICE_ELEMENT_PATTERN.matcher(block);
+            String updatedBlock;
+            if (service.find()) {
+                updatedBlock = block.substring(0, service.start())
+                        + service.group(1) + DOTNET_BLOCK_ENDPOINT + service.group(3)
+                        + block.substring(service.end());
+            } else {
+                java.util.regex.Matcher close = REG_CLOSE_PATTERN.matcher(block);
+                if (!close.find()) return null;
+                String closeIndent = close.group(1);
+                String childIndent = closeIndent + "  ";
+                String insertion = lineSep + childIndent + "<Service>" + DOTNET_BLOCK_ENDPOINT
+                        + "</Service>" + lineSep + closeIndent + close.group(2);
+                updatedBlock = block.substring(0, close.start()) + insertion + block.substring(close.end());
+            }
+            return xml.substring(0, selectedStart) + updatedBlock + xml.substring(selectedEnd);
+        }
+
+        // 极少数 .NET 程序没有预置 reg 节点，补到 ROOT 末尾；不改变其它授权字段。
+        java.util.regex.Matcher rootClose = ROOT_CLOSE_PATTERN.matcher(xml);
+        if (!rootClose.find()) return null;
+        String rootIndent = rootClose.group(1);
+        String childIndent = rootIndent + "  ";
+        String insertion = lineSep + rootIndent + "<reg>" + lineSep + childIndent
+                + "<Service>" + DOTNET_BLOCK_ENDPOINT + "</Service>" + lineSep
+                + rootIndent + "</reg>" + lineSep + rootIndent + rootClose.group(2);
+        return xml.substring(0, rootClose.start()) + insertion + xml.substring(rootClose.end());
+    }
+
+    /** 更新 Web.config、*.exe.config、*.dll.config 中的授权域名，保留其它服务地址。 */
+    static String replaceDotNetServiceUrls(String xml) {
+        if (xml == null) return null;
+        return DOTNET_REMOTE_SERVICE_PATTERN.matcher(xml).replaceAll(DOTNET_BLOCK_ENDPOINT);
+    }
+
+    static String updateDotNetConfig(File cfg, String xml) {
+        return "config.xml".equalsIgnoreCase(cfg.getName())
+                ? replaceDotNetService(xml) : replaceDotNetServiceUrls(xml);
+    }
+
+    /** 写入前验证 XML，避免方式一留下格式损坏的配置。 */
+    static void validateDotNetXml(String xml) throws Exception {
+        String body = xml != null && xml.startsWith("\uFEFF") ? xml.substring(1) : xml;
+        javax.xml.parsers.DocumentBuilderFactory f = javax.xml.parsers.DocumentBuilderFactory.newInstance();
+        try { f.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true); } catch (Exception ignore) { }
+        try { f.setFeature("http://xml.org/sax/features/external-general-entities", false); } catch (Exception ignore) { }
+        try { f.setFeature("http://xml.org/sax/features/external-parameter-entities", false); } catch (Exception ignore) { }
+        f.setXIncludeAware(false);
+        f.setExpandEntityReferences(false);
+        f.newDocumentBuilder().parse(new java.io.ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    static File backupDotNetConfig(File cfg) throws Exception {
+        String stamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+        File bak = new File(cfg.getParentFile(), cfg.getName() + "." + stamp + ".bak");
+        int n = 1;
+        while (bak.exists()) bak = new File(cfg.getParentFile(), cfg.getName() + "." + stamp + "-" + (n++) + ".bak");
+        Files.copy(cfg.toPath(), bak.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        return bak;
+    }
+
+    /** .NET 方式一：只阻断配置中的授权服务地址，不生成授权、不修改任何 DLL。 */
+    static int blockDotNetNet(String binDir, boolean dryRun, boolean backup) {
+        java.util.List<File> configs = locateDotNetConfigFiles(binDir);
+        if (configs.isEmpty()) {
+            System.err.println("[错误] 未找到可处理的 .NET 授权配置（请确认 bin、config.xml 或 Web.config 存在）");
+            System.out.println("RESULT: FAILED");
+            return 1;
+        }
+        java.util.List<String> originals = new java.util.ArrayList<String>();
+        java.util.List<String> updates = new java.util.ArrayList<String>();
+        try {
+            for (File cfg : configs) {
+                String original = new String(Files.readAllBytes(cfg.toPath()), StandardCharsets.UTF_8);
+                boolean bom = original.startsWith("\uFEFF");
+                String body = bom ? original.substring(1) : original;
+                String updated = updateDotNetConfig(cfg, body);
+                if (updated == null) throw new Exception("无法定位配置节点: " + cfg.getAbsolutePath());
+                if (bom) updated = "\uFEFF" + updated;
+                validateDotNetXml(updated);
+                originals.add(original);
+                updates.add(updated);
+            }
+            for (int i = 0; i < configs.size(); i++) {
+                File cfg = configs.get(i);
+                String original = originals.get(i);
+                String updated = updates.get(i);
+                if (original.equals(updated)) {
+                    System.out.println("已是阻断状态（无需修改）: " + cfg.getAbsolutePath());
+                    continue;
+                }
+                if (dryRun) {
+                    System.out.println("--- 模拟写入（dry-run，未修改文件） ---");
+                    System.out.println("将修改: " + cfg.getAbsolutePath());
+                    System.out.println("  授权服务地址 = " + DOTNET_BLOCK_ENDPOINT);
+                    continue;
+                }
+                if (backup) {
+                    File bak = backupDotNetConfig(cfg);
+                    System.out.println("已备份原配置: " + bak.getAbsolutePath());
+                }
+                Files.write(cfg.toPath(), updated.getBytes(StandardCharsets.UTF_8));
+                System.out.println("已写入: " + cfg.getAbsolutePath());
+                System.out.println("  授权服务地址 = " + DOTNET_BLOCK_ENDPOINT);
+            }
+            System.out.println(dryRun
+                    ? "RESULT: dry-run 完成，未修改 DLL 或配置文件。"
+                    : "RESULT: OK —— .NET 自动联网授权校验已由配置阻断，未修改 DLL。重启应用服务后生效。");
+            return 0;
+        } catch (Exception e) {
+            System.err.println("[错误] 写入 .NET 阻断配置失败: " + e.getMessage());
+            System.out.println("RESULT: FAILED");
+            return 1;
+        }
+    }
+
     /** .NET 版主入口：根据参数拼助手命令并执行。 */
     static void dotNetMain(String[] args, String binDir) {
+        String mode = "block-net";
+        if (hasArg(args, "--block-net")) mode = "block-net";
+        else if (hasArg(args, "--gencode")) mode = "gencode";
+        else if (hasArg(args, "--remove-net")) mode = "patch";
+        else if (hasArg(args, "--scan-net")) mode = "scan";
+
+        if ("block-net".equals(mode)) {
+            System.out.println("检测到 .NET 版应用（bin 目录: " + binDir + "），方式一：防止软件自动联网校验");
+            int rc = blockDotNetNet(binDir, hasArg(args, "--dry-run"), !hasArg(args, "--no-backup"));
+            if (rc != 0) System.exit(rc);
+            return;
+        }
+
         File helper = locateNetHelper();
         if (helper == null) {
             System.err.println("[错误] 未找到 LicenseRecover.NET.exe（应在 LicenseRecover.jar 旁的 LicenseRecover.NET 子目录）");
             System.out.println("RESULT: FAILED");
             System.exit(1);
-            return;
-        }
-        String mode = "config";
-        if (hasArg(args, "--gencode")) mode = "gencode";
-        else if (hasArg(args, "--remove-net")) mode = "patch";
-        else if (hasArg(args, "--scan-net")) mode = "scan";
-
-        if ("config".equals(mode) && isAspNetDotNetBin(binDir) && !hasArg(args, "--dry-run")) {
-            System.err.println("[提示] 检测到 ASP.NET 项目（根目录存在 Web.config）；该版本方式一无法在无 Web 上下文的助手中完成自校验，请使用 --remove-net 方式三。");
-            System.out.println("RESULT: FAILED");
-            System.exit(2);
             return;
         }
         String seq = getArg(args, "--seq");
@@ -934,7 +1148,7 @@ public class LicenseRecover {
         System.out.println("======================================================");
         System.out.println(" ITMC 批量授权恢复");
         System.out.println(" 父目录    : " + parentDir);
-        System.out.println(" 方式      : " + method + "   （--remove-net=方式三 / --scan-net=仅扫描）");
+        System.out.println(" 方式      : " + method + "   （方式一=.NET防止自动联网校验 / Java写本地授权；--remove-net=方式三 / --scan-net=仅扫描）");
         System.out.println(" 识别      : ITMC 应用 " + appCnt + " 个，非 ITMC 目录 " + noneCnt + " 个（将显示并跳过）");
         System.out.println("======================================================");
         if (apps.isEmpty()) {
@@ -959,21 +1173,21 @@ public class LicenseRecover {
             int rc;
             try {
                 if ("DOTNET".equals(a.type)) {
-                    File helper = locateNetHelper();
-                    if (helper == null) {
-                        System.err.println("[错误] 未找到 LicenseRecover.NET.exe");
-                        rc = 1;
+                    if ("config".equals(method)) {
+                        // .NET 方式一只修改实际使用的授权配置，避免调用需要 Web 上下文的 DLL 自校验。
+                        rc = blockDotNetNet(a.binDir, dryRun, !hasArg(args, "--no-backup"));
                     } else {
-                        java.util.List<String> cmd = new java.util.ArrayList<>();
-                        cmd.add(helper.getAbsolutePath());
-                        cmd.add(method);
-                        cmd.add(a.binDir);
-                        if (productOverride != null) { cmd.add("--product"); cmd.add(productOverride); }
-                        if (dryRun) cmd.add("--dry-run");
-                        if ("config".equals(method) && isAspNetDotNetBin(a.binDir) && !dryRun) {
-                            System.err.println("[提示] " + a.name + " 是 ASP.NET 项目，方式一无法完成助手自校验，请改用 --remove-net 方式三。");
-                            rc = 2;
+                        File helper = locateNetHelper();
+                        if (helper == null) {
+                            System.err.println("[错误] 未找到 LicenseRecover.NET.exe");
+                            rc = 1;
                         } else {
+                            java.util.List<String> cmd = new java.util.ArrayList<>();
+                            cmd.add(helper.getAbsolutePath());
+                            cmd.add(method);
+                            cmd.add(a.binDir);
+                            if (productOverride != null) { cmd.add("--product"); cmd.add(productOverride); }
+                            if (dryRun) cmd.add("--dry-run");
                             boolean hadConfig = new File(a.binDir, "config.xml").isFile();
                             boolean hadRegister = new File(a.binDir, "Register.xml").isFile();
                             rc = runDotNetProcess(cmd);

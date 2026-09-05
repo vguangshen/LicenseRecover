@@ -46,6 +46,7 @@ echo    ITMC 离线授权恢复工具
 echo   ============================================
 if defined DOTNET (
   echo   应用类型: .NET 版   应用目录: %APP%
+  echo   方式一: 防止软件自动联网校验（只修改授权配置文件，不修改 DLL）
   echo.
   "%JAVA%" -Dfile.encoding=UTF-8 -jar "%~dp0LicenseRecover.jar" "%APP%"
 ) else (
@@ -54,6 +55,6 @@ if defined DOTNET (
   "%JAVA%" -Dfile.encoding=UTF-8 -cp "%APP%\WEB-INF\lib\*;%~dp0LicenseRecover.jar" LicenseRecover "%APP%"
 )
 echo.
-echo   请查看上方 RESULT 行。若为 OK，重启应用服务即可。
+echo   请查看上方 RESULT 行。若为 OK，重启应用服务使配置生效。
 echo.
 pause
