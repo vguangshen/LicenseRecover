@@ -5,6 +5,8 @@
  * Java 版使用软件自身支持的"本地授权"通道 (config.xml regType=1)，
  * 生成一份永续本地授权并写入 WEB-INF/lib/config.xml；.NET 版方式一
  * 只修改授权配置文件中的服务地址，防止软件自动联网校验，不改 DLL。
+ * DS0101 这类旧版 ASP.NET 应用的方式二单独使用旧协议适配器：申请号
+ * 用 itmcsoft 解码，授权码用 itmcb2b 生成，避免误用新版 JSON 协议。
  *
  * 生成过程全部复用应用自带的类 (itmc.regedit.* / fastjson)，
  * 保证授权格式与应用预期的完全一致。
@@ -1015,6 +1017,14 @@ public class LicenseRecover {
             return;
         }
 
+        // DS0101/DS01xx 的 ASP.NET 注册页使用旧版固定字段协议，不能交给
+        // 默认按 YX0302/新版产品号生成 JSON 授权码的 C# 助手。
+        if ("gencode".equals(mode) && LegacyDotNetProtocol.isLegacyTarget(new File(binDir))) {
+            int rc = legacyDotNetCodeMode(args, binDir);
+            if (rc != 0) System.exit(rc);
+            return;
+        }
+
         File helper = locateNetHelper();
         if (helper == null) {
             System.err.println("[错误] 未找到 LicenseRecover.NET.exe（应在 LicenseRecover.jar 旁的 LicenseRecover.NET 子目录）");
@@ -1047,6 +1057,34 @@ public class LicenseRecover {
         int rc = runDotNetProcess(cmd);
         cleanupGeneratedDotNetFiles(binDir, hadConfig, hadRegister);
         if (rc != 0) System.exit(rc);
+    }
+
+    /** DS0101 旧协议方式二：只生成授权码，实际提交仍由应用自己的注册页完成。 */
+    static int legacyDotNetCodeMode(String[] args, String binDir) {
+        String seq = getArg(args, "--seq");
+        String version = LegacyDotNetProtocol.readSoftVersion(new File(binDir));
+        System.out.println("检测到 .NET 旧协议应用（版本: " + (version == null ? "DS01xx" : version)
+                + "，产品标识: " + LegacyDotNetProtocol.PRODUCT_NAME + "）");
+        if (seq == null || seq.trim().isEmpty()) {
+            System.err.println("[提示] DS0101 旧协议必须先在应用「本地注册」页获取申请号，再用 --seq 生成离线授权码。");
+            System.out.println("RESULT: FAILED");
+            return 2;
+        }
+        try {
+            LegacyDotNetProtocol.CodeResult result =
+                    LegacyDotNetProtocol.generateAuthorizationCode(seq.trim());
+            System.out.println("旧协议申请号      : " + result.request.ciphertext);
+            System.out.println("申请主机码        : " + result.request.regId);
+            System.out.println("申请时间          : " + result.request.requestTime);
+            System.out.println("授权截止日期      : " + result.endDate);
+            System.out.println("离线授权码        : " + result.code);
+            System.out.println("RESULT: OK —— 将上面的离线授权码粘贴到 DS0101 应用「本地注册」页提交。");
+            return 0;
+        } catch (Exception e) {
+            System.err.println("[错误] DS0101 旧协议申请号解析/授权码生成失败: " + e.getMessage());
+            System.out.println("RESULT: FAILED");
+            return 1;
+        }
     }
 
     // ================= 批量模式 =================

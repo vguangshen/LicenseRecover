@@ -25,8 +25,9 @@ ITMC.Web.dll，产品号如 YX0302）。
     `regservice.itmc.cn` 的地址改为 `http://127.0.0.1:9/Service.asmx`；ASP.NET 取网站根目录，
     独立 .NET 程序优先取 bin 目录。此方式不生成本地授权、不修改任何 DLL，写入前默认备份，
     可用 `--dry-run` 预览；其它服务地址（例如 AI 服务）不会改动；
-  - 方式二（离线授权码）：授权码密钥为 itmc+产品号（如 itmcYX0302），
-    字段布局与 Java 版完全一致，走应用「本地注册」界面激活；
+  - 方式二（离线授权码）：新版项目按应用产品号使用新版协议；检测到 DS0101、DS0102、
+    DS0103、DS0109、DS0111 时自动使用旧版 itmcIEC 协议（申请号 itmcsoft、授权码
+    itmcb2b），走应用「本地注册」界面激活。旧版 ASP.NET 必须先在注册页取得申请号；
   - 方式三（移除联网授权代码）：内嵌 FOAP 脱壳算法（不依赖外部脱壳工具），
     自动脱壳 itmcRegedit.dll 后用 dnlib 补丁 RegeditMain 的
     CheckReInfo/CheckNet/getNetRegInfo/RegNOWebCheck/CheckLocalReg/getLocalRegInfo 并替换。
@@ -49,6 +50,7 @@ itmcRegedit.dll.<时间戳>.bak；同目录的大写 `ITMC.Regedit.dll` 不会�
     run_gui.bat             启动 GUI 的一键脚本
   命令行版：
     LicenseRecover.java     源码
+    LegacyDotNetProtocol.java  DS01xx .NET 旧版授权协议适配源码
     LicenseRecover.jar      命令行程序（含方式一/二/三）
     run.bat                 CLI 方式一/二一键脚本
     run_removenet.bat       CLI 方式三（移除联网授权）一键脚本
@@ -107,12 +109,14 @@ itmcRegedit.dll.<时间戳>.bak；同目录的大写 `ITMC.Regedit.dll` 不会�
           java -cp "<应用根目录>\WEB-INF\lib\*;LicenseRecover.jar" \
                 LicenseRecover --gencode <应用根目录> [--seq <已获取的申请号>]
            （Java 可不带 --seq 在本机自动生成申请号；ASP.NET 必须先从网站本地注册页取得申请号，再传入 --seq）
-           .NET 版也可直接运行：java -jar LicenseRecover.jar --gencode <ASP.NET 根目录> -p YX0302 --seq <申请号>
+           .NET 版也可直接运行：java -jar LicenseRecover.jar --gencode <ASP.NET 根目录> --seq <申请号>
 
-   说明：本项目的 Web.config productName 是 YX0302，config.xml 的 SoftVersionID 是 YX030204；
-         方式二使用前者作为产品号（密钥为 itmcYX0302），后者是版本标识。授权码按应用自身
-         doRegistry() 使用的 itmc+产品号密钥生成；ASP.NET 的提交和写入
-         必须在网站本地注册页完成，工具进程无法代替该 Web 上下文执行 DoRegistry 自校验。
+   说明：常规新版 .NET 项目按应用产品号使用新版协议；工具检测到 DS0101、DS0102、DS0103、
+         DS0109 或 DS0111 时，会切换到旧版 itmcIEC 协议，使用 itmcsoft 解码申请号、
+         itmcb2b 生成固定字段授权码。DS0101 的 Web.config productName 不是授权产品号，
+         不应再按 YX0302 生成。ASP.NET 项目必须先从网站本地注册页取得申请号；提交和写入
+         仍由应用自己的注册页完成，工具进程不代替该 Web 上下文执行 DoRegistry 自校验。
+         旧协议输出的授权码不是 JSON，成功后把它粘贴到 DS0101 的「本地注册」页提交。
    提示：ASP.NET 应用提交成功后会由网站把授权写入根目录 config.xml；如需彻底移除联网路径，
          请执行方式三。Java 应用仍可按需使用方式一把授权服务地址指向本地。
 

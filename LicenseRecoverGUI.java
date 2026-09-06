@@ -5,6 +5,7 @@
  * 功能: 选择应用根目录 -> 自动识别产品号 -> Java 写入本地授权；.NET 方式一
  *       防止软件自动联网校验（只改 config.xml），方式三移除联网授权代码。
  * 方式一/二的生成与自校验复用应用自带类 (itmc.regedit.* / fastjson / dom4j)，
+ * DS0101 等旧版 .NET 应用的方式二使用内置旧协议适配器；
  * 方式三由内嵌 C# 助手处理小写 itmcRegedit.dll。
  */
 import itmc.regedit.DesUtil;
@@ -605,8 +606,14 @@ public class LicenseRecoverGUI {
                     if (dotnetBin != null) {
                         setAppTypeBadge("DOTNET");
                         appendLog("[识别] 检测到 .NET 版应用，bin 目录 = " + dotnetBin + "\n");
-                        appendLog("[识别] 产品号默认 YX0302（若为其他产品请在「产品号」手动填写后，将自动传给 .NET 助手）\n");
-                        SwingUtilities.invokeLater(() -> { productField.setText("YX0302"); productAutoFilled = true; });
+                        String legacyVersion = LegacyDotNetProtocol.readSoftVersion(new File(dotnetBin));
+                        if (LegacyDotNetProtocol.isLegacyVersion(legacyVersion)) {
+                            appendLog("[识别] " + legacyVersion + " 使用旧版 itmcIEC 授权协议；方式二将使用 itmcb2b 密钥生成固定字段授权码。\n");
+                            SwingUtilities.invokeLater(() -> { productField.setText(LegacyDotNetProtocol.PRODUCT_NAME); productAutoFilled = true; });
+                        } else {
+                            appendLog("[识别] 产品号默认 YX0302（若为其他产品请在「产品号」手动填写后，将自动传给 .NET 助手）\n");
+                            SwingUtilities.invokeLater(() -> { productField.setText("YX0302"); productAutoFilled = true; });
+                        }
                         return null;
                     }
                     setAppTypeBadge("");
@@ -716,6 +723,24 @@ public class LicenseRecoverGUI {
                 try {
                     if (fDotnet != null) {
                         appendLog("--- 方式二：生成离线授权码（.NET 版） ---\n");
+                        if (LegacyDotNetProtocol.isLegacyTarget(new File(fDotnet))) {
+                            if (seq.trim().isEmpty()) {
+                                appendLog("[提示] 检测到 DS0101 旧协议。请先在应用「本地注册」页获取申请号，再填入上方申请号后生成授权码。\n");
+                                return null;
+                            }
+                            LegacyDotNetProtocol.CodeResult result =
+                                    LegacyDotNetProtocol.generateAuthorizationCode(seq.trim());
+                            appendLog("[识别] DS01xx 旧协议，产品标识 = " + LegacyDotNetProtocol.PRODUCT_NAME + "\n");
+                            appendLog("申请主机码       : " + result.request.regId + "\n");
+                            appendLog("申请时间         : " + result.request.requestTime + "\n");
+                            appendLog("授权截止日期     : " + result.endDate + "\n");
+                            appendLog("注册申请号       : " + result.request.ciphertext + "\n");
+                            appendLog("离线授权码       : " + result.code + "\n");
+                            appendLog("RESULT: OK —— 将上面的离线授权码粘贴到 DS0101 应用「本地注册」页提交。\n");
+                            lastCode = result.code;
+                            SwingUtilities.invokeLater(() -> codeField.setText(result.code));
+                            return null;
+                        }
                         String product = productField.getText().trim();
                         if (seq.trim().isEmpty() && isAspNetDotNetBin(fDotnet)) {
                             appendLog("[提示] ASP.NET 项目不能在工具进程内自动取申请号；请先在网站的本地注册页获取申请号，再填入申请号生成离线授权码。\n");
