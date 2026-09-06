@@ -1,4 +1,4 @@
-LicenseRecover v1.1.2
+LicenseRecover v1.1.3
 =====================
 
 ITMC 云实训平台离线授权恢复工具
@@ -10,6 +10,13 @@ ITMC 云实训平台离线授权恢复工具
 推荐下载 LicenseRecover-latest.zip。
 便携版内置 Amazon Corretto 8.492.09.2 / OpenJDK Runtime 1.8.0_492-b09 Windows x64 JRE。
 解压后直接双击 run_gui.bat 即可，不需要另外安装 Java。
+
+v1.1.3 本地授权修正
+-------------------
+- Java 方式一生成的本地 regName 授权对象固定写入 UserID=fwq；
+- WebSerUserID 保持为独立兼容字段，不再与真正的 RegInfo.UserID 混淆；
+- CI 会重新编译 LicenseRecover.class 并同步进 LicenseRecover.jar，确保源码与发行包行为一致；
+- smoke test 验证本地授权身份字段实际为 fwq。
 
 v1.1.2 界面修复
 ---------------
@@ -36,7 +43,7 @@ v1.1.2 界面修复
 - 更新完成后自动重启；
 - 也可执行 run_gui.bat --update-only 手动检查。
 
-注意：软件更新使用 GitHub 公共 Releases 接口，因此仓库需设置为 Public 后，未登录 GitHub 的客户端才能正常检查更新。
+仓库现已为 Public，未登录 GitHub 的客户端也可正常检查更新。
 
 安全保护
 --------
