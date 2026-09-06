@@ -68,9 +68,15 @@ public final class RefactorSmokeTest {
 
         List<String> dryPatch = Arrays.asList("java", "-cp", "x", "LicenseRecover",
                 "--remove-net", javaRoot.toString(), "--dry-run");
-        List<String> normalized = ProcessRunner.normalizeSafety(dryPatch, System.out::print);
+        List<String> normalized = ProcessRunner.normalizeCommand(dryPatch, System.out::print);
         check(normalized.contains("--scan-net") && !normalized.contains("--remove-net"),
                 "Java way-3 dry-run becomes scan-only");
+
+        List<String> productAlias = Arrays.asList("java", "-jar", "/tmp/LicenseRecover.jar",
+                "--gencode", dotnetRoot.toString(), "--product", "YX030204");
+        List<String> productNormalized = ProcessRunner.normalizeCommand(productAlias, System.out::print);
+        check(productNormalized.contains("-p") && !productNormalized.contains("--product"),
+                "CLI product override is normalized to -p");
 
         String javaExe = System.getProperty("java.home") + File.separator + "bin"
                 + File.separator + "java";
