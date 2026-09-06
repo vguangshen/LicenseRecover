@@ -13,10 +13,7 @@ import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.text.ParsePosition;
 import java.text.SimpleDateFormat;
-import java.util.Arrays;
-import java.util.HashSet;
 import java.util.Locale;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -24,7 +21,7 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
-/** DS0101（以及同一 funpublic 协议族）使用的旧版 .NET 授权格式。 */
+/** DS01xx（同一 funpublic 协议族）使用的旧版 .NET 授权格式。 */
 public final class LegacyDotNetProtocol {
     public static final String REQUEST_KEY = "itmcsoft";
     public static final String LOCAL_KEY = "*b2bOK*";
@@ -32,8 +29,8 @@ public final class LegacyDotNetProtocol {
     public static final String CODE_KEY_PREFIX = "itmc";
     public static final String CODE_KEY = CODE_KEY_PREFIX + PRODUCT_NAME;
 
-    private static final Set<String> LEGACY_VERSIONS = new HashSet<String>(Arrays.asList(
-            "DS0101", "DS0102", "DS0103", "DS0109", "DS0111"));
+    /** DS0101、DS0102 等 DS01xx 系列使用旧版 itmcIEC 协议；不要把新版 YX03xx 混入。 */
+    private static final Pattern LEGACY_VERSION = Pattern.compile("(?i)^DS01\\d{2}$");
     private static final Pattern HEX = Pattern.compile("[0-9a-fA-F]+");
     private static final Pattern SOFT_VERSION = Pattern.compile(
             "(?is)<SoftVersionID\\b[^>]*>\\s*([^<]+?)\\s*</SoftVersionID\\s*>");
@@ -48,10 +45,9 @@ public final class LegacyDotNetProtocol {
         return CODE_KEY_PREFIX + productName.trim();
     }
 
-    /** 判断版本是否属于已确认使用 itmcIEC 旧协议的 DS01xx 型号。 */
+    /** 根据 SoftVersionID 判断是否属于 DS01xx 旧版 itmcIEC 协议。 */
     public static boolean isLegacyVersion(String softVersion) {
-        if (softVersion == null) return false;
-        return LEGACY_VERSIONS.contains(softVersion.trim().toUpperCase(Locale.ROOT));
+        return softVersion != null && LEGACY_VERSION.matcher(softVersion.trim()).matches();
     }
 
     /** 从 .NET 应用根目录或 bin 目录的 config.xml 读取 SystemSoft/SoftVersionID。 */
@@ -110,17 +106,12 @@ public final class LegacyDotNetProtocol {
     public static SequenceInfo decodeSequence(String sequence) throws Exception {
         String plain = decrypt(REQUEST_KEY, sequence);
         if (plain.length() < 43) {
-            throw new IllegalArgumentException("旧协议申请号明文长度不足，必须使用 DS0101 注册页生成的申请号");
+            throw new IllegalArgumentException("旧协议申请号明文长度不足，必须使用 DS01xx 注册页生成的申请号");
         }
         String regId = plain.substring(4, 20);
         String requestTime = plain.substring(24, 43);
         validateRequestTime(requestTime);
         return new SequenceInfo(sequence.trim(), plain, regId, requestTime);
-    }
-
-    /** 保留 DS0101 默认入口，供旧调用方使用。 */
-    public static CodeResult generateAuthorizationCode(String sequence) throws Exception {
-        return generateAuthorizationCode(sequence, "DS0101");
     }
 
     /**
@@ -162,7 +153,7 @@ public final class LegacyDotNetProtocol {
         }
         String value = softVersionId.trim();
         if (!isLegacyVersion(value)) {
-            throw new IllegalArgumentException("不是已确认的 DS01xx 旧协议版本: " + value);
+            throw new IllegalArgumentException("不是 DS01xx 旧协议版本: " + value);
         }
         return value;
     }
