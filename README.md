@@ -2,7 +2,7 @@
 
 ITMC 云实训平台离线授权恢复工具，支持 Java 与 .NET 应用。项目面向原授权服务不可用后的本地恢复场景，保留 Java 8 / Windows 7 / Windows Server 2008 兼容边界。
 
-当前稳定版本：**v1.1.1**
+当前稳定版本：**v1.1.2**
 
 ## 下载
 
@@ -39,28 +39,31 @@ CI 构建正式 portable ZIP 时会下载该固定 runtime、校验 SHA-256，�
 
 ## 软件自动更新
 
-从 v1.1.0 起，默认 modern GUI 启动后会后台检查 GitHub 最新**正式 Release**。
+从 v1.1.0 起，软件可以检查 GitHub 最新**正式 Release**。
 
 - 只跟随 `vX.Y.Z` 正式版，不自动安装 `rolling-latest`。
 - 下载后必须通过 `SHA256SUMS.txt` 校验才会安装。
 - v1.1.1 起优先下载 `LicenseRecover-update.zip`，因此以后新增功能时通常不需要重复下载内置 JRE。
+- v1.1.2 起 GUI 底部右下角直接显示当前版本与 `检查更新` 按钮。
 - 如果某个旧 Release 没有轻量更新包，则自动回退到 `LicenseRecover-latest.zip`。
 - 更新由独立临时安装器完成，成功后自动重新启动 `run_gui.bat`。
-- 可使用 `run_gui.bat --update-only` 手动检查更新。
+- 也可使用 `run_gui.bat --update-only` 手动检查更新。
 
 > 软件更新使用 GitHub 公共 Releases 接口，因此仓库需要设置为 Public 后，未登录 GitHub 的客户端才能正常检查更新。
 
 ## 当前界面与运行入口
 
-- `run_gui.bat`：默认现代 GUI + 后台检查更新。
-- `run_gui_modern.bat`：显式启动现代 GUI。
-- `run_gui_legacy.bat`：旧 GUI 回退入口。
+- `run_gui.bat`：默认现代 GUI + 后台检查更新 + 底部右下角更新入口。
+- `run_gui_modern.bat`：显式启动现代 GUI，同样显示底部更新入口。
+- `run_gui_legacy.bat`：旧 GUI 回退入口；v1.1.2 起同样修复长授权码布局并显示更新入口。
 - `run.bat`：CLI 方式一 / 方式二入口。
 - `run_removenet.bat`：默认安全方式三入口。
 - `run_removenet_safe.bat`：显式安全方式三入口。
 - `run_removenet_legacy.bat`：旧方式三回退入口。
 
 新版 GUI 由 `LicenseRecoverOverlay.jar` + `LicenseRecoverGUI.jar` 组合加载。
+
+v1.1.2 对长注册申请号 / 离线授权码字段增加了宽度约束：超出可见区域的内容保留在输入框内部，不再撑宽整个面板或把右侧按钮顶出窗口。
 
 ## 支持范围
 
