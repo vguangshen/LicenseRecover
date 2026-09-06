@@ -16,61 +16,16 @@ jobs:
         with:
           distribution: temurin
           java-version: '8'
-      - name: Compile all Java sources against bundled GUI runtime
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p build/verify build/test
-          javac -encoding UTF-8 -cp LicenseRecoverGUI.jar -d build/verify *.java
-          javac -encoding UTF-8 -cp build/verify:LicenseRecoverGUI.jar -d build/test tests/RefactorSmokeTest.java
-      - name: Run refactor smoke tests
-        shell: bash
-        run: |
-          set -euo pipefail
-          java -cp build/verify:build/test:LicenseRecoverGUI.jar RefactorSmokeTest
-      - name: Build deterministic runtime overlay
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p build/overlay-classes
-          for prefix in AppDetector AppInfo BatchTarget ConfigSafety LicenseRecoverModernGUI OperationResult PatchSafety ProcessRunner SafeNetRemoverCLI SafetyBackup; do
-            cp build/verify/${prefix}*.class build/overlay-classes/
-          done
-          find build/overlay-classes -exec touch -t 198001010000 {} +
-          jar cfM build/LicenseRecoverOverlay.jar -C build/overlay-classes .
-          jar tf build/LicenseRecoverOverlay.jar | grep -q '^LicenseRecoverModernGUI.class$'
-          jar tf build/LicenseRecoverOverlay.jar | grep -q '^SafeNetRemoverCLI.class$'
-      - name: Assemble test distribution
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p build/dist
-          cp LicenseRecover.jar LicenseRecoverGUI.jar build/dist/
-          cp build/LicenseRecoverOverlay.jar build/dist/
-          cp -R LicenseRecover.NET build/dist/LicenseRecover.NET
-          cp README.txt PHASE1_REFACTOR.md run.bat build/dist/
-          cp run_gui.bat run_gui_modern.bat run_gui_legacy.bat build/dist/
-          cp run_removenet.bat run_removenet_safe.bat run_removenet_legacy.bat build/dist/
-          cp LicenseRecoverGUI.exe build/dist/LicenseRecoverGUI-legacy.exe
-          cp LicenseRecoverGUI.ico virbox_keystream.bin build/dist/
-          (cd build/dist && zip -qr ../LicenseRecover-test.zip .)
-      - name: Verify default and fallback entrypoints
-        shell: bash
-        run: |
-          set -euo pipefail
-          grep -q 'LicenseRecoverOverlay.jar' build/dist/run_gui.bat
-          grep -q 'LicenseRecoverModernGUI' build/dist/run_gui.bat
-          grep -q -- '-jar.*LicenseRecoverGUI.jar' build/dist/run_gui_legacy.bat
-          grep -q 'run_removenet_safe.bat' build/dist/run_removenet.bat
-          grep -q 'LicenseRecoverOverlay.jar' build/dist/run_removenet_safe.bat
-          grep -q 'SafeNetRemoverCLI' build/dist/run_removenet_safe.bat
+      - name: Compile, test and assemble verified distribution
+        shell: pwsh
+        run: ./scripts/verify.ps1
       - uses: actions/upload-artifact@v7
         with:
           name: LicenseRecover-test
           path: build/LicenseRecover-test.zip
           if-no-files-found: error
       - name: Sync verified overlay to refactor branch
-        if: github.event_name == 'push' && github.ref == 'refs/heads/refactor/phase2-ui-defaults'
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/refactor/')
         shell: bash
         run: |
           set -euo pipefail
@@ -83,4 +38,4 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add LicenseRecoverOverlay.jar
           git commit -m '同步CI验证的运行时overlay'
-          git push origin HEAD:refactor/phase2-ui-defaults
+          git push origin "HEAD:${GITHUB_REF_NAME}"
