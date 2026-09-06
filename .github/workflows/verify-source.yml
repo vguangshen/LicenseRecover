@@ -14,13 +14,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '8'
-      - name: Compile Java sources against bundled GUI runtime
+      - name: Compile all Java sources against bundled GUI runtime
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p build/verify
-          javac -encoding UTF-8 -cp LicenseRecoverGUI.jar -d build/verify \
-            LegacyDotNetProtocol.java \
-            NetRemover.java \
-            LicenseRecover.java \
-            LicenseRecoverGUI.java
+          javac -encoding UTF-8 -cp LicenseRecoverGUI.jar -d build/verify *.java
