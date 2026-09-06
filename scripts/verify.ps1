@@ -11,7 +11,8 @@ $testDir = Join-Path $buildRoot 'test'
 $overlayDir = Join-Path $buildRoot 'overlay-classes'
 $distDir = Join-Path $buildRoot 'dist'
 $overlayJar = Join-Path $buildRoot 'LicenseRecoverOverlay.jar'
-$archive = Join-Path $buildRoot 'LicenseRecover-test.zip'
+$archive = Join-Path $buildRoot 'LicenseRecover-latest.zip'
+$checksumFile = Join-Path $buildRoot 'SHA256SUMS.txt'
 $mainSourceDir = Join-Path $repoRoot 'src/main/java'
 $testSourceDir = Join-Path $repoRoot 'src/test/java'
 $guiRuntimeJar = Join-Path $repoRoot 'LicenseRecoverGUI.jar'
@@ -49,6 +50,11 @@ if ($rootJava.Count -ne 0) {
     throw 'Java source files must live under src/main/java; root-level .java files were found.'
 }
 
+$legacyRootArchive = Join-Path $repoRoot 'LicenseRecover-latest.zip'
+if (Test-Path -LiteralPath $legacyRootArchive) {
+    throw 'LicenseRecover-latest.zip must be generated under build/ and published as a Release asset, not tracked at repository root.'
+}
+
 $mainSources = @(Get-ChildItem -LiteralPath $mainSourceDir -Filter '*.java' -File | Sort-Object Name | ForEach-Object { $_.FullName })
 if ($mainSources.Count -eq 0) {
     throw 'No Java sources found under src/main/java.'
@@ -65,8 +71,11 @@ foreach ($dir in @($verifyDir, $testDir, $overlayDir, $distDir)) {
     }
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
 }
-if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
-if (Test-Path -LiteralPath $overlayJar) { Remove-Item -LiteralPath $overlayJar -Force }
+foreach ($generated in @($archive, $checksumFile, $overlayJar)) {
+    if (Test-Path -LiteralPath $generated) {
+        Remove-Item -LiteralPath $generated -Force
+    }
+}
 
 Write-Host "Compiling $($mainSources.Count) Java source files with Java 8-compatible sources..."
 $compileMainArgs = @('-encoding', 'UTF-8', '-cp', $guiRuntimeJar, '-d', $verifyDir) + $mainSources
@@ -118,7 +127,7 @@ if ($overlayEntries -notcontains 'SafeNetRemoverCLI.class') {
     throw 'Overlay is missing SafeNetRemoverCLI.class.'
 }
 
-Write-Host 'Assembling test distribution...'
+Write-Host 'Assembling release distribution...'
 $distributionFiles = @(
     'LicenseRecover.jar',
     'LicenseRecoverGUI.jar',
@@ -127,6 +136,7 @@ $distributionFiles = @(
     'PHASE1_REFACTOR.md',
     'PHASE2_UI.md',
     'PHASE3_STRUCTURE.md',
+    'PHASE4_RELEASE.md',
     'run.bat',
     'run_gui.bat',
     'run_gui_modern.bat',
@@ -152,12 +162,19 @@ Assert-TextContains (Join-Path $distDir 'run_removenet.bat') 'run_removenet_safe
 Assert-TextContains (Join-Path $distDir 'run_removenet_safe.bat') 'LicenseRecoverOverlay.jar'
 Assert-TextContains (Join-Path $distDir 'run_removenet_safe.bat') 'SafeNetRemoverCLI'
 
-Write-Host 'Creating test distribution archive...'
+Write-Host 'Creating release distribution archive...'
 Compress-Archive -Path (Join-Path $distDir '*') -DestinationPath $archive -CompressionLevel Optimal -Force
 if (-not (Test-Path -LiteralPath $archive)) {
     throw 'Distribution archive was not created.'
 }
 
+$sha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+Set-Content -LiteralPath $checksumFile -Value ($sha256 + '  LicenseRecover-latest.zip') -Encoding ASCII
+if (-not (Test-Path -LiteralPath $checksumFile)) {
+    throw 'SHA256SUMS.txt was not created.'
+}
+
 Write-Host "Verified overlay: $overlayJar"
 Write-Host "Verified distribution: $archive"
+Write-Host "SHA-256: $sha256"
 Write-Host 'ALL SOURCE VERIFICATION STEPS PASSED'

@@ -6,9 +6,9 @@
 - `src/test/java/` — source-level smoke tests.
 - `scripts/verify.ps1` — canonical compile/test/overlay/distribution pipeline used locally and in GitHub Actions.
 - `scripts/verify.cmd` — Windows wrapper for the PowerShell verification script.
-- Repository root — runtime/distribution compatibility files (`LicenseRecover*.jar`, launch scripts, legacy EXE, .NET helper and assets).
+- Repository root — runtime compatibility files (`LicenseRecover*.jar`, launch scripts, legacy EXE, .NET helper and assets).
 
-The project intentionally keeps Java classes in the default package for compatibility with the existing runtime JARs. Phase 3 changes source locations only; it does not introduce Java package names.
+The project intentionally keeps Java classes in the default package for compatibility with the existing runtime JARs. Moving sources under `src/` does not change compiled class names.
 
 ## Requirements
 
@@ -34,15 +34,25 @@ PowerShell 7 / Linux / macOS:
 A successful run performs the same major checks as CI:
 
 1. Ensures Java source files are under `src/main/java` rather than the repository root.
-2. Compiles all production Java sources.
-3. Compiles and runs `RefactorSmokeTest`.
-4. Builds the deterministic `LicenseRecoverOverlay.jar`.
-5. Assembles the runtime test distribution without changing legacy runtime JARs.
-6. Verifies modern default launchers and legacy fallback launchers.
-7. Creates `build/LicenseRecover-test.zip`.
+2. Ensures the release ZIP is not tracked at repository root.
+3. Compiles all production Java sources.
+4. Compiles and runs `RefactorSmokeTest`.
+5. Builds the deterministic `LicenseRecoverOverlay.jar`.
+6. Assembles the runtime distribution without changing legacy runtime JARs.
+7. Verifies modern default launchers and legacy fallback launchers.
+8. Creates `build/LicenseRecover-latest.zip` and `build/SHA256SUMS.txt`.
 
 Generated files are kept under `build/` and are ignored by Git.
 
+## Release flow
+
+Every successful push verification on `main` updates the `rolling-latest` GitHub prerelease. The release contains:
+
+- `LicenseRecover-latest.zip`
+- `SHA256SUMS.txt`
+
+The `rolling-latest` tag intentionally moves to the newest successfully verified `main` commit. Stable versioned releases can be added later without changing this continuous delivery path.
+
 ## Runtime compatibility boundary
 
-Do not move or rename root-level runtime files casually. Existing users and launch scripts still rely on the current root distribution layout. Source layout and runtime layout are intentionally separate until a future packaging phase provides a migration path.
+Do not move or rename root-level runtime files casually. Existing users and launch scripts still rely on the current root distribution layout. Development sources, build output and release assets are intentionally separated from that runtime compatibility surface.

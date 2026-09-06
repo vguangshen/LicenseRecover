@@ -21,8 +21,10 @@ jobs:
         run: ./scripts/verify.ps1
       - uses: actions/upload-artifact@v7
         with:
-          name: LicenseRecover-test
-          path: build/LicenseRecover-test.zip
+          name: LicenseRecover-latest
+          path: |
+            build/LicenseRecover-latest.zip
+            build/SHA256SUMS.txt
           if-no-files-found: error
       - name: Sync verified overlay to refactor branch
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/refactor/')
@@ -39,3 +41,40 @@ jobs:
           git add LicenseRecoverOverlay.jar
           git commit -m '同步CI验证的运行时overlay'
           git push origin "HEAD:${GITHUB_REF_NAME}"
+      - name: Publish rolling latest release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag='rolling-latest'
+          title='LicenseRecover Rolling Latest'
+          notes_file='build/rolling-release-notes.md'
+
+          cat > "$notes_file" <<EOF
+          Automated verified build from main.
+
+          Commit: ${GITHUB_SHA}
+          Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          Assets:
+          - LicenseRecover-latest.zip
+          - SHA256SUMS.txt
+
+          This is a rolling prerelease. The tag moves to the latest successfully verified main commit.
+          EOF
+
+          git tag -f "$tag" "$GITHUB_SHA"
+          git push --force origin "refs/tags/$tag"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --title "$title" --notes-file "$notes_file" --prerelease
+          else
+            gh release create "$tag" --title "$title" --notes-file "$notes_file" --prerelease
+          fi
+
+          gh release upload "$tag" \
+            build/LicenseRecover-latest.zip \
+            build/SHA256SUMS.txt \
+            --clobber
