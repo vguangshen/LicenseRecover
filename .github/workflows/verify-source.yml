@@ -1,0 +1,59 @@
+name: Verify source
+
+on:
+  push:
+    branches: [ main, "refactor/**" ]
+  pull_request:
+
+jobs:
+  compile-java:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+      - name: Compile all Java sources against bundled GUI runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/verify build/test
+          javac -encoding UTF-8 -cp LicenseRecoverGUI.jar -d build/verify *.java
+          javac -encoding UTF-8 -cp build/verify:LicenseRecoverGUI.jar -d build/test tests/RefactorSmokeTest.java
+      - name: Run refactor smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -cp build/verify:build/test:LicenseRecoverGUI.jar RefactorSmokeTest
+      - name: Assemble phase-1 test distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/dist
+          cp LicenseRecover.jar build/dist/LicenseRecover.jar
+          cp LicenseRecoverGUI.jar build/dist/LicenseRecoverGUI.jar
+          jar uf build/dist/LicenseRecover.jar -C build/verify .
+          jar uf build/dist/LicenseRecoverGUI.jar -C build/verify .
+          cp -R LicenseRecover.NET build/dist/LicenseRecover.NET
+          cp README.txt PHASE1_REFACTOR.md run.bat run_gui_modern.bat run_removenet_safe.bat build/dist/
+          cp run_gui.bat build/dist/run_gui_legacy.bat
+          cp run_gui_modern.bat build/dist/run_gui.bat
+          cp run_removenet.bat build/dist/run_removenet_legacy.bat
+          cp run_removenet_safe.bat build/dist/run_removenet.bat
+          cp LicenseRecoverGUI.exe build/dist/LicenseRecoverGUI-legacy.exe
+          cp LicenseRecoverGUI.ico virbox_keystream.bin build/dist/
+          (cd build/dist && zip -qr ../LicenseRecover-phase1.zip .)
+      - name: Verify modern GUI and safe CLI are packaged
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar tf build/dist/LicenseRecoverGUI.jar | grep -q '^LicenseRecoverModernGUI.class$'
+          jar tf build/dist/LicenseRecover.jar | grep -q '^SafeNetRemoverCLI.class$'
+          grep -q 'LicenseRecoverModernGUI' build/dist/run_gui.bat
+          grep -q 'SafeNetRemoverCLI' build/dist/run_removenet.bat
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LicenseRecover-phase1
+          path: build/LicenseRecover-phase1.zip
+          if-no-files-found: error
