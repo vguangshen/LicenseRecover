@@ -28,6 +28,9 @@ jobs:
       - name: Prepare local authorization runtime
         shell: pwsh
         run: ./scripts/prepare-local-auth-userid.ps1
+      - name: Prepare Java sample compatibility
+        shell: pwsh
+        run: ./scripts/prepare-java-sample-profiles.ps1
       - name: Fetch embedded Corretto JRE runtime
         shell: bash
         env:
