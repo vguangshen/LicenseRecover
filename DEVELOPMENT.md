@@ -2,20 +2,21 @@
 
 ## Source layout
 
-- `src/main/java/` — all Java production sources.
+- `src/main/java/` — Java production sources.
 - `src/test/java/` — source-level smoke tests.
 - `scripts/verify.ps1` — canonical compile/test/overlay/distribution pipeline used locally and in GitHub Actions.
 - `scripts/verify.cmd` — Windows wrapper for the PowerShell verification script.
-- Repository root — runtime compatibility files (`LicenseRecover*.jar`, launch scripts, legacy EXE, .NET helper and assets).
+- `release-notes/` — version-specific stable release notes.
+- Repository root — runtime/distribution compatibility files (`LicenseRecover*.jar`, launch scripts, legacy EXE, .NET helper and assets).
 
-The project intentionally keeps Java classes in the default package for compatibility with the existing runtime JARs. Moving sources under `src/` does not change compiled class names.
+Java classes intentionally remain in the default package so compiled class names stay compatible with the existing runtime JARs and overlay classpath.
 
 ## Requirements
 
 - JDK 8 or a newer JDK capable of compiling the current Java 8-compatible sources.
 - Windows PowerShell 5.1+ for `scripts\verify.cmd`, or PowerShell 7+ for direct cross-platform execution.
 
-The bundled runtime JARs remain required as compile/runtime compatibility inputs.
+The bundled runtime JARs remain compile/runtime compatibility inputs.
 
 ## Verify locally
 
@@ -31,28 +32,53 @@ PowerShell 7 / Linux / macOS:
 ./scripts/verify.ps1
 ```
 
-A successful run performs the same major checks as CI:
+A successful run:
 
-1. Ensures Java source files are under `src/main/java` rather than the repository root.
-2. Ensures the release ZIP is not tracked at repository root.
-3. Compiles all production Java sources.
-4. Compiles and runs `RefactorSmokeTest`.
-5. Builds the deterministic `LicenseRecoverOverlay.jar`.
-6. Assembles the runtime distribution without changing legacy runtime JARs.
-7. Verifies modern default launchers and legacy fallback launchers.
-8. Creates `build/LicenseRecover-latest.zip` and `build/SHA256SUMS.txt`.
+1. verifies the standard source layout;
+2. validates `VERSION.txt` and matching release notes;
+3. compiles all Java production sources;
+4. compiles and runs `RefactorSmokeTest`;
+5. builds the deterministic `LicenseRecoverOverlay.jar`;
+6. assembles the user-facing runtime distribution;
+7. verifies modern default and legacy fallback launchers;
+8. creates `build/LicenseRecover-latest.zip`;
+9. creates `build/SHA256SUMS.txt`.
 
-Generated files are kept under `build/` and are ignored by Git.
+Generated files stay under `build/` and are ignored by Git.
 
-## Release flow
+## Versioning
 
-Every successful push verification on `main` updates the `rolling-latest` GitHub prerelease. The release contains:
+`VERSION.txt` is the stable version source of truth and contains a semantic version without the `v` prefix, for example:
 
-- `LicenseRecover-latest.zip`
-- `SHA256SUMS.txt`
+```text
+1.0.0
+```
 
-The `rolling-latest` tag intentionally moves to the newest successfully verified `main` commit. Stable versioned releases can be added later without changing this continuous delivery path.
+For every version there must be a matching file:
 
-## Runtime compatibility boundary
+```text
+release-notes/v1.0.0.md
+```
 
-Do not move or rename root-level runtime files casually. Existing users and launch scripts still rely on the current root distribution layout. Development sources, build output and release assets are intentionally separated from that runtime compatibility surface.
+When preparing a new stable version:
+
+1. update `VERSION.txt`;
+2. update `CHANGELOG.md`;
+3. add `release-notes/vX.Y.Z.md`;
+4. run `scripts\verify.cmd` or `scripts/verify.ps1`;
+5. merge through a passing PR.
+
+After the verified change reaches `main`, CI creates the stable `vX.Y.Z` Release only if it does not already exist. Existing stable releases are never overwritten by normal later `main` builds.
+
+## Release channels
+
+- `rolling-latest`: prerelease, automatically moved to the latest successfully verified `main` commit.
+- `vX.Y.Z`: stable release, fixed to the verified commit that first published that version.
+
+Both channels publish `LicenseRecover-latest.zip` and `SHA256SUMS.txt`.
+
+## Distribution boundary
+
+The user-facing ZIP intentionally contains runtime files and user documentation only. Engineering documents (`DEVELOPMENT.md`, `PHASE*.md`) remain in the repository and are not copied into the runtime ZIP.
+
+Do not move or rename root-level runtime files casually. Existing users and launch scripts still rely on the current root distribution layout.
