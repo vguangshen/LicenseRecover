@@ -1,4 +1,5 @@
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.InputStreamReader;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
@@ -19,6 +20,9 @@ public final class ProcessRunner {
         }
         Consumer<String> sink = log == null ? s -> { } : log;
         List<String> effectiveCommand = normalizeCommand(command, sink);
+        OperationResult preflight = preflightCommand(effectiveCommand, sink);
+        if (preflight != null) return preflight;
+
         Process process = null;
         try {
             ProcessBuilder pb = new ProcessBuilder(effectiveCommand);
@@ -96,6 +100,43 @@ public final class ProcessRunner {
             log.accept("[预览] Java 方式三不执行写回；已自动转换为只扫描。\n");
         }
         return result;
+    }
+
+    /**
+     * 对会写 Java config.xml 的方式一做独立备份预检。
+     * CLI 内部备份即便失败也可能继续写，因此薄 GUI 在启动 CLI 前先建立可校验快照。
+     */
+    static OperationResult preflightCommand(List<String> command, Consumer<String> log) {
+        int mainIndex = command.indexOf("LicenseRecover");
+        if (mainIndex < 0) return null;
+        if (command.contains("--gencode") || command.contains("--remove-net")
+                || command.contains("--scan-net") || command.contains("--batch")
+                || command.contains("--dry-run") || command.contains("--no-backup")) {
+            return null;
+        }
+
+        String appPath = firstPositionalAfterMain(command, mainIndex + 1);
+        if (appPath == null) return null;
+        AppInfo info = AppDetector.detect(new File(appPath));
+        if (info.type != AppInfo.Type.JAVA) return null;
+        if (!ConfigSafety.prepareJavaWay1(info, log)) {
+            return OperationResult.failed("Java 方式一安全备份预检失败", 3);
+        }
+        return null;
+    }
+
+    static String firstPositionalAfterMain(List<String> command, int start) {
+        for (int i = start; i < command.size(); i++) {
+            String value = command.get(i);
+            if ("-p".equals(value) || "--seq".equals(value) || "--product".equals(value)
+                    || "--batch".equals(value)) {
+                i++;
+                continue;
+            }
+            if (value.startsWith("-")) continue;
+            return value;
+        }
+        return null;
     }
 
     /** 兼容已有测试/调用点。 */
