@@ -23,4 +23,4 @@ if not exist "%~dp0LicenseRecoverOverlay.jar" (
   exit /b 1
 )
 
-start "" "%JAVA%" -Dfile.encoding=UTF-8 -Dsun.java2d.dpiaware=true -Dsun.java2d.noddraw=true -cp "%~dp0LicenseRecoverOverlay.jar;%~dp0LicenseRecoverGUI.jar" LicenseRecoverModernGUIUiPatchLauncher %*
+start "" "%JAVA%" -Dfile.encoding=UTF-8 -Dsun.java2d.dpiaware=true -Dsun.java2d.noddraw=true -cp "%~dp0LicenseRecoverOverlay.jar;%~dp0LicenseRecoverGUI.jar" LicenseRecoverModernGUILauncherUiPatch %*
