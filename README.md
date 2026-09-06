@@ -2,7 +2,7 @@
 
 ITMC 云实训平台离线授权恢复工具，支持 Java 与 .NET 应用。项目面向原授权服务不可用后的本地恢复场景，保留 Java 8 / Windows 7 / Windows Server 2008 兼容边界。
 
-当前稳定版本：**v1.1.2**
+当前稳定版本：**v1.1.3**
 
 ## 下载
 
@@ -49,7 +49,7 @@ CI 构建正式 portable ZIP 时会下载该固定 runtime、校验 SHA-256，�
 - 更新由独立临时安装器完成，成功后自动重新启动 `run_gui.bat`。
 - 也可使用 `run_gui.bat --update-only` 手动检查更新。
 
-> 软件更新使用 GitHub 公共 Releases 接口，因此仓库需要设置为 Public 后，未登录 GitHub 的客户端才能正常检查更新。
+仓库现已公开，未登录 GitHub 的客户端可以直接使用公共 Releases API 检查和下载更新。
 
 ## 当前界面与运行入口
 
@@ -77,7 +77,7 @@ v1.1.2 对长注册申请号 / 离线授权码字段增加了宽度约束：超�
 
 ## 三种恢复方式
 
-- **方式一**：写入或调整本地授权相关配置。Java 写入前建立 `prewrite` 备份；.NET 方式一主要用于阻断失效的自动联网授权地址，不修改 DLL。
+- **方式一**：写入或调整本地授权相关配置。Java 写入前建立 `prewrite` 备份；v1.1.3 起生成的本地 `regName` 授权对象固定写入 `UserID=fwq`，外层 `WebSerUserID` 仍保持独立兼容字段；.NET 方式一主要用于阻断失效的自动联网授权地址，不修改 DLL。
 - **方式二**：根据申请号生成离线授权码，交由应用自身的本地注册页面提交。
 - **方式三**：修改授权校验相关字节码 / DLL。默认入口会先建立 `prepatch` 备份并校验后才继续。
 
@@ -130,6 +130,8 @@ release-notes/   版本化稳定 Release Notes
 ```
 
 Java 类目前继续使用 default package，以保持与既有 JAR / overlay 的 class 名兼容。
+
+v1.1.3 的构建流程会把经过 Java 8 编译与 smoke test 验证的 `LicenseRecover.class` 同步回 `LicenseRecover.jar`，避免“源码已更新但发行包仍携带旧 CLI 类”的情况。
 
 ## 本地验证
 

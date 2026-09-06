@@ -2,6 +2,19 @@
 
 All notable user-visible and engineering changes are tracked here from the first stable release onward.
 
+## [1.1.3] - 2026-09-07
+
+### Changed
+
+- Java 方式一本地授权对象现在固定写入 `RegeditInfo.UserID=fwq`，该值会被序列化并加密进 `regName`。
+- 外层 `WebSerUserID` 继续作为独立兼容字段处理，不再被误认为运行时 `RegInfo.UserID`。
+- 构建流程会重新编译 `LicenseRecover.class` 并同步进 `LicenseRecover.jar`，避免源码与最终发行 CLI 二进制不一致。
+
+### Tests
+
+- Smoke test 新增本地授权身份回归验证，确认应用到 `RegeditInfo` 后的 `UserID` 为 `fwq`。
+- 构建阶段通过 `javap` 同时检查发行 `LicenseRecover.jar` 确实包含 `setUserID` 调用和 `fwq` 常量。
+
 ## [1.1.2] - 2026-09-06
 
 ### Fixed

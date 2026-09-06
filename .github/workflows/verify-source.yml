@@ -16,6 +16,9 @@ jobs:
         with:
           distribution: temurin
           java-version: '8'
+      - name: Prepare local authorization runtime
+        shell: pwsh
+        run: ./scripts/prepare-local-auth-userid.ps1
       - name: Fetch embedded Corretto JRE runtime
         shell: bash
         env:
@@ -42,20 +45,26 @@ jobs:
             build/LicenseRecover-update.zip
             build/SHA256SUMS.txt
           if-no-files-found: error
-      - name: Sync verified overlay to refactor branch
+      - name: Sync verified runtime to refactor branch
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/refactor/')
         shell: bash
         run: |
           set -euo pipefail
           cp build/LicenseRecoverOverlay.jar LicenseRecoverOverlay.jar
-          if [ -z "$(git status --porcelain -- LicenseRecoverOverlay.jar)" ]; then
-            echo 'Overlay already matches verified build.'
+          tracked=(
+            src/main/java/LicenseRecover.java
+            src/test/java/RefactorSmokeTest.java
+            LicenseRecover.jar
+            LicenseRecoverOverlay.jar
+          )
+          if [ -z "$(git status --porcelain -- "${tracked[@]}")" ]; then
+            echo 'Verified source/runtime already matches the branch.'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add LicenseRecoverOverlay.jar
-          git commit -m '同步CI验证的运行时overlay'
+          git add "${tracked[@]}"
+          git commit -m '同步固定UserID本地授权与CI验证运行时'
           git push origin "HEAD:${GITHUB_REF_NAME}"
       - name: Publish rolling latest release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'

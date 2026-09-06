@@ -73,6 +73,14 @@ public class LicenseRecover {
     /** 是否在写入前备份原 config.xml。默认 true；--no-backup 可关。 */
     static boolean backupCfg = true;
 
+    /** 本地授权写入 regName 的运行时 UserID；与外层 WebSerUserID 是两个独立字段。 */
+    static final String LOCAL_AUTH_USER_ID = "fwq";
+
+    static void applyLocalAuthIdentity(RegeditInfo info) {
+        if (info == null) throw new IllegalArgumentException("RegeditInfo 不能为空");
+        info.setUserID(LOCAL_AUTH_USER_ID);
+    }
+
     /** 初始化日志：之后所有 System.out/err 都会写入 logs/LicenseRecover_日期.log。 */
     static void initLog() {
         try {
@@ -295,6 +303,7 @@ public class LicenseRecover {
 
         // 2. 构造永续授权信息 (与厂商 doRegistry 生成的 RegeditInfo 同构)
         RegeditInfo info = new RegeditInfo();
+        applyLocalAuthIdentity(info);
         info.setProName(productMain);
         info.setRegID(sn);
         info.setTotalTimes(-1);        // -1 = 不限制连接数
@@ -332,6 +341,7 @@ public class LicenseRecover {
             System.out.println("--- 模拟写入 (dry-run) ---");
             System.out.println("  写 reg/regType      = 1");
             System.out.println("  写 reg/regName      = " + (encrypted.length() > 48 ? encrypted.substring(0, 48) + "..." : encrypted));
+            System.out.println("  regName.UserID       = " + LOCAL_AUTH_USER_ID);
             System.out.println("  写 reg/WebSerUserID = itmc");
             if (blockNet) System.out.println("  写 reg/Service      = http://127.0.0.1:9/Service.asmx  (拦截残留联网请求)");
             System.out.println("目标文件           : " + cfg.getAbsolutePath());
@@ -402,7 +412,7 @@ public class LicenseRecover {
                         + "  endDate=" + (gi.getEndDate() == null ? null : gi.getEndDate().getTime())
                         + "  totalTimes=" + gi.getTotalTimes()
                         + "  classNum=" + gi.getClassNum()
-                        + "  maxCon=" + gi.getMaxCon());
+                        + "  maxCon=" + gi.getMaxCon() + "  userID=" + gi.getUserID());
                 }
                 System.out.println("checkReInfo()(" + cd + ") : " + unregistered + "  (false=注册有效)");
                 if (!unregistered) anyOk = true;

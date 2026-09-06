@@ -18,6 +18,9 @@ public final class RefactorSmokeTest {
     public static void main(String[] args) throws Exception {
         Path base = Files.createTempDirectory("licenserecover-smoke");
 
+        check("fwq".equals(LicenseRecover.LOCAL_AUTH_USER_ID),
+                "local authorization UserID fixed to fwq");
+
         Path javaRoot = base.resolve("javaApp");
         Path javaLib = javaRoot.resolve("WEB-INF/lib");
         Files.createDirectories(javaLib);
