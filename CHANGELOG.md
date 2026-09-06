@@ -2,6 +2,30 @@
 
 All notable user-visible and engineering changes are tracked here from the first stable release onward.
 
+## [1.1.0] - 2026-09-06
+
+### Added
+
+- GitHub Releases based automatic update check in the default modern launcher.
+- Stable-version comparison against GitHub `releases/latest`.
+- Download and SHA-256 verification of `LicenseRecover-latest.zip` before installation.
+- Temporary external update installer so the active overlay JAR can be replaced on Windows.
+- Pre-update backup of runtime files that will be overwritten.
+- ZIP path-traversal / zip-slip protection during update extraction.
+- Automatic relaunch through `run_gui.bat` after a successful update.
+- Manual update-only mode through `run_gui.bat --update-only`.
+- Updater smoke coverage for version comparison, checksum parsing, overwrite behavior and zip-slip rejection.
+
+### Changed
+
+- `run_gui.bat` and `run_gui_modern.bat` now start `LicenseRecoverModernGUILauncher`, which immediately starts the modern GUI and performs the update check in the background.
+- Automatic updates intentionally consume only stable `vX.Y.Z` Releases; `rolling-latest` remains opt-in for testing.
+
+### Compatibility
+
+- A failed automatic update check does not block normal GUI startup.
+- Java 8 and the existing Windows compatibility boundary remain unchanged.
+
 ## [1.0.0] - 2026-09-06
 
 ### Added

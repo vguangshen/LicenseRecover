@@ -1,8 +1,13 @@
+import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 public final class RefactorSmokeTest {
     private static void check(boolean value, String message) {
@@ -93,6 +98,53 @@ public final class RefactorSmokeTest {
                 System.out::print, 10);
         check(process.isSuccess(), "process runner executes and returns success");
 
+        check(LicenseRecoverModernGUIGitHubUpdateService.compareVersions("1.1.0", "1.0.9") > 0,
+                "GitHub updater semantic version comparison");
+        check(LicenseRecoverModernGUIGitHubUpdateService.compareVersions("v1.1.0", "1.1.0") == 0,
+                "GitHub updater normalizes v-prefix");
+        String checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        check(checksum.equals(LicenseRecoverModernGUIGitHubUpdateService.parseChecksum(
+                checksum + "  LicenseRecover-latest.zip\n")),
+                "GitHub updater parses release checksum");
+
+        Path updateInstall = base.resolve("update-install");
+        Files.createDirectories(updateInstall);
+        Files.write(updateInstall.resolve("VERSION.txt"), Arrays.asList("1.0.0"), StandardCharsets.UTF_8);
+        Files.write(updateInstall.resolve("runtime.txt"), Arrays.asList("old"), StandardCharsets.UTF_8);
+        Path updateZip = base.resolve("update.zip");
+        ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(Files.newOutputStream(updateZip)));
+        try {
+            writeZipEntry(zout, "VERSION.txt", "1.1.0\n");
+            writeZipEntry(zout, "runtime.txt", "new\n");
+            writeZipEntry(zout, "nested/new.txt", "created\n");
+        } finally { zout.close(); }
+        LicenseRecoverModernGUIUpdateInstaller.applyUpdate(updateZip.toFile(), updateInstall.toFile());
+        check("1.1.0".equals(new String(Files.readAllBytes(updateInstall.resolve("VERSION.txt")),
+                        StandardCharsets.UTF_8).trim()), "updater replaces VERSION.txt");
+        check("new".equals(new String(Files.readAllBytes(updateInstall.resolve("runtime.txt")),
+                        StandardCharsets.UTF_8).trim()), "updater overwrites runtime files");
+        check(Files.isRegularFile(updateInstall.resolve("nested/new.txt")),
+                "updater adds new runtime files");
+
+        Path maliciousZip = base.resolve("malicious.zip");
+        zout = new ZipOutputStream(new BufferedOutputStream(Files.newOutputStream(maliciousZip)));
+        try { writeZipEntry(zout, "../escape.txt", "blocked\n"); }
+        finally { zout.close(); }
+        boolean blocked = false;
+        try {
+            LicenseRecoverModernGUIUpdateInstaller.applyUpdate(
+                    maliciousZip.toFile(), updateInstall.toFile());
+        } catch (IOException expected) { blocked = true; }
+        check(blocked && !Files.exists(base.resolve("escape.txt")),
+                "updater blocks zip-slip entries");
+
         System.out.println("ALL REFACTOR SMOKE TESTS PASSED");
+    }
+
+    private static void writeZipEntry(ZipOutputStream out, String name, String value)
+            throws IOException {
+        out.putNextEntry(new ZipEntry(name));
+        out.write(value.getBytes(StandardCharsets.UTF_8));
+        out.closeEntry();
     }
 }

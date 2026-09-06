@@ -2,7 +2,7 @@
 
 ITMC 云实训平台离线授权恢复工具，支持 Java 与 .NET 应用。项目面向原授权服务不可用后的本地恢复场景，保留 Java 8 / Windows 7 / Windows Server 2008 兼容边界。
 
-当前稳定版本：**v1.0.0**
+当前稳定版本：**v1.1.0**
 
 ## 下载
 
@@ -22,10 +22,34 @@ ITMC 云实训平台离线授权恢复工具，支持 Java 与 .NET 应用。项
 
 > 新版 GUI 由 `LicenseRecoverOverlay.jar` + `LicenseRecoverGUI.jar` 组合加载。请优先使用 `run_gui.bat`，不要把直接双击旧 `LicenseRecoverGUI.jar` 当作新版 GUI 的启动方式。
 
+## 软件自动更新
+
+v1.1.0 起，默认 modern 启动层会在 GUI 启动后后台请求 GitHub 最新**正式 Release**：
+
+`https://api.github.com/repos/vguangshen/LicenseRecover/releases/latest`
+
+更新规则：
+
+- 只跟随稳定版 `vX.Y.Z`，不会自动安装 `rolling-latest` 预发布；
+- 发现新版本才弹窗，不会因为检查失败阻止软件启动；
+- 下载 `LicenseRecover-latest.zip` 后同时读取 `SHA256SUMS.txt`；
+- SHA-256 不一致时拒绝安装；
+- 安装前会把即将覆盖的现有运行文件备份到临时回滚目录；
+- 解压时阻止 `../` 等 zip-slip 路径穿越；
+- 使用独立临时 Java 更新器覆盖当前目录，成功后自动重新启动 `run_gui.bat`。
+
+手动检查更新可执行：
+
+```bat
+run_gui.bat --update-only
+```
+
+自动更新依赖 GitHub 无登录访问，因此仓库需要保持 **Public**。将来发布新功能时，只需按正常版本流程提高 `VERSION.txt`、增加对应 `release-notes/vX.Y.Z.md` 并合入 `main`；CI 验证通过后会生成新的稳定 Release，旧版本软件即可发现并更新。
+
 ## 当前界面与运行入口
 
-- `run_gui.bat`：默认现代 GUI。
-- `run_gui_modern.bat`：显式启动现代 GUI。
+- `run_gui.bat`：默认 modern GUI + GitHub 稳定版更新检查。
+- `run_gui_modern.bat`：显式启动 modern GUI + 更新检查。
 - `run_gui_legacy.bat`：旧 GUI 回退入口。
 - `run.bat`：CLI 方式一 / 方式二入口。
 - `run_removenet.bat`：默认安全方式三入口。
@@ -61,7 +85,9 @@ ITMC 云实训平台离线授权恢复工具，支持 Java 与 .NET 应用。项
 - 备份失败时终止高风险写入；
 - Java 方式三支持只扫描 / dry-run 路径；
 - 子进程执行统一超时与结果模型；
-- modern / legacy 入口并存，可随时回退。
+- modern / legacy 入口并存，可随时回退；
+- 更新包在覆盖前必须通过 GitHub SHA-256 校验；
+- 更新 ZIP 解压包含路径穿越保护。
 
 ## 发行包主要文件
 
@@ -115,10 +141,11 @@ PowerShell 7 / Linux / macOS：
 
 ## 版本与发布模型
 
-- `VERSION.txt` 保存当前稳定版本号，例如 `1.0.0`。
-- 对应稳定发布说明必须存在于 `release-notes/v1.0.0.md`。
+- `VERSION.txt` 保存当前稳定版本号，例如 `1.1.0`。
+- 对应稳定发布说明必须存在于 `release-notes/v1.1.0.md`。
 - `main` 每次完整验证成功后更新 `rolling-latest` 预发布。
 - 当 `VERSION.txt` 对应的稳定 Release 尚不存在时，验证成功的 `main` 会创建固定的 `vX.Y.Z` 正式 Release；同一版本后续提交不会覆盖该稳定 Release。
+- 软件自动更新读取 GitHub 的 latest stable Release，因此后续新增功能只需走同一版本化发布链路，无需再改更新地址。
 - 根目录不再跟踪生成的 `LicenseRecover-latest.zip`；发行 ZIP 只存在于 `build/`、Actions Artifact 和 GitHub Release 中。
 
 ## 开发说明
