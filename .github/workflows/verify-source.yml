@@ -75,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           cp build/LicenseRecoverOverlay.jar LicenseRecoverOverlay.jar
-          if git diff --quiet -- LicenseRecoverOverlay.jar; then
+          if [ -z "$(git status --porcelain -- LicenseRecoverOverlay.jar)" ]; then
             echo 'Overlay already matches verified build.'
             exit 0
           fi
