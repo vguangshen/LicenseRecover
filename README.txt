@@ -1,4 +1,4 @@
-LicenseRecover v1.0.0
+LicenseRecover v1.1.0
 =====================
 
 ITMC 云实训平台离线授权恢复工具
@@ -18,10 +18,31 @@ ITMC 云实训平台离线授权恢复工具
 请使用 run_gui.bat（或 run_gui_modern.bat）启动新版 GUI。
 直接双击旧 LicenseRecoverGUI.jar 不等同于启动新版 GUI。
 
+软件更新
+--------
+v1.1.0 起，run_gui.bat 会先启动 modern GUI，并在后台检查 GitHub 最新正式 Release。
+只有发现更高的 vX.Y.Z 稳定版本时才弹出更新提示；rolling-latest 不会自动安装。
+
+更新下载：
+  LicenseRecover-latest.zip
+  SHA256SUMS.txt
+
+软件会在安装前校验 SHA-256；不一致时拒绝更新。
+更新器在临时目录运行，因此可以在主程序退出后覆盖当前 Overlay/JAR/脚本。
+覆盖前会备份当前即将替换的运行文件；解压时会阻止 ../ 等路径穿越。
+更新成功后自动重新启动 run_gui.bat。
+
+手动检查更新：
+  run_gui.bat --update-only
+
+更新依赖 GitHub 无登录访问，因此仓库必须保持 Public。
+后续维护只需要提高 VERSION.txt、增加 release-notes\vX.Y.Z.md 并正常合入 main；
+CI 创建新的稳定 Release 后，旧版软件即可自动发现。
+
 入口说明
 --------
-  run_gui.bat               默认现代 GUI
-  run_gui_modern.bat        显式启动现代 GUI
+  run_gui.bat               默认 modern GUI + GitHub 稳定版更新检查
+  run_gui_modern.bat        显式 modern GUI + 更新检查
   run_gui_legacy.bat        旧 GUI 回退入口
   run.bat                   CLI 方式一 / 方式二
   run_removenet.bat         默认安全方式三入口
@@ -58,14 +79,16 @@ Java：
 
 安全保护
 --------
-默认现代路径包含：
+默认 modern 路径包含：
   - 关键写入前强制备份；
   - 备份文件长度校验；
   - SHA-256 内容校验；
   - 备份失败即终止高风险写入；
   - Java 方式三 dry-run / 只扫描路径；
   - 统一子进程超时与结果处理；
-  - modern / legacy 双入口回退。
+  - modern / legacy 双入口回退；
+  - 更新包 SHA-256 强制校验；
+  - 更新 ZIP 路径穿越保护。
 
 发行包文件
 ----------
@@ -93,7 +116,7 @@ Java：
 
 版本与下载
 ----------
-当前稳定版本：v1.0.0
+当前稳定版本：v1.1.0
 
 正式稳定版：GitHub Releases 中的 vX.Y.Z。
 滚动测试版：rolling-latest。
@@ -124,6 +147,6 @@ PowerShell 7 / Linux / macOS：
 兼容与回退
 ----------
 为避免影响既有部署，本版本没有移除旧 GUI / 旧方式三入口。
-如果现代入口出现兼容性问题，可以使用 run_gui_legacy.bat 或 run_removenet_legacy.bat 回退。
+如果 modern 入口出现兼容性问题，可以使用 run_gui_legacy.bat 或 run_removenet_legacy.bat 回退。
 
 更详细的开发说明见仓库 DEVELOPMENT.md。
