@@ -38,6 +38,46 @@ public final class RefactorSmokeTest {
         check(Files.list(javaLib).anyMatch(p -> p.getFileName().toString().contains("prewrite")),
                 "Java way-1 prewrite backup exists");
 
+        Path yt129Root = base.resolve("java-YT00129");
+        Path yt129Lib = yt129Root.resolve("WEB-INF/lib");
+        Files.createDirectories(yt129Lib);
+        Files.createDirectories(yt129Root.resolve("data"));
+        Files.write(yt129Lib.resolve("ITMCReg.jar"), new byte[]{1});
+        Files.write(yt129Root.resolve("systemConfig.yml"), Arrays.asList("global.system.VersionID=YT00129"), StandardCharsets.UTF_8);
+        Files.write(yt129Root.resolve("data/config.xml"), Arrays.asList("<ROOT><SystemSoft><SoftVersionID>YT00129</SoftVersionID></SystemSoft></ROOT>"), StandardCharsets.UTF_8);
+        check("YT00129".equals(LicenseRecover.readSoftId(yt129Root.toString())), "read equals-style YT00129 VersionID");
+        check(!LicenseRecover.isNewStyleApp(yt129Root.toString()), "YT00129 data config is not misclassified as QT30xxx style");
+        check(LicenseRecover.usesRootConfigApp(yt129Root.toString()), "YT00129 uses webapp-root authorization config");
+        check("QT04".equals(LicenseRecover.productMainFor("YT00129")), "YT00129 maps to QT04 ProName");
+        check("QT0420".equals(LicenseRecover.resolveJavaRegStr(yt129Root.toString(), "YT00129")), "YT00129 embeds QT0420 authorization product");
+
+        Path qt30103Root = base.resolve("java-QT30103");
+        Path qt30103Lib = qt30103Root.resolve("WEB-INF/lib");
+        Files.createDirectories(qt30103Lib);
+        Files.createDirectories(qt30103Root.resolve("data"));
+        Files.write(qt30103Lib.resolve("ITMCReg-1.0.5.jar"), new byte[]{1});
+        Files.write(qt30103Root.resolve("systemConfig.yml"), Arrays.asList("global.system.VersionID=QT30103"), StandardCharsets.UTF_8);
+        Files.write(qt30103Root.resolve("data/config.xml"), Arrays.asList("<ROOT><SystemSoft><SoftVersionID>QT30103</SoftVersionID><regInfo>QT30101,QT30102,QT30103,QT30104</regInfo></SystemSoft></ROOT>"), StandardCharsets.UTF_8);
+        check(LicenseRecover.isNewStyleApp(qt30103Root.toString()), "QT30103 regInfo selects QT30xxx style");
+        check("QT30101,QT30102,QT30103,QT30104".equals(LicenseRecover.resolveJavaRegStr(qt30103Root.toString(), "QT30103")), "QT30103 preserves data regInfo");
+
+        Path xmtRoot = base.resolve("java-XMT0107");
+        Path xmtLib = xmtRoot.resolve("WEB-INF/lib");
+        Path xmtClasses = xmtRoot.resolve("WEB-INF/classes");
+        Files.createDirectories(xmtLib);
+        Files.createDirectories(xmtClasses);
+        Files.write(xmtLib.resolve("ITMCReg.jar"), new byte[]{1});
+        Files.write(xmtClasses.resolve("config.xml"), Arrays.asList("<ROOT><SystemSoft><SoftVersionID>XMT0107</SoftVersionID><regInfo>QT0423,QT0428,QT0424,QT0425,QT0427,QT0426,QT0406,QT0430</regInfo></SystemSoft></ROOT>"), StandardCharsets.UTF_8);
+        check("XMT0107".equals(LicenseRecover.readSoftId(xmtRoot.toString())), "read XMT0107 from WEB-INF/classes/config.xml");
+        check("XMT01".equals(LicenseRecover.productMainFor("XMT0107")), "XMT0107 maps to XMT01 ProName");
+        AppInfo xmtDetected = AppDetector.detect(xmtRoot.toFile());
+        check("XMT0107".equals(xmtDetected.softVersionId), "AppDetector reads XMT0107 classes config");
+        LicenseRecoverModernGUIAutoRecovery.Detection xmtOneClick =
+                LicenseRecoverModernGUIAutoRecovery.detect(xmtRoot.toFile());
+        check("XMT0107".equals(xmtOneClick.versionId), "one-click detector reads XMT0107 classes config");
+        check(LicenseRecover.usesRootConfigApp(xmtRoot.toString()), "XMT0107 uses webapp-root authorization config");
+        check("QT0423,QT0428,QT0424,QT0425,QT0427,QT0426,QT0406,QT0430".equals(LicenseRecover.resolveJavaRegStr(xmtRoot.toString(), "XMT0107")), "XMT0107 preserves classes regInfo");
+
         Path nestedRoot = base.resolve("nestedApp");
         Path nestedLib = nestedRoot.resolve("WEB-INF/WEB-INF/lib");
         Files.createDirectories(nestedLib);
@@ -60,6 +100,69 @@ public final class RefactorSmokeTest {
         check(PatchSafety.prepare(dotnetInfo, System.out::print), ".NET prepatch backup succeeds");
         check(Files.list(dotnetBin).anyMatch(p -> p.getFileName().toString().contains("prepatch")),
                 ".NET prepatch backup exists");
+
+        Path modernRoot = base.resolve("modernUppercaseOnly");
+        Path modernBin = modernRoot.resolve("bin");
+        Files.createDirectories(modernBin);
+        Files.write(modernBin.resolve("ITMC.Web.dll"), new byte[]{1});
+        Files.write(modernBin.resolve("ITMC.Regedit.dll"), new byte[]{2});
+        AppInfo modernInfo = AppDetector.detect(modernRoot.toFile());
+        check(modernInfo.type == AppInfo.Type.DOTNET,
+                "detect modern .NET app with uppercase ITMC.Regedit.dll only");
+        check(!Files.exists(modernBin.resolve("itmcRegedit.dll")),
+                "uppercase-only detector does not require legacy lowercase assembly");
+
+        Path productFixture = base.resolve("YX0303-Web.dll");
+        writeUtf16Fixture(productFixture, "YX0303", "YX030301", "YX030308", "YX030322");
+        check("YX0303".equals(LicenseRecoverModernGUIAutoRecovery.detectProduct(
+                        productFixture.toFile(), null)),
+                "one-click detects YX0303 ProName from target assembly strings");
+        check("YX030301,YX030308,YX030322".equals(
+                        LicenseRecoverModernGUIAutoRecovery.detectProductList(
+                                productFixture.toFile(), "YX0303")),
+                "one-click derives YX0303 local product list");
+
+        Path dsFixture = base.resolve("DS01-Web.dll");
+        writeUtf16Fixture(dsFixture, "itmcIEC", "DS0101", "DS0107", "DS0110", "DS0112");
+        check("itmcIEC".equals(LicenseRecoverModernGUIAutoRecovery.detectProduct(
+                        dsFixture.toFile(), null)),
+                "one-click detects itmcIEC DS01xx ProName");
+        check("DS0101,DS0107,DS0110,DS0112".equals(
+                        LicenseRecoverModernGUIAutoRecovery.detectProductList(
+                                dsFixture.toFile(), "itmcIEC")),
+                "one-click derives DS01xx local product list");
+
+        String knownPlain = "123456{\"UserID\":\"fwq\"}654321";
+        String knownCipher = "9ED04E8D57009B0173A79367751FB10CF6348ACA295E0F1D56826AC5E8CC163D";
+        check(knownCipher.equals(LicenseRecoverModernGUIAutoRecovery.desEncryptHex(
+                        knownPlain, "*ITMCYX0302OK*")),
+                "one-click DES/CBC local-license encryption matches known vector");
+        check(knownPlain.equals(LicenseRecoverModernGUIAutoRecovery.desDecryptHex(
+                        knownCipher, "*ITMCYX0302OK*")),
+                "one-click DES/CBC known vector decrypts correctly");
+
+        String regJson = LicenseRecoverModernGUIAutoRecovery.buildRegInfoJson(
+                "F000606A59904719", "YX0302", "YX030201,YX030204");
+        check(regJson.contains("\"UserID\":\"fwq\""),
+                "one-click RegInfo embeds fwq in encrypted local object");
+        check(regJson.contains("\"CountDay\":10"),
+                "one-click RegInfo preserves vendor CountDay=10 default");
+        check(regJson.contains("\"RegID\":\"F000606A59904719\""),
+                "one-click RegInfo embeds target RegID");
+
+        String xml = "<ROOT><reg><regType>3</regType><regName>OLD</regName>"
+                + "<WebSerUserID>keep-me</WebSerUserID>"
+                + "<Service>http://regservice.itmc.cn/Service.asmx</Service></reg></ROOT>";
+        String updatedXml = LicenseRecoverModernGUIAutoRecovery.updateLocalLicenseXml(
+                xml, "A1B2C3D4", true);
+        check(updatedXml.contains("<regType>1</regType>"),
+                "one-click writes local regType=1");
+        check(updatedXml.contains("<regName>A1B2C3D4</regName>"),
+                "one-click replaces regName");
+        check(updatedXml.contains("<WebSerUserID>keep-me</WebSerUserID>"),
+                "one-click does not overwrite outer WebSerUserID");
+        check(updatedXml.contains("<Service>http://127.0.0.1:9/Service.asmx</Service>"),
+                "one-click blocks residual registration service when requested");
 
         Path parentApp = base.resolve("parentApp");
         Path parentBin = parentApp.resolve("bin");
@@ -152,6 +255,14 @@ public final class RefactorSmokeTest {
                 "updater blocks zip-slip entries");
 
         System.out.println("ALL REFACTOR SMOKE TESTS PASSED");
+    }
+
+    private static void writeUtf16Fixture(Path path, String... values) throws IOException {
+        StringBuilder text = new StringBuilder();
+        for (String value : values) {
+            text.append(value).append('\u0001');
+        }
+        Files.write(path, text.toString().getBytes(StandardCharsets.UTF_16LE));
     }
 
     private static void writeZipEntry(ZipOutputStream out, String name, String value)
