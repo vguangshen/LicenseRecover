@@ -20,12 +20,12 @@ $classpathSeparator = [IO.Path]::PathSeparator
 function Invoke-External {
     param(
         [Parameter(Mandatory = $true)][string]$Command,
-        [Parameter(ValueFromRemainingArguments = $true)][object[]]$Arguments
+        [Parameter(Mandatory = $true)][object[]]$ArgumentList
     )
 
-    & $Command @Arguments
+    & $Command @ArgumentList
     if ($LASTEXITCODE -ne 0) {
-        throw "Command failed with exit code $LASTEXITCODE: $Command"
+        throw "Command failed with exit code ${LASTEXITCODE}: $Command"
     }
 }
 
@@ -70,14 +70,16 @@ if (Test-Path -LiteralPath $overlayJar) { Remove-Item -LiteralPath $overlayJar -
 
 Write-Host "Compiling $($mainSources.Count) Java source files with Java 8-compatible sources..."
 $compileMainArgs = @('-encoding', 'UTF-8', '-cp', $guiRuntimeJar, '-d', $verifyDir) + $mainSources
-Invoke-External 'javac' @compileMainArgs
+Invoke-External -Command 'javac' -ArgumentList $compileMainArgs
 
 $testClasspath = $verifyDir + $classpathSeparator + $guiRuntimeJar
-Invoke-External 'javac' '-encoding' 'UTF-8' '-cp' $testClasspath '-d' $testDir $smokeTest
+$compileTestArgs = @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $smokeTest)
+Invoke-External -Command 'javac' -ArgumentList $compileTestArgs
 
 Write-Host 'Running refactor smoke tests...'
 $runtimeClasspath = $verifyDir + $classpathSeparator + $testDir + $classpathSeparator + $guiRuntimeJar
-Invoke-External 'java' '-cp' $runtimeClasspath 'RefactorSmokeTest'
+$runTestArgs = @('-cp', $runtimeClasspath, 'RefactorSmokeTest')
+Invoke-External -Command 'java' -ArgumentList $runTestArgs
 
 Write-Host 'Building deterministic runtime overlay...'
 $classPrefixes = @(
@@ -104,9 +106,11 @@ foreach ($prefix in $classPrefixes) {
 
 $fixedTime = [DateTime]::ParseExact('1980-01-01 00:00:00', 'yyyy-MM-dd HH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
 Get-ChildItem -LiteralPath $overlayDir -File | ForEach-Object { $_.LastWriteTime = $fixedTime }
-Invoke-External 'jar' 'cfM' $overlayJar '-C' $overlayDir '.'
+$createOverlayArgs = @('cfM', $overlayJar, '-C', $overlayDir, '.')
+Invoke-External -Command 'jar' -ArgumentList $createOverlayArgs
 
-$overlayEntries = @(Invoke-External 'jar' 'tf' $overlayJar)
+$listOverlayArgs = @('tf', $overlayJar)
+$overlayEntries = @(Invoke-External -Command 'jar' -ArgumentList $listOverlayArgs)
 if ($overlayEntries -notcontains 'LicenseRecoverModernGUI.class') {
     throw 'Overlay is missing LicenseRecoverModernGUI.class.'
 }
