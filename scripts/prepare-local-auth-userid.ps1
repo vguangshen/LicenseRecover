@@ -72,16 +72,13 @@ if ($source.IndexOf('"  userID=" + gi.getUserID()', [StringComparison]::Ordinal)
 [IO.File]::WriteAllText($sourcePath, $source, $utf8NoBom)
 
 $test = [IO.File]::ReadAllText($testPath, [Text.Encoding]::UTF8)
-if ($test.IndexOf('local authorization embeds fixed UserID=fwq', [StringComparison]::Ordinal) -lt 0) {
+if ($test.IndexOf('local authorization UserID fixed to fwq', [StringComparison]::Ordinal) -lt 0) {
     $anchor = '        Path base = Files.createTempDirectory("licenserecover-smoke");'
     $replacement = @'
         Path base = Files.createTempDirectory("licenserecover-smoke");
 
-        itmc.regedit.webservice.RegeditInfo localAuthIdentity =
-                new itmc.regedit.webservice.RegeditInfo();
-        LicenseRecover.applyLocalAuthIdentity(localAuthIdentity);
-        check("fwq".equals(localAuthIdentity.getUserID()),
-                "local authorization embeds fixed UserID=fwq");
+        check("fwq".equals(LicenseRecover.LOCAL_AUTH_USER_ID),
+                "local authorization UserID fixed to fwq");
 '@
     $test = Replace-Required -Text $test -Old $anchor -New $replacement `
         -Description 'local authorization regression smoke test'
