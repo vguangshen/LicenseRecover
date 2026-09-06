@@ -90,10 +90,15 @@ public final class AppDetector {
         return files != null && files.length > 0 ? files[0] : null;
     }
 
+    /**
+     * 新版 YX0303 系列样本只保留大写 ITMC.Regedit.dll；较旧版本同时带小写
+     * itmcRegedit.dll。只要存在 ITMC.Web.dll 且任一注册程序集存在，即视为 .NET 应用。
+     */
     public static boolean hasDotNetFiles(File dir) {
         return dir != null && dir.isDirectory()
                 && new File(dir, "ITMC.Web.dll").isFile()
-                && new File(dir, "itmcRegedit.dll").isFile();
+                && (new File(dir, "ITMC.Regedit.dll").isFile()
+                    || new File(dir, "itmcRegedit.dll").isFile());
     }
 
     public static File findDotNetBin(File start) {
