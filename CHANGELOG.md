@@ -2,29 +2,31 @@
 
 All notable user-visible and engineering changes are tracked here from the first stable release onward.
 
+## [1.1.1] - 2026-09-06
+
+### Fixed
+
+- Restored the embedded Java runtime in the portable distribution so users can run the tool without installing Java separately.
+- Portable builds now include the original runtime family used before the repository refactor: Amazon Corretto 8.492.09.2 / OpenJDK 1.8.0_492-b09, Windows x64 JRE.
+- The build verifies `jre/bin/java.exe`, `jre/bin/javaw.exe`, `LICENSE`, `ASSEMBLY_EXCEPTION` and `THIRD_PARTY_README` before publishing.
+
+### Added
+
+- Fixed support Release `runtime-corretto8-8.492.09.2-win-x64` stores the embedded JRE outside the source tree.
+- `LicenseRecover-latest.zip` is now the portable package with embedded JRE.
+- `LicenseRecover-update.zip` is a smaller application-only package for future self-updates.
+- `SHA256SUMS.txt` now covers both portable and slim update packages.
+- The v1.1.1 updater prefers `LicenseRecover-update.zip` when available and falls back to the full portable ZIP for older Releases.
+- Smoke tests verify that applying the slim update package preserves an existing embedded JRE.
+
 ## [1.1.0] - 2026-09-06
 
 ### Added
 
-- GitHub Releases based automatic update check in the default modern launcher.
-- Stable-version comparison against GitHub `releases/latest`.
-- Download and SHA-256 verification of `LicenseRecover-latest.zip` before installation.
-- Temporary external update installer so the active overlay JAR can be replaced on Windows.
-- Pre-update backup of runtime files that will be overwritten.
-- ZIP path-traversal / zip-slip protection during update extraction.
-- Automatic relaunch through `run_gui.bat` after a successful update.
-- Manual update-only mode through `run_gui.bat --update-only`.
-- Updater smoke coverage for version comparison, checksum parsing, overwrite behavior and zip-slip rejection.
-
-### Changed
-
-- `run_gui.bat` and `run_gui_modern.bat` now start `LicenseRecoverModernGUILauncher`, which immediately starts the modern GUI and performs the update check in the background.
-- Automatic updates intentionally consume only stable `vX.Y.Z` Releases; `rolling-latest` remains opt-in for testing.
-
-### Compatibility
-
-- A failed automatic update check does not block normal GUI startup.
-- Java 8 and the existing Windows compatibility boundary remain unchanged.
+- GitHub stable Release update checks in the default modern GUI launcher.
+- SHA-256 verified update download and a temporary external installer for safe Windows replacement/restart.
+- `run_gui.bat --update-only` manual update check.
+- ZIP path traversal protection and rollback backup support in the updater.
 
 ## [1.0.0] - 2026-09-06
 
@@ -39,17 +41,16 @@ All notable user-visible and engineering changes are tracked here from the first
 - Deterministic `LicenseRecoverOverlay.jar` build.
 - Standard source layout under `src/main/java` and `src/test/java`.
 - Shared local/CI verification pipeline in `scripts/verify.ps1`.
-- `rolling-latest` verified prerelease with `LicenseRecover-latest.zip` and `SHA256SUMS.txt`.
+- `rolling-latest` verified prerelease with generated ZIP and checksum assets.
 - Version-controlled stable release metadata through `VERSION.txt` and `release-notes/`.
 
 ### Changed
 
-- `run_gui.bat` now starts the modern GUI through `LicenseRecoverOverlay.jar` + `LicenseRecoverGUI.jar`.
-- Default mode-three launchers now route through the safe prepatch path; legacy entry points remain available.
+- `run_gui.bat` starts the modern GUI through `LicenseRecoverOverlay.jar` + `LicenseRecoverGUI.jar`.
+- Default mode-three launchers route through the safe prepatch path; legacy entry points remain available.
 - Batch detection no longer walks across unrelated child-directory boundaries into a parent application.
 - Generated all-in-one ZIP is no longer tracked at the repository root; it is produced under `build/` and distributed through Actions / Releases.
-- Production and test Java sources moved out of the repository root without changing class contents or default-package compatibility.
-- User-facing distribution no longer needs development phase documents in the ZIP.
+- Production and test Java sources moved out of the repository root without changing default-package compatibility.
 
 ### Compatibility
 
