@@ -25,12 +25,12 @@ jobs:
             sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64
           fi
           x86_64-w64-mingw32-gcc --version | head -n 1
+      - name: Prepare Java sample compatibility
+        shell: bash
+        run: python3 ./scripts/prepare-java-sample-profiles.py
       - name: Prepare local authorization runtime
         shell: pwsh
         run: ./scripts/prepare-local-auth-userid.ps1
-      - name: Prepare Java sample compatibility
-        shell: pwsh
-        run: ./scripts/prepare-java-sample-profiles.ps1
       - name: Fetch embedded Corretto JRE runtime
         shell: bash
         env:
