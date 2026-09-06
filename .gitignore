@@ -8,6 +8,8 @@ jre/
 
 # Generated build, backup and temporary patch artifacts.
 build/
+/LicenseRecover-latest.zip
+/SHA256SUMS.txt
 *.bak
 *.bak.*
 *.tmp
