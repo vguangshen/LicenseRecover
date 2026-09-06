@@ -15,24 +15,47 @@ public final class AppDetector {
 
     private AppDetector() { }
 
+    /** 单应用检测：允许用户选到 bin/lib/WEB-INF 或其下层后向上寻找应用。 */
     public static AppInfo detect(File selectedPath) {
         if (selectedPath == null) return AppInfo.unknown(null);
         File selected = selectedPath.getAbsoluteFile();
         if (!selected.isDirectory()) return AppInfo.unknown(selected);
 
         File dotNetBin = findDotNetBin(selected);
-        if (dotNetBin != null) {
-            File root = dotNetBin.getParentFile() != null ? dotNetBin.getParentFile() : dotNetBin;
-            return AppInfo.dotNetApp(selected, root, dotNetBin, readDotNetSoftVersion(dotNetBin));
-        }
+        if (dotNetBin != null) return fromDotNetBin(selected, dotNetBin);
 
         File lib = findJavaLib(selected);
-        if (lib != null) {
-            File root = deriveJavaRoot(lib);
-            return AppInfo.javaApp(selected, root, lib, readJavaSoftVersion(root));
-        }
+        if (lib != null) return fromJavaLib(selected, lib);
 
         return AppInfo.unknown(selected);
+    }
+
+    /**
+     * 批量检测：只检查当前子目录本身及其标准 bin/WEB-INF 子路径，不向父级回溯。
+     * 避免父目录本身是应用时，把其任意普通子目录都误判成同一个应用。
+     */
+    public static AppInfo detectLocal(File selectedPath) {
+        if (selectedPath == null) return AppInfo.unknown(null);
+        File selected = selectedPath.getAbsoluteFile();
+        if (!selected.isDirectory()) return AppInfo.unknown(selected);
+
+        File dotNetBin = findDotNetBinLocal(selected);
+        if (dotNetBin != null) return fromDotNetBin(selected, dotNetBin);
+
+        File lib = findJavaLibLocal(selected);
+        if (lib != null) return fromJavaLib(selected, lib);
+
+        return AppInfo.unknown(selected);
+    }
+
+    private static AppInfo fromDotNetBin(File selected, File dotNetBin) {
+        File root = dotNetBin.getParentFile() != null ? dotNetBin.getParentFile() : dotNetBin;
+        return AppInfo.dotNetApp(selected, root, dotNetBin, readDotNetSoftVersion(dotNetBin));
+    }
+
+    private static AppInfo fromJavaLib(File selected, File lib) {
+        File root = deriveJavaRoot(lib);
+        return AppInfo.javaApp(selected, root, lib, readJavaSoftVersion(root));
     }
 
     public static File findItmcRegJar(File lib) {
@@ -55,26 +78,40 @@ public final class AppDetector {
     public static File findDotNetBin(File start) {
         File cur = start;
         while (cur != null) {
-            if (hasDotNetFiles(cur)) return cur;
-            File bin = cur.getName().equalsIgnoreCase("bin") ? cur : new File(cur, "bin");
-            if (hasDotNetFiles(bin)) return bin;
+            File found = findDotNetBinLocal(cur);
+            if (found != null) return found;
             cur = cur.getParentFile();
         }
         return null;
     }
 
+    static File findDotNetBinLocal(File dir) {
+        if (dir == null || !dir.isDirectory()) return null;
+        if (hasDotNetFiles(dir)) return dir;
+        File bin = dir.getName().equalsIgnoreCase("bin") ? dir : new File(dir, "bin");
+        return hasDotNetFiles(bin) ? bin : null;
+    }
+
     public static File findJavaLib(File start) {
         File cur = start;
         while (cur != null) {
-            File direct = cur.getName().equalsIgnoreCase("lib")
-                    ? cur : new File(cur, "WEB-INF" + File.separator + "lib");
-            if (findItmcRegJar(direct) != null) return direct;
-
-            File nested = new File(cur, "WEB-INF" + File.separator + "WEB-INF"
-                    + File.separator + "lib");
-            if (findItmcRegJar(nested) != null) return nested;
+            File found = findJavaLibLocal(cur);
+            if (found != null) return found;
             cur = cur.getParentFile();
         }
+        return null;
+    }
+
+    static File findJavaLibLocal(File dir) {
+        if (dir == null || !dir.isDirectory()) return null;
+        if (dir.getName().equalsIgnoreCase("lib") && findItmcRegJar(dir) != null) return dir;
+
+        File standard = new File(dir, "WEB-INF" + File.separator + "lib");
+        if (findItmcRegJar(standard) != null) return standard;
+
+        File nested = new File(dir, "WEB-INF" + File.separator + "WEB-INF"
+                + File.separator + "lib");
+        if (findItmcRegJar(nested) != null) return nested;
         return null;
     }
 
