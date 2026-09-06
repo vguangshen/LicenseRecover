@@ -1,0 +1,57 @@
+name: Recover embedded JRE
+
+on:
+  push:
+    branches:
+      - fix/embedded-jre-v1.1.1
+
+permissions:
+  contents: read
+
+jobs:
+  recover-jre:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+
+      - name: Recover JRE from pre-refactor distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          OLD_COMMIT=35a6f10678b3bfd3fc7b460655d52d451bb7da0c
+          git fetch --depth=1 origin "$OLD_COMMIT"
+          git show "$OLD_COMMIT:LicenseRecover-latest.zip" > old-LicenseRecover.zip
+          mkdir -p recovered
+          unzip -q old-LicenseRecover.zip -d recovered
+          JAVA_EXE="$(find recovered -type f -path '*/jre/bin/java.exe' -print -quit)"
+          if [ -z "$JAVA_EXE" ]; then
+            echo 'No jre/bin/java.exe found in historical distribution.' >&2
+            exit 1
+          fi
+          JRE_DIR="$(dirname "$(dirname "$JAVA_EXE")")"
+          test -f "$JRE_DIR/bin/javaw.exe"
+          echo "Recovered JRE directory: $JRE_DIR"
+          echo "Total size: $(du -sh "$JRE_DIR" | cut -f1)"
+          echo '--- release metadata ---'
+          if [ -f "$JRE_DIR/release" ]; then
+            cat "$JRE_DIR/release"
+          else
+            echo 'No release file present.'
+          fi
+          echo '--- notable files ---'
+          find "$JRE_DIR" -maxdepth 2 -type f \( -iname '*license*' -o -iname '*readme*' -o -iname '*third*' \) -print | sort | head -50
+          PARENT="$(dirname "$JRE_DIR")"
+          NAME="$(basename "$JRE_DIR")"
+          (cd "$PARENT" && zip -qr "$GITHUB_WORKSPACE/LicenseRecover-jre8-win-x64.zip" "$NAME")
+          sha256sum LicenseRecover-jre8-win-x64.zip > LicenseRecover-jre8-win-x64.sha256
+
+      - name: Upload recovered JRE for inspection
+        uses: actions/upload-artifact@v7
+        with:
+          name: recovered-embedded-jre
+          path: |
+            LicenseRecover-jre8-win-x64.zip
+            LicenseRecover-jre8-win-x64.sha256
+          if-no-files-found: error
