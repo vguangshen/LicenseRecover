@@ -70,6 +70,11 @@ public final class RefactorSmokeTest {
         Files.write(xmtClasses.resolve("config.xml"), Arrays.asList("<ROOT><SystemSoft><SoftVersionID>XMT0107</SoftVersionID><regInfo>QT0423,QT0428,QT0424,QT0425,QT0427,QT0426,QT0406,QT0430</regInfo></SystemSoft></ROOT>"), StandardCharsets.UTF_8);
         check("XMT0107".equals(LicenseRecover.readSoftId(xmtRoot.toString())), "read XMT0107 from WEB-INF/classes/config.xml");
         check("XMT01".equals(LicenseRecover.productMainFor("XMT0107")), "XMT0107 maps to XMT01 ProName");
+        AppInfo xmtDetected = AppDetector.detect(xmtRoot.toFile());
+        check("XMT0107".equals(xmtDetected.softVersionId), "AppDetector reads XMT0107 classes config");
+        LicenseRecoverModernGUIAutoRecovery.Detection xmtOneClick =
+                LicenseRecoverModernGUIAutoRecovery.detect(xmtRoot.toFile());
+        check("XMT0107".equals(xmtOneClick.versionId), "one-click detector reads XMT0107 classes config");
         check(LicenseRecover.usesRootConfigApp(xmtRoot.toString()), "XMT0107 uses webapp-root authorization config");
         check("QT0423,QT0428,QT0424,QT0425,QT0427,QT0426,QT0406,QT0430".equals(LicenseRecover.resolveJavaRegStr(xmtRoot.toString(), "XMT0107")), "XMT0107 preserves classes regInfo");
 

@@ -168,7 +168,12 @@ public final class AppDetector {
             }
         } catch (Exception ignore) { }
 
-        return readSoftVersionXml(new File(appRoot, "data" + File.separator + "config.xml"));
+        String dataVersion = readSoftVersionXml(new File(appRoot, "data" + File.separator + "config.xml"));
+        if (dataVersion != null) return dataVersion;
+        // XMT01xx generation keeps SystemSoft in WEB-INF/classes/config.xml.
+        String classesVersion = readSoftVersionXml(new File(appRoot, "WEB-INF" + File.separator
+                + "classes" + File.separator + "config.xml")); // classes/config.xml fallback
+        return classesVersion;
     }
 
     public static String readDotNetSoftVersion(File binDir) {

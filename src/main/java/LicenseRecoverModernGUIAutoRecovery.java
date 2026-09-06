@@ -276,7 +276,10 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     private static String readJavaVersion(File root) {
         if(root==null)return null; File y=new File(root,"systemConfig.yml");
         try{if(y.isFile())for(String s:Files.readAllLines(y.toPath(),StandardCharsets.UTF_8)){String t=s.trim();if(t.toLowerCase(Locale.ROOT).contains("versionid")){int i=t.indexOf(':');if(i<0)i=t.indexOf('=');if(i>=0&&!blank(t.substring(i+1)))return t.substring(i+1).trim();}}}catch(Exception ignore){}
-        return readVersionFile(new File(root,"data"+File.separator+"config.xml"));
+        String dataVersion=readVersionFile(new File(root,"data"+File.separator+"config.xml"));
+        if(dataVersion!=null)return dataVersion;
+        // XMT classes/config.xml fallback
+        return readVersionFile(new File(root,"WEB-INF"+File.separator+"classes"+File.separator+"config.xml"));
     }
     private static String readVersionFile(File f) { try{if(!f.isFile())return null;return match(SOFT_VERSION,readUtf8(f));}catch(Exception e){return null;} }
 
