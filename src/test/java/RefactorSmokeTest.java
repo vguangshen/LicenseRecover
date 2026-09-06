@@ -61,6 +61,69 @@ public final class RefactorSmokeTest {
         check(Files.list(dotnetBin).anyMatch(p -> p.getFileName().toString().contains("prepatch")),
                 ".NET prepatch backup exists");
 
+        Path modernRoot = base.resolve("modernUppercaseOnly");
+        Path modernBin = modernRoot.resolve("bin");
+        Files.createDirectories(modernBin);
+        Files.write(modernBin.resolve("ITMC.Web.dll"), new byte[]{1});
+        Files.write(modernBin.resolve("ITMC.Regedit.dll"), new byte[]{2});
+        AppInfo modernInfo = AppDetector.detect(modernRoot.toFile());
+        check(modernInfo.type == AppInfo.Type.DOTNET,
+                "detect modern .NET app with uppercase ITMC.Regedit.dll only");
+        check(!Files.exists(modernBin.resolve("itmcRegedit.dll")),
+                "uppercase-only detector does not require legacy lowercase assembly");
+
+        Path productFixture = base.resolve("YX0303-Web.dll");
+        writeUtf16Fixture(productFixture, "YX0303", "YX030301", "YX030308", "YX030322");
+        check("YX0303".equals(LicenseRecoverModernGUIAutoRecovery.detectProduct(
+                        productFixture.toFile(), null)),
+                "one-click detects YX0303 ProName from target assembly strings");
+        check("YX030301,YX030308,YX030322".equals(
+                        LicenseRecoverModernGUIAutoRecovery.detectProductList(
+                                productFixture.toFile(), "YX0303")),
+                "one-click derives YX0303 local product list");
+
+        Path dsFixture = base.resolve("DS01-Web.dll");
+        writeUtf16Fixture(dsFixture, "itmcIEC", "DS0101", "DS0107", "DS0110", "DS0112");
+        check("itmcIEC".equals(LicenseRecoverModernGUIAutoRecovery.detectProduct(
+                        dsFixture.toFile(), null)),
+                "one-click detects itmcIEC DS01xx ProName");
+        check("DS0101,DS0107,DS0110,DS0112".equals(
+                        LicenseRecoverModernGUIAutoRecovery.detectProductList(
+                                dsFixture.toFile(), "itmcIEC")),
+                "one-click derives DS01xx local product list");
+
+        String knownPlain = "123456{\"UserID\":\"fwq\"}654321";
+        String knownCipher = "9ED04E8D57009B0173A79367751FB10CF6348ACA295E0F1D56826AC5E8CC163D";
+        check(knownCipher.equals(LicenseRecoverModernGUIAutoRecovery.desEncryptHex(
+                        knownPlain, "*ITMCYX0302OK*")),
+                "one-click DES/CBC local-license encryption matches known vector");
+        check(knownPlain.equals(LicenseRecoverModernGUIAutoRecovery.desDecryptHex(
+                        knownCipher, "*ITMCYX0302OK*")),
+                "one-click DES/CBC known vector decrypts correctly");
+
+        String regJson = LicenseRecoverModernGUIAutoRecovery.buildRegInfoJson(
+                "F000606A59904719", "YX0302", "YX030201,YX030204");
+        check(regJson.contains("\"UserID\":\"fwq\""),
+                "one-click RegInfo embeds fwq in encrypted local object");
+        check(regJson.contains("\"CountDay\":10"),
+                "one-click RegInfo preserves vendor CountDay=10 default");
+        check(regJson.contains("\"RegID\":\"F000606A59904719\""),
+                "one-click RegInfo embeds target RegID");
+
+        String xml = "<ROOT><reg><regType>3</regType><regName>OLD</regName>"
+                + "<WebSerUserID>keep-me</WebSerUserID>"
+                + "<Service>http://regservice.itmc.cn/Service.asmx</Service></reg></ROOT>";
+        String updatedXml = LicenseRecoverModernGUIAutoRecovery.updateLocalLicenseXml(
+                xml, "A1B2C3D4", true);
+        check(updatedXml.contains("<regType>1</regType>"),
+                "one-click writes local regType=1");
+        check(updatedXml.contains("<regName>A1B2C3D4</regName>"),
+                "one-click replaces regName");
+        check(updatedXml.contains("<WebSerUserID>keep-me</WebSerUserID>"),
+                "one-click does not overwrite outer WebSerUserID");
+        check(updatedXml.contains("<Service>http://127.0.0.1:9/Service.asmx</Service>"),
+                "one-click blocks residual registration service when requested");
+
         Path parentApp = base.resolve("parentApp");
         Path parentBin = parentApp.resolve("bin");
         Path ordinaryChild = parentApp.resolve("ordinaryChild");
@@ -152,6 +215,14 @@ public final class RefactorSmokeTest {
                 "updater blocks zip-slip entries");
 
         System.out.println("ALL REFACTOR SMOKE TESTS PASSED");
+    }
+
+    private static void writeUtf16Fixture(Path path, String... values) throws IOException {
+        StringBuilder text = new StringBuilder();
+        for (String value : values) {
+            text.append(value).append('\u0001');
+        }
+        Files.write(path, text.toString().getBytes(StandardCharsets.UTF_16LE));
     }
 
     private static void writeZipEntry(ZipOutputStream out, String name, String value)
