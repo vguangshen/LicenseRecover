@@ -64,7 +64,7 @@ jobs:
           grep -q 'run_removenet_safe.bat' build/dist/run_removenet.bat
           grep -q 'LicenseRecoverOverlay.jar' build/dist/run_removenet_safe.bat
           grep -q 'SafeNetRemoverCLI' build/dist/run_removenet_safe.bat
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: LicenseRecover-test
           path: build/LicenseRecover-test.zip
