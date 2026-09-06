@@ -18,8 +18,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p build/verify
+          mkdir -p build/verify build/test
           javac -encoding UTF-8 -cp LicenseRecoverGUI.jar -d build/verify *.java
+          javac -encoding UTF-8 -cp build/verify:LicenseRecoverGUI.jar -d build/test tests/RefactorSmokeTest.java
+      - name: Run refactor smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -cp build/verify:build/test:LicenseRecoverGUI.jar RefactorSmokeTest
       - name: Assemble phase-1 test distribution
         shell: bash
         run: |
