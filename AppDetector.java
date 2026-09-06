@@ -15,18 +15,29 @@ public final class AppDetector {
 
     private AppDetector() { }
 
-    /** 单应用检测：允许用户选到 bin/lib/WEB-INF 或其下层后向上寻找应用。 */
+    /**
+     * 单应用检测。优先只检测当前目录；仅当用户明确选中了 bin/lib/WEB-INF/classes/data
+     * 这类应用结构目录时才向父级回溯。这样既兼容手动选到内部目录，又避免批量扫描中的
+     * 普通子目录被误识别成父目录应用。
+     */
     public static AppInfo detect(File selectedPath) {
         if (selectedPath == null) return AppInfo.unknown(null);
         File selected = selectedPath.getAbsoluteFile();
         if (!selected.isDirectory()) return AppInfo.unknown(selected);
 
-        File dotNetBin = findDotNetBin(selected);
-        if (dotNetBin != null) return fromDotNetBin(selected, dotNetBin);
+        AppInfo local = detectLocal(selected);
+        if (local.isDetected()) return local;
+        if (!mayWalkUp(selected)) return AppInfo.unknown(selected);
 
-        File lib = findJavaLib(selected);
-        if (lib != null) return fromJavaLib(selected, lib);
+        File cur = selected.getParentFile();
+        while (cur != null) {
+            File dotNetBin = findDotNetBinLocal(cur);
+            if (dotNetBin != null) return fromDotNetBin(selected, dotNetBin);
 
+            File lib = findJavaLibLocal(cur);
+            if (lib != null) return fromJavaLib(selected, lib);
+            cur = cur.getParentFile();
+        }
         return AppInfo.unknown(selected);
     }
 
@@ -46,6 +57,16 @@ public final class AppDetector {
         if (lib != null) return fromJavaLib(selected, lib);
 
         return AppInfo.unknown(selected);
+    }
+
+    private static boolean mayWalkUp(File selected) {
+        if (selected == null) return false;
+        String name = selected.getName();
+        return "bin".equalsIgnoreCase(name)
+                || "lib".equalsIgnoreCase(name)
+                || "WEB-INF".equalsIgnoreCase(name)
+                || "classes".equalsIgnoreCase(name)
+                || "data".equalsIgnoreCase(name);
     }
 
     private static AppInfo fromDotNetBin(File selected, File dotNetBin) {

@@ -60,8 +60,12 @@ public final class RefactorSmokeTest {
         Files.createDirectories(ordinaryChild);
         Files.write(parentBin.resolve("ITMC.Web.dll"), new byte[]{1});
         Files.write(parentBin.resolve("itmcRegedit.dll"), new byte[]{1});
-        check(AppDetector.detect(ordinaryChild.toFile()).type == AppInfo.Type.DOTNET,
-                "single-app detection may walk upward");
+        check(AppDetector.detect(parentApp.toFile()).type == AppInfo.Type.DOTNET,
+                "single-app detection recognizes app root");
+        check(AppDetector.detect(parentBin.toFile()).type == AppInfo.Type.DOTNET,
+                "single-app detection recognizes standard bin directory");
+        check(AppDetector.detect(ordinaryChild.toFile()).type == AppInfo.Type.UNKNOWN,
+                "single-app detection does not cross unrelated child boundary");
         check(AppDetector.detectLocal(ordinaryChild.toFile()).type == AppInfo.Type.UNKNOWN,
                 "batch local detection does not walk into parent app");
 
