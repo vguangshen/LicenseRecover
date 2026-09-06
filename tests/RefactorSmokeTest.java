@@ -17,6 +17,7 @@ public final class RefactorSmokeTest {
         Path javaLib = javaRoot.resolve("WEB-INF/lib");
         Files.createDirectories(javaLib);
         Files.write(javaLib.resolve("ITMCReg.jar"), new byte[]{1, 2, 3});
+        Files.write(javaLib.resolve("config.xml"), Arrays.asList("<ROOT><reg/></ROOT>"));
         Files.write(javaRoot.resolve("systemConfig.yml"),
                 Arrays.asList("global.system.VersionID: YT00123"));
         AppInfo javaInfo = AppDetector.detect(javaRoot.toFile());
@@ -24,6 +25,10 @@ public final class RefactorSmokeTest {
         check("YT00123".equals(javaInfo.softVersionId), "read Java SoftVersionID");
         check(javaInfo.appRoot.getCanonicalFile().equals(javaRoot.toFile().getCanonicalFile()),
                 "resolve Java app root");
+        check(ConfigSafety.prepareJavaWay1(javaInfo, System.out::print),
+                "Java way-1 prewrite backup succeeds");
+        check(Files.list(javaLib).anyMatch(p -> p.getFileName().toString().contains("prewrite")),
+                "Java way-1 prewrite backup exists");
 
         Path nestedRoot = base.resolve("nestedApp");
         Path nestedLib = nestedRoot.resolve("WEB-INF/WEB-INF/lib");
