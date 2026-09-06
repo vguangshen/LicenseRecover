@@ -16,6 +16,15 @@ jobs:
         with:
           distribution: temurin
           java-version: '8'
+      - name: Prepare Windows native launcher toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1 || ! command -v x86_64-w64-mingw32-windres >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64
+          fi
+          x86_64-w64-mingw32-gcc --version | head -n 1
       - name: Prepare local authorization runtime
         shell: pwsh
         run: ./scripts/prepare-local-auth-userid.ps1
@@ -37,6 +46,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./scripts/verify.ps1
+      - name: Build and package native EXE launcher
+        shell: pwsh
+        run: ./scripts/package-native-launcher.ps1
       - uses: actions/upload-artifact@v7
         with:
           name: LicenseRecover-latest

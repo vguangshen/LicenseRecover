@@ -2,6 +2,20 @@
 
 All notable user-visible and engineering changes are tracked here from the first stable release onward.
 
+## [1.1.4] - 2026-09-07
+
+### Added
+
+- 新增真正的 Windows x64 `LicenseRecoverGUI.exe` 原生启动器，双击 EXE 会启动与 `run_gui.bat` 相同的 `LicenseRecoverModernGUILauncherUiPatch`。
+- 原生启动器优先使用内置 `jre\bin\javaw.exe`，并支持系统 Java / `JAVA_HOME` 回退与命令行参数转发。
+- CI 使用 MinGW-w64 从 `src/native/` 源码构建 EXE，并验证 Windows x64 PE / GUI subsystem、主类、JAR 与 JRE 引用。
+
+### Changed
+
+- 完整便携包和轻量更新包都会包含新的 `LicenseRecoverGUI.exe`。
+- 原来的旧 EXE 继续以 `LicenseRecoverGUI-legacy.exe` 保留，避免破坏已有兼容回退入口。
+- 原生 EXE 注入发行 ZIP 后重新计算 `SHA256SUMS.txt`，确保自更新仍执行最终包的完整性校验。
+
 ## [1.1.3] - 2026-09-07
 
 ### Changed
@@ -60,7 +74,7 @@ All notable user-visible and engineering changes are tracked here from the first
 - Unified application detection for Java / .NET layouts and DS01xx legacy-protocol selection.
 - Typed batch targets and common operation-result / process-runner infrastructure.
 - Mandatory prewrite / prepatch safety backups for default high-risk write paths.
-- Backup verification using file length and SHA-256 content checks.
+- Backup verification using file length + SHA-256 content checks.
 - Java 8 source compilation and smoke tests in GitHub Actions.
 - Deterministic `LicenseRecoverOverlay.jar` build.
 - Standard source layout under `src/main/java` and `src/test/java`.

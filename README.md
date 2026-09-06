@@ -2,7 +2,7 @@
 
 ITMC 云实训平台离线授权恢复工具，支持 Java 与 .NET 应用。项目面向原授权服务不可用后的本地恢复场景，保留 Java 8 / Windows 7 / Windows Server 2008 兼容边界。
 
-当前稳定版本：**v1.1.3**
+当前稳定版本：**v1.1.4**
 
 ## 下载
 
@@ -15,11 +15,11 @@ ITMC 云实训平台离线授权恢复工具，支持 Java 与 .NET 应用。项
 ## 快速开始
 
 1. 下载并解压 `LicenseRecover-latest.zip`。
-2. 双击 `run_gui.bat`。
+2. Windows 下直接双击 **`LicenseRecoverGUI.exe`**；也可以使用 `run_gui.bat` 作为脚本回退入口。
 3. 选择应用目录并点击“检测环境”。
 4. 根据检测结果使用推荐操作。
 
-**无需另外安装 Java。** 发行包自带 `jre/`，启动脚本会优先使用 `jre\bin\javaw.exe`；仅在内置 JRE 缺失时才回退到系统 Java / `JAVA_HOME`。
+**无需另外安装 Java。** 发行包自带 `jre/`；v1.1.4 的原生 EXE 与 BAT 启动器都会优先使用 `jre\bin\javaw.exe`，仅在内置 JRE 缺失时才回退到系统 Java / `JAVA_HOME`。
 
 ## 内置 Java 运行时
 
@@ -45,17 +45,20 @@ CI 构建正式 portable ZIP 时会下载该固定 runtime、校验 SHA-256，�
 - 下载后必须通过 `SHA256SUMS.txt` 校验才会安装。
 - v1.1.1 起优先下载 `LicenseRecover-update.zip`，因此以后新增功能时通常不需要重复下载内置 JRE。
 - v1.1.2 起 GUI 底部右下角直接显示当前版本与 `检查更新` 按钮。
+- v1.1.4 起双击 `LicenseRecoverGUI.exe` 也会进入同一套带更新按钮的 Overlay GUI，不再绕过更新层。
 - 如果某个旧 Release 没有轻量更新包，则自动回退到 `LicenseRecover-latest.zip`。
-- 更新由独立临时安装器完成，成功后自动重新启动 `run_gui.bat`。
+- 更新由独立临时安装器完成，成功后自动重新启动 GUI。
 - 也可使用 `run_gui.bat --update-only` 手动检查更新。
 
 仓库现已公开，未登录 GitHub 的客户端可以直接使用公共 Releases API 检查和下载更新。
 
 ## 当前界面与运行入口
 
-- `run_gui.bat`：默认现代 GUI + 后台检查更新 + 底部右下角更新入口。
+- **`LicenseRecoverGUI.exe`**：v1.1.4 起的推荐 Windows 原生入口；启动现代 GUI、显示版本与右下角更新按钮，并使用与 `run_gui.bat` 相同的 Java 主类。
+- `run_gui.bat`：脚本回退入口；现代 GUI + 后台检查更新 + 底部右下角更新入口。
 - `run_gui_modern.bat`：显式启动现代 GUI，同样显示底部更新入口。
 - `run_gui_legacy.bat`：旧 GUI 回退入口；v1.1.2 起同样修复长授权码布局并显示更新入口。
+- `LicenseRecoverGUI-legacy.exe`：未修改的旧 EXE，仅作为兼容回退保留；它不会加载新的 Overlay UI。
 - `run.bat`：CLI 方式一 / 方式二入口。
 - `run_removenet.bat`：默认安全方式三入口。
 - `run_removenet_safe.bat`：显式安全方式三入口。
@@ -98,11 +101,13 @@ v1.1.2 对长注册申请号 / 离线授权码字段增加了宽度约束：超�
 ## 发行包主要文件
 
 ```text
+LicenseRecoverGUI.exe            # 推荐的 Windows 原生启动器
+LicenseRecoverGUI-legacy.exe     # 旧 EXE 兼容回退
 LicenseRecover.jar
 LicenseRecoverGUI.jar
 LicenseRecoverOverlay.jar
 LicenseRecover.NET/
-jre/                         # Amazon Corretto 8 Windows x64 JRE
+jre/                             # Amazon Corretto 8 Windows x64 JRE
 JRE_SOURCE_NOTICE.txt
 run.bat
 run_gui.bat
@@ -118,20 +123,21 @@ CHANGELOG.md
 RELEASE_NOTES.md
 ```
 
-`LicenseRecoverGUI-legacy.exe` 仅作为旧 GUI 兼容回退保留。
-
 ## 源码结构
 
 ```text
 src/main/java/   Java 生产源码
+src/native/      Windows 原生 EXE 启动器源码 / 资源
 src/test/java/   源码级 smoke tests
-scripts/         本地 / CI 共用验证脚本
+scripts/         本地 / CI 共用验证与打包脚本
 release-notes/   版本化稳定 Release Notes
 ```
 
 Java 类目前继续使用 default package，以保持与既有 JAR / overlay 的 class 名兼容。
 
 v1.1.3 的构建流程会把经过 Java 8 编译与 smoke test 验证的 `LicenseRecover.class` 同步回 `LicenseRecover.jar`，避免“源码已更新但发行包仍携带旧 CLI 类”的情况。
+
+v1.1.4 的 CI 使用 MinGW-w64 从 `src/native/LicenseRecoverGUI.c` 构建 Windows x64 GUI PE，验证其入口类/JAR/JRE 引用后再注入 portable 与 slim update 两个发行 ZIP，并重新生成 SHA-256。
 
 ## 本地验证
 
@@ -146,6 +152,8 @@ PowerShell 7 / Linux / macOS：
 ```powershell
 ./scripts/verify.ps1
 ```
+
+正式 CI 还会执行 `scripts/package-native-launcher.ps1`；该步骤需要 MinGW-w64 的 Windows x64 GCC/binutils 工具链。
 
 首次验证会从固定 runtime Release 获取内置 Corretto JRE；仓库公开后可匿名下载，CI 则使用 GitHub Token 获取。
 

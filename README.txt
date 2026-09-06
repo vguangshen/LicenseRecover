@@ -1,22 +1,31 @@
-LicenseRecover v1.1.3
+LicenseRecover v1.1.4
 =====================
 
 ITMC 云实训平台离线授权恢复工具
 
 本工具支持 Java 与 .NET 应用，继续兼容 Java 8 / Windows 7 / Windows Server 2008。
 
-免安装 Java
------------
+推荐启动方式
+------------
 推荐下载 LicenseRecover-latest.zip。
 便携版内置 Amazon Corretto 8.492.09.2 / OpenJDK Runtime 1.8.0_492-b09 Windows x64 JRE。
-解压后直接双击 run_gui.bat 即可，不需要另外安装 Java。
+解压后直接双击 LicenseRecoverGUI.exe 即可，不需要另外安装 Java。
+run_gui.bat 继续作为脚本回退入口。
+
+v1.1.4 原生 EXE 启动器
+----------------------
+- 新增真正的 Windows x64 LicenseRecoverGUI.exe；
+- 双击 EXE 与 run_gui.bat 启动同一个 LicenseRecoverModernGUILauncherUiPatch；
+- 因此版本号、右下角“检查更新”和 GitHub 自动更新都会正常显示；
+- EXE 优先使用内置 jre\bin\javaw.exe，并转发命令行参数；
+- 旧版 EXE 仍以 LicenseRecoverGUI-legacy.exe 保留，只用于兼容回退；
+- CI 使用 MinGW-w64 从源码构建并验证 PE，再注入完整包与轻量更新包。
 
 v1.1.3 本地授权修正
 -------------------
 - Java 方式一生成的本地 regName 授权对象固定写入 UserID=fwq；
 - WebSerUserID 保持为独立兼容字段，不再与真正的 RegInfo.UserID 混淆；
-- CI 会重新编译 LicenseRecover.class 并同步进 LicenseRecover.jar，确保源码与发行包行为一致；
-- smoke test 验证本地授权身份字段实际为 fwq。
+- CI 会重新编译 LicenseRecover.class 并同步进 LicenseRecover.jar，确保源码与发行包行为一致。
 
 v1.1.2 界面修复
 ---------------
@@ -27,13 +36,15 @@ v1.1.2 界面修复
 
 入口说明
 --------
-  run_gui.bat               默认现代 GUI + 后台检查更新 + 底部更新按钮
-  run_gui_modern.bat        显式启动现代 GUI
-  run_gui_legacy.bat        旧 GUI 回退入口（含长授权码布局修复）
-  run.bat                   CLI 方式一 / 方式二
-  run_removenet.bat         默认安全方式三入口
-  run_removenet_safe.bat    显式安全方式三入口
-  run_removenet_legacy.bat  旧方式三回退入口
+  LicenseRecoverGUI.exe       推荐 Windows 原生入口，现代 GUI + 在线更新
+  run_gui.bat                 脚本回退入口，行为与新 EXE 一致
+  run_gui_modern.bat          显式启动现代 GUI
+  run_gui_legacy.bat          旧 GUI 回退入口（含布局修复和更新入口）
+  LicenseRecoverGUI-legacy.exe 旧 EXE，仅兼容回退，不加载新 Overlay UI
+  run.bat                     CLI 方式一 / 方式二
+  run_removenet.bat           默认安全方式三入口
+  run_removenet_safe.bat      显式安全方式三入口
+  run_removenet_legacy.bat    旧方式三回退入口
 
 软件自动更新
 ------------
@@ -57,8 +68,8 @@ v1.1.2 界面修复
 
 Release 资产
 ------------
-  LicenseRecover-latest.zip   完整便携版，包含 jre\
-  LicenseRecover-update.zip   轻量自更新包，不包含 jre\
+  LicenseRecover-latest.zip   完整便携版，包含 jre\ 和原生 EXE
+  LicenseRecover-update.zip   轻量自更新包，不包含 jre\，包含原生 EXE
   SHA256SUMS.txt              两份 ZIP 的 SHA-256
 
 更详细说明见 README.md 与 DEVELOPMENT.md。
