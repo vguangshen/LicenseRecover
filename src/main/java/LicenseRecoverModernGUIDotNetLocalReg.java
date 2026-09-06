@@ -26,15 +26,18 @@ import java.util.regex.Pattern;
  * - 本地 regName 明文为 6 位随机数 + RegeditInfo JSON + 6 位随机数；
  * - 密钥为 *ITMC + ProName + OK*；
  * - DES/CBC/PKCS5Padding，Key/IV 均为 MD5(password) 大写十六进制前 8 字符的 ASCII；
- * - 最终密文输出大写 HEX。
+ * - 最终密文输出大写 HEX；
+ * - RegeditInfo 的日期、UserTimes、Net、CountDay 等字段按原 DoRegistry/Json.NET 结果序列化。
  *
- * 与原 DoRegistry 的区别只有一点：这里明确写入 UserID=fwq，避免原实现生成 UserID=null。
+ * 唯一有意改变的授权身份字段是 UserID=fwq；原 DoRegistry 不调用 set_UserID，生成值为 null。
  */
 final class LicenseRecoverModernGUIDotNetLocalReg {
     static final String LOCAL_AUTH_USER_ID = "fwq";
     static final String BLOCK_ENDPOINT = "http://127.0.0.1:9/Service.asmx";
     static final String YX0302_REGSTR =
             "YX030201,YX030202,YX030203,YX030204,YX030210,YX030211,YX030212,YX030213";
+    static final String BEGIN_DATE_JSON = "\\/Date(946656000000+0800)\\/";
+    static final String END_DATE_JSON = "\\/Date(4102329600000+0800)\\/";
 
     private static final Pattern REG_BLOCK = Pattern.compile("(?is)<reg\\b[^>]*>.*?</reg\\s*>");
     private static final Pattern ROOT_CLOSE = Pattern.compile("(?is)</ROOT\\s*>");
@@ -69,15 +72,15 @@ final class LicenseRecoverModernGUIDotNetLocalReg {
                 + ",\"RegID\":\"" + jsonEscape(regId) + "\""
                 + ",\"UserID\":\"" + LOCAL_AUTH_USER_ID + "\""
                 + ",\"ProName\":\"" + jsonEscape(proName) + "\""
-                + ",\"BeginDate\":\"2000-01-01T00:00:00\""
+                + ",\"BeginDate\":\"" + BEGIN_DATE_JSON + "\""
                 + ",\"beginDate\":0"
                 + ",\"endDate\":0"
-                + ",\"EndDate\":\"2099-12-31T00:00:00\""
+                + ",\"EndDate\":\"" + END_DATE_JSON + "\""
                 + ",\"TotalTimes\":-1"
-                + ",\"UserTimes\":0"
-                + ",\"Net\":false"
+                + ",\"UserTimes\":1"
+                + ",\"Net\":true"
                 + ",\"MaxCon\":-1"
-                + ",\"CountDay\":0}";
+                + ",\"CountDay\":10}";
     }
 
     static OperationResult writeLocalLicense(AppInfo info, String regName, boolean backup,
