@@ -66,7 +66,7 @@ if ($version -notmatch '^\d+\.\d+\.\d+$') {
 $stableTag = 'v' + $version
 $releaseNotesPath = Join-Path $repoRoot ('release-notes/' + $stableTag + '.md')
 if (-not (Test-Path -LiteralPath $releaseNotesPath)) {
-    throw "Missing release notes for $stableTag: $releaseNotesPath"
+    throw "Missing release notes for ${stableTag}: $releaseNotesPath"
 }
 Write-Host "Stable version metadata: $stableTag"
 
