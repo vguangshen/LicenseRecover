@@ -27,6 +27,8 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Date;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class LicenseRecoverGUI {
 
@@ -163,7 +165,9 @@ public class LicenseRecoverGUI {
     static JButton genBtn = new JButton("生成离线授权码");
     static JButton copyBtn = new JButton("复制授权码");
     static JCheckBox blockNetGenCheck = new JCheckBox("生成时顺带写入「阻止联网」配置", true);
-    static String lastCode = "";
+    static volatile String lastCode = "";
+    static final Pattern GENERATED_CODE_PATTERN = Pattern.compile(
+            "(?m)^\\s*离线授权码\\s*[:：]\\s*([0-9A-Fa-f]+)\\s*$");
 
     // 方式三: 移除联网授权代码
     static JButton scanNetBtn = new JButton("扫描识别联网授权文件");
@@ -717,6 +721,9 @@ public class LicenseRecoverGUI {
         String appRoot = appRootField.getText().trim();
         String seq = seqField.getText().trim();
         genBtn.setEnabled(false);
+        copyBtn.setEnabled(false);
+        lastCode = "";
+        codeField.setText("");
         final String fDotnet = appRoot.isEmpty() ? null : locateDotNetBin(new File(appRoot));
         new SwingWorker<Void, Void>() {
             protected Void doInBackground() {
@@ -737,8 +744,7 @@ public class LicenseRecoverGUI {
                             appendLog("注册申请号       : " + result.request.ciphertext + "\n");
                             appendLog("离线授权码       : " + result.code + "\n");
                             appendLog("RESULT: OK —— 将上面的离线授权码粘贴到 DS0101 应用「本地注册」页提交。\n");
-                            lastCode = result.code;
-                            SwingUtilities.invokeLater(() -> codeField.setText(result.code));
+                            publishGeneratedCode(result.code);
                             return null;
                         }
                         String product = productField.getText().trim();
@@ -754,7 +760,14 @@ public class LicenseRecoverGUI {
                         if (blockNetGenCheck.isSelected()) {
                             appendLog("（提示：.NET 方式二只生成授权码；如需阻止自动联网校验，请执行方式一。）\n");
                         }
-                        runDotNet(cmd, "");
+                        String helperOutput = runDotNetCapture(cmd, "");
+                        String generated = extractGeneratedCode(helperOutput);
+                        if (generated != null) {
+                            publishGeneratedCode(generated);
+                            appendLog("已将生成的授权码填入下方结果框，可直接点击「复制授权码」。\n");
+                        } else if (helperOutput != null) {
+                            appendLog("[提示] 未从助手输出中识别到授权码；请检查上方生成结果。\n");
+                        }
                         return null;
                     }
                     String registerPid = "YT001";
@@ -801,8 +814,7 @@ public class LicenseRecoverGUI {
                     } else {
                         appendLog("RESULT: OK —— 把上面的 注册申请号 + 离线授权码 填入应用「本地注册」界面提交。\n");
                     }
-                    lastCode = code;
-                    SwingUtilities.invokeLater(() -> codeField.setText(code));
+                    publishGeneratedCode(code);
                     if (blockNetGenCheck.isSelected() && !appRoot.isEmpty()) {
                         String lib = locateLibDir(appRootDir);
                         if (lib != null) {
@@ -824,13 +836,57 @@ public class LicenseRecoverGUI {
 
     static void copyCode(ActionEvent e) {
         String c = codeField.getText().trim();
+        if (c.isEmpty()) c = lastCode == null ? "" : lastCode.trim();
         if (c.isEmpty()) {
             appendLog("(当前没有可复制的授权码，请先生成)\n");
             return;
         }
-        java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
-            .setContents(new java.awt.datatransfer.StringSelection(c), null);
-        appendLog("已复制离线授权码到剪贴板。\n");
+        java.awt.datatransfer.StringSelection selection =
+                new java.awt.datatransfer.StringSelection(c);
+        Exception lastError = null;
+        for (int i = 0; i < 5; i++) {
+            try {
+                java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
+                    .setContents(selection, null);
+                appendLog("已复制离线授权码到剪贴板。\n");
+                return;
+            } catch (IllegalStateException ex) {
+                // Windows 剪贴板被其它程序短暂占用时稍等后重试，避免一次失败让按钮看起来失效。
+                lastError = ex;
+                try { Thread.sleep(80L); } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            } catch (Exception ex) {
+                lastError = ex;
+                break;
+            }
+        }
+        appendLog("[错误] 复制授权码失败：系统剪贴板当前不可用" +
+                (lastError == null ? "" : "（" + lastError.getMessage() + "）") + "。请重试。\n");
+    }
+
+    /** 统一更新授权码结果框；同时保留缓存，避免生成完成与 EDT 刷新之间点击复制时取到空值。 */
+    static void publishGeneratedCode(String code) {
+        if (code == null || code.trim().isEmpty()) return;
+        final String value = code.trim();
+        lastCode = value;
+        Runnable update = () -> {
+            codeField.setText(value);
+            codeField.setCaretPosition(0);
+            copyBtn.setEnabled(true);
+        };
+        if (SwingUtilities.isEventDispatchThread()) update.run();
+        else SwingUtilities.invokeLater(update);
+    }
+
+    /** 从内嵌 .NET 助手的标准输出提取授权码，兼容方式二的长十六进制结果。 */
+    static String extractGeneratedCode(String output) {
+        if (output == null || output.isEmpty()) return null;
+        Matcher m = GENERATED_CODE_PATTERN.matcher(output);
+        String found = null;
+        while (m.find()) found = m.group(1);
+        return found;
     }
 
     static String resolveAppRoot() {
@@ -917,13 +973,13 @@ public class LicenseRecoverGUI {
         return exe2.isFile() ? exe2 : null;
     }
 
-    /** 运行 .NET 助手进程，UTF-8 输出追加到日志区。返回是否成功(RESULT OK)。 */
-    static boolean runDotNet(java.util.List<String> cmd, String logTitle) {
+    /** 运行 .NET 助手进程，UTF-8 输出追加到日志区并返回完整输出；失败返回 null。 */
+    static String runDotNetCapture(java.util.List<String> cmd, String logTitle) {
         File helper = locateNetHelper();
         if (helper == null) {
             appendLog("[错误] 未找到 LicenseRecover.NET.exe（应在 jar 旁的 LicenseRecover.NET 子目录）\n");
             appendLog("RESULT: FAILED\n");
-            return false;
+            return null;
         }
         java.util.List<String> full = new java.util.ArrayList<>();
         full.add(helper.getAbsolutePath());
@@ -937,20 +993,29 @@ public class LicenseRecoverGUI {
             ProcessBuilder pb = new ProcessBuilder(full);
             pb.redirectErrorStream(true);
             Process p = pb.start();
+            StringBuilder output = new StringBuilder();
             try (java.io.BufferedReader r = new java.io.BufferedReader(
                     new java.io.InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
-                while ((line = r.readLine()) != null) appendLog(line + "\n");
+                while ((line = r.readLine()) != null) {
+                    output.append(line).append('\n');
+                    appendLog(line + "\n");
+                }
             }
             int rc = p.waitFor();
             cleanupGeneratedDotNetFiles(binDir, hadConfig, hadRegister);
-            return rc == 0;
+            return rc == 0 ? output.toString() : null;
         } catch (Exception ex) {
             cleanupGeneratedDotNetFiles(binDir, hadConfig, hadRegister);
             appendLog("[错误] 调用 .NET 助手失败: " + ex + "\n");
             appendLog("RESULT: FAILED\n");
-            return false;
+            return null;
         }
+    }
+
+    /** 运行 .NET 助手并只返回成功状态，供扫描/补丁/配置路径使用。 */
+    static boolean runDotNet(java.util.List<String> cmd, String logTitle) {
+        return runDotNetCapture(cmd, logTitle) != null;
     }
 
     static void scanNet(ActionEvent e) {
