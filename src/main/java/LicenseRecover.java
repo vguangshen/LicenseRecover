@@ -268,6 +268,7 @@ public class LicenseRecover {
         String productMain = (productOverride != null && !productOverride.trim().isEmpty())
                 ? productOverride.trim() : "QT1001";
         boolean newStyle = isNewStyleApp(appRoot);
+        boolean rootConfigStyle = usesRootConfigApp(appRoot);
 
         // 自动识别产品号
         String softId = readSoftId(appRoot);
@@ -312,7 +313,7 @@ public class LicenseRecover {
         info.setClassNum(-1);          // -1 = 不限班级数
         info.setNet(false);            // 不要求联网
         info.setCountDay(0);
-        info.setRegStr(ALL_NUMS);
+        info.setRegStr(resolveJavaRegStr(appRoot, softId));
         Calendar begin = Calendar.getInstance();
         begin.set(2000, Calendar.JANUARY, 1, 0, 0, 0);
         Calendar end = Calendar.getInstance();
@@ -345,7 +346,7 @@ public class LicenseRecover {
             System.out.println("  写 reg/WebSerUserID = itmc");
             if (blockNet) System.out.println("  写 reg/Service      = http://127.0.0.1:9/Service.asmx  (拦截残留联网请求)");
             System.out.println("目标文件           : " + cfg.getAbsolutePath());
-            if (newStyle) System.out.println("目标文件(新架构webapp根) : " + new File(appRoot, "config.xml").getAbsolutePath());
+            if (rootConfigStyle) System.out.println("目标文件(webapp根) : " + new File(appRoot, "config.xml").getAbsolutePath());
             System.out.println("RESULT: dry-run 完成，未写入任何文件。");
             return 0;
         }
@@ -359,7 +360,7 @@ public class LicenseRecover {
             catch (Exception e) { System.out.println("[警告] 备份失败: " + e.getMessage()); }
             System.out.println("已备份原配置       : " + libBak.getName());
         }
-        if (backupCfg && newStyle) {
+        if (backupCfg && rootConfigStyle) {
             File cfgRoot = new File(appRoot, "config.xml");
             if (cfgRoot.exists()) {
                 String stamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
@@ -374,8 +375,8 @@ public class LicenseRecover {
         try {
             writeRegConfig(libDir, encrypted);
             System.out.println("已写入            : " + cfg.getAbsolutePath());
-            if (newStyle) {
-                // 新架构 QT3xxx：应用在 webapp 根读 config.xml（RegisterMain basePath=getRealPath("/")）
+            if (rootConfigStyle) {
+                // 多代新平台均可能把 getRealPath("/") 作为 RegisterMain basePath，授权写入 webapp 根 config.xml。
                 try {
                     writeRegConfig(appRoot, encrypted);
                     System.out.println("已写入(新架构webapp根): " + new File(appRoot, "config.xml").getAbsolutePath());
@@ -399,7 +400,7 @@ public class LicenseRecover {
 
         // 6. 用应用自身的 RegisterMain.checkReInfo() 自校验（新架构对 webapp 根再做一次）
         String jsonForMain = new GetRegisterCode().encrypt(productMain + "RegeditNew", "itmcsoft");
-        String[] checkDirs = newStyle ? new String[]{ libDir, appRoot } : new String[]{ libDir };
+        String[] checkDirs = rootConfigStyle ? new String[]{ libDir, appRoot } : new String[]{ libDir };
         boolean anyOk = false;
         for (String cd : checkDirs) {
             String cdSep = cd.endsWith(File.separator) ? cd : cd + File.separator;
@@ -630,16 +631,66 @@ public class LicenseRecover {
         } catch (Exception e) {
             // ignore
         }
+        String classesSoftId = readJavaConfigElement(
+                new File(appRoot, "WEB-INF" + File.separator + "classes" + File.separator + "config.xml"), "SoftVersionID");
+        if (classesSoftId != null && !classesSoftId.trim().isEmpty()) return classesSoftId.trim();
         return null;
     }
 
-    /** 新架构 QT3xxx 标志：webapp 根存在 data/config.xml（其 SystemSoft/SoftVersionID 决定产品号与 PRODUCT_ALL_NUM）。 */
+    static String readJavaConfigElement(File file, String element) {
+        if (file == null || !file.isFile() || element == null || element.trim().isEmpty()) return null;
+        try {
+            String text = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                    "(?is)<" + java.util.regex.Pattern.quote(element) + "\\b[^>]*>\\s*([^<]*?)\\s*</"
+                            + java.util.regex.Pattern.quote(element) + "\\s*>").matcher(text);
+            return m.find() ? m.group(1).trim() : null;
+        } catch (Exception ignore) { return null; }
+    }
+
+    static String normalizeCsv(String value) {
+        if (value == null) return null;
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<String>();
+        for (String part : value.split(",")) {
+            String x = part == null ? "" : part.trim();
+            if (!x.isEmpty()) out.add(x);
+        }
+        if (out.isEmpty()) return null;
+        StringBuilder b = new StringBuilder();
+        for (String x : out) { if (b.length() > 0) b.append(','); b.append(x); }
+        return b.toString();
+    }
+
+    static String resolveJavaRegStr(String appRoot, String softId) {
+        File root = new File(appRoot == null ? "." : appRoot);
+        String data = normalizeCsv(readJavaConfigElement(
+                new File(root, "data" + File.separator + "config.xml"), "regInfo"));
+        if (data != null) return data;
+        String classes = normalizeCsv(readJavaConfigElement(
+                new File(root, "WEB-INF" + File.separator + "classes" + File.separator + "config.xml"), "regInfo"));
+        if (classes != null) return classes;
+        if ("YT00129".equalsIgnoreCase(softId)) return "QT0420";
+        return ALL_NUMS;
+    }
+
+    static boolean usesRootConfigApp(String appRoot) {
+        if (appRoot == null) return false;
+        File root = new File(appRoot);
+        return new File(root, "data" + File.separator + "config.xml").isFile()
+                || new File(root, "WEB-INF" + File.separator + "classes" + File.separator + "config.xml").isFile();
+    }
+
+    /** data/config.xml 同时具有 regInfo 才属于 QT30xxx 原始 SoftVersionID=ProName 模式。 */
     static boolean isNewStyleApp(String appRoot) {
-        return new File(appRoot, "data" + File.separator + "config.xml").isFile();
+        if (appRoot == null) return false;
+        String regInfo = readJavaConfigElement(new File(appRoot, "data" + File.separator + "config.xml"), "regInfo");
+        return regInfo != null && !regInfo.trim().isEmpty();
     }
 
     // 与 Global.registerProductBeans 的首个命中规则保持一致
     static String productMainFor(String softId) {
+        if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("XMT01")) return "XMT01";
+        if (softId == null) return "QT1001";
         switch (softId) {
             case "YT00128": case "YT00127": case "YT00129":
             case "YT00139": case "YT00132": case "YT00141":
