@@ -6,7 +6,7 @@
  * 生成一份永续本地授权并写入 WEB-INF/lib/config.xml；.NET 版方式一
  * 只修改授权配置文件中的服务地址，防止软件自动联网校验，不改 DLL。
  * DS0101 这类旧版 ASP.NET 应用的方式二单独使用旧协议适配器：申请号
- * 用 itmcsoft 解码，授权码用 itmcb2b 生成，避免误用新版 JSON 协议。
+ * 用 itmcsoft 解码，授权码用 itmc + 应用 ProName 生成，避免误用新版 JSON 协议。
  *
  * 生成过程全部复用应用自带的类 (itmc.regedit.* / fastjson)，
  * 保证授权格式与应用预期的完全一致。

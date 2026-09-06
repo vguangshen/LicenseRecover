@@ -2,7 +2,9 @@
  * DS01xx .NET 旧版授权协议适配。
  *
  * 这类 ASP.NET 应用没有使用新版 JSON 授权串：申请号使用 itmcsoft，
- * 离线授权码使用 itmcb2b，提交成功后由应用自身用 *b2bOK* 写回本地授权。
+ * 离线授权码使用应用自身的动态密钥（"itmc" + ProName），提交成功后由应用
+ * 自身用 *b2bOK* 写回本地授权。DS0101 的 ProName 是 itmcIEC，因此密钥为
+ * itmcitmcIEC。
  * 这里仅负责按目标程序集的格式生成和校验授权码，不写入目标应用配置。
  */
 import java.io.File;
@@ -25,9 +27,10 @@ import javax.crypto.spec.SecretKeySpec;
 /** DS0101（以及同一 funpublic 协议族）使用的旧版 .NET 授权格式。 */
 public final class LegacyDotNetProtocol {
     public static final String REQUEST_KEY = "itmcsoft";
-    public static final String CODE_KEY = "itmcb2b";
     public static final String LOCAL_KEY = "*b2bOK*";
     public static final String PRODUCT_NAME = "itmcIEC";
+    public static final String CODE_KEY_PREFIX = "itmc";
+    public static final String CODE_KEY = CODE_KEY_PREFIX + PRODUCT_NAME;
 
     private static final Set<String> LEGACY_VERSIONS = new HashSet<String>(Arrays.asList(
             "DS0101", "DS0102", "DS0103", "DS0109", "DS0111"));
@@ -36,6 +39,14 @@ public final class LegacyDotNetProtocol {
             "(?is)<SoftVersionID\\b[^>]*>\\s*([^<]+?)\\s*</SoftVersionID\\s*>");
 
     private LegacyDotNetProtocol() { }
+
+    /** DS01xx 注册页使用的授权码密钥：固定前缀 itmc + 应用 ProName。 */
+    public static String codeKeyForProduct(String productName) {
+        if (productName == null || productName.trim().isEmpty()) {
+            throw new IllegalArgumentException("旧协议产品标识不能为空");
+        }
+        return CODE_KEY_PREFIX + productName.trim();
+    }
 
     /** 判断版本是否属于已确认使用 itmcIEC 旧协议的 DS01xx 型号。 */
     public static boolean isLegacyVersion(String softVersion) {
@@ -124,7 +135,7 @@ public final class LegacyDotNetProtocol {
                 + "00" + "-001"
                 + "00" + "-1"
                 + "00" + PRODUCT_NAME;
-        String code = encrypt(CODE_KEY, plaintext);
+        String code = encrypt(codeKeyForProduct(PRODUCT_NAME), plaintext);
         AuthorizationInfo parsed = decodeAuthorizationCode(code);
         if (!request.regId.equals(parsed.regId) || !request.requestTime.equals(parsed.requestTime)) {
             throw new IllegalStateException("旧协议授权码自校验失败：申请号绑定字段不一致");
@@ -134,7 +145,7 @@ public final class LegacyDotNetProtocol {
 
     /** 解码并检查旧协议授权码的固定字段，便于生成后做本地格式校验。 */
     public static AuthorizationInfo decodeAuthorizationCode(String code) throws Exception {
-        String plain = decrypt(CODE_KEY, code);
+        String plain = decrypt(codeKeyForProduct(PRODUCT_NAME), code);
         if (plain.length() < 66) {
             throw new IllegalArgumentException("旧协议授权码明文长度不足");
         }

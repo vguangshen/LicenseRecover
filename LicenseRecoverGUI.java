@@ -612,7 +612,7 @@ public class LicenseRecoverGUI {
                         appendLog("[识别] 检测到 .NET 版应用，bin 目录 = " + dotnetBin + "\n");
                         String legacyVersion = LegacyDotNetProtocol.readSoftVersion(new File(dotnetBin));
                         if (LegacyDotNetProtocol.isLegacyVersion(legacyVersion)) {
-                            appendLog("[识别] " + legacyVersion + " 使用旧版 itmcIEC 授权协议；方式二将使用 itmcb2b 密钥生成固定字段授权码。\n");
+                            appendLog("[识别] " + legacyVersion + " 使用旧版 itmcIEC 授权协议；方式二将使用 itmc + itmcIEC 密钥生成授权码。\n");
                             SwingUtilities.invokeLater(() -> { productField.setText(LegacyDotNetProtocol.PRODUCT_NAME); productAutoFilled = true; });
                         } else {
                             appendLog("[识别] 产品号默认 YX0302（若为其他产品请在「产品号」手动填写后，将自动传给 .NET 助手）\n");
