@@ -16,14 +16,30 @@ jobs:
         with:
           distribution: temurin
           java-version: '8'
+      - name: Fetch embedded Corretto JRE runtime
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p build/runtime-jre
+          gh release download runtime-corretto8-8.492.09.2-win-x64 \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'LicenseRecover-jre8-win-x64.zip' \
+            --pattern 'LicenseRecover-jre8-win-x64.sha256' \
+            --pattern 'JRE_SOURCE_NOTICE.txt' \
+            --dir build/runtime-jre
       - name: Compile, test and assemble verified distribution
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/verify.ps1
       - uses: actions/upload-artifact@v7
         with:
           name: LicenseRecover-latest
           path: |
             build/LicenseRecover-latest.zip
+            build/LicenseRecover-update.zip
             build/SHA256SUMS.txt
           if-no-files-found: error
       - name: Sync verified overlay to refactor branch
@@ -59,7 +75,8 @@ jobs:
           Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
 
           Assets:
-          - LicenseRecover-latest.zip
+          - LicenseRecover-latest.zip (portable, embedded JRE)
+          - LicenseRecover-update.zip (slim self-update package)
           - SHA256SUMS.txt
 
           This is a rolling prerelease. The tag moves to the latest successfully verified main commit.
@@ -76,6 +93,7 @@ jobs:
 
           gh release upload "$tag" \
             build/LicenseRecover-latest.zip \
+            build/LicenseRecover-update.zip \
             build/SHA256SUMS.txt \
             --clobber
       - name: Publish versioned stable release
@@ -110,6 +128,7 @@ jobs:
 
           gh release create "$tag" \
             build/LicenseRecover-latest.zip \
+            build/LicenseRecover-update.zip \
             build/SHA256SUMS.txt \
             --target "$GITHUB_SHA" \
             --title "LicenseRecover $tag" \

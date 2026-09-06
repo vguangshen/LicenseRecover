@@ -98,33 +98,43 @@ public final class RefactorSmokeTest {
                 System.out::print, 10);
         check(process.isSuccess(), "process runner executes and returns success");
 
-        check(LicenseRecoverModernGUIGitHubUpdateService.compareVersions("1.1.0", "1.0.9") > 0,
+        check(LicenseRecoverModernGUIGitHubUpdateService.compareVersions("1.1.1", "1.1.0") > 0,
                 "GitHub updater semantic version comparison");
-        check(LicenseRecoverModernGUIGitHubUpdateService.compareVersions("v1.1.0", "1.1.0") == 0,
+        check(LicenseRecoverModernGUIGitHubUpdateService.compareVersions("v1.1.1", "1.1.1") == 0,
                 "GitHub updater normalizes v-prefix");
         String checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        String sums = checksum + "  LicenseRecover-latest.zip\n"
+                + checksum + "  LicenseRecover-update.zip\n";
+        check(checksum.equals(LicenseRecoverModernGUIGitHubUpdateService.parseChecksum(sums)),
+                "GitHub updater parses portable checksum");
         check(checksum.equals(LicenseRecoverModernGUIGitHubUpdateService.parseChecksum(
-                checksum + "  LicenseRecover-latest.zip\n")),
-                "GitHub updater parses release checksum");
+                sums, "LicenseRecover-update.zip")),
+                "GitHub updater parses slim update checksum");
 
         Path updateInstall = base.resolve("update-install");
         Files.createDirectories(updateInstall);
-        Files.write(updateInstall.resolve("VERSION.txt"), Arrays.asList("1.0.0"), StandardCharsets.UTF_8);
+        Files.write(updateInstall.resolve("VERSION.txt"), Arrays.asList("1.1.0"), StandardCharsets.UTF_8);
         Files.write(updateInstall.resolve("runtime.txt"), Arrays.asList("old"), StandardCharsets.UTF_8);
+        Path embeddedJava = updateInstall.resolve("jre/bin/java.exe");
+        Files.createDirectories(embeddedJava.getParent());
+        Files.write(embeddedJava, Arrays.asList("embedded-jre"), StandardCharsets.UTF_8);
         Path updateZip = base.resolve("update.zip");
         ZipOutputStream zout = new ZipOutputStream(new BufferedOutputStream(Files.newOutputStream(updateZip)));
         try {
-            writeZipEntry(zout, "VERSION.txt", "1.1.0\n");
+            writeZipEntry(zout, "VERSION.txt", "1.1.1\n");
             writeZipEntry(zout, "runtime.txt", "new\n");
             writeZipEntry(zout, "nested/new.txt", "created\n");
         } finally { zout.close(); }
         LicenseRecoverModernGUIUpdateInstaller.applyUpdate(updateZip.toFile(), updateInstall.toFile());
-        check("1.1.0".equals(new String(Files.readAllBytes(updateInstall.resolve("VERSION.txt")),
+        check("1.1.1".equals(new String(Files.readAllBytes(updateInstall.resolve("VERSION.txt")),
                         StandardCharsets.UTF_8).trim()), "updater replaces VERSION.txt");
         check("new".equals(new String(Files.readAllBytes(updateInstall.resolve("runtime.txt")),
                         StandardCharsets.UTF_8).trim()), "updater overwrites runtime files");
         check(Files.isRegularFile(updateInstall.resolve("nested/new.txt")),
                 "updater adds new runtime files");
+        check("embedded-jre".equals(new String(Files.readAllBytes(embeddedJava),
+                        StandardCharsets.UTF_8).trim()),
+                "slim updater preserves existing embedded JRE");
 
         Path maliciousZip = base.resolve("malicious.zip");
         zout = new ZipOutputStream(new BufferedOutputStream(Files.newOutputStream(maliciousZip)));

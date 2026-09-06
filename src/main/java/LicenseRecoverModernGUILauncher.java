@@ -51,7 +51,7 @@ public final class LicenseRecoverModernGUILauncher {
                     "发现新版本 v" + info.latestVersion + "\n"
                             + "当前版本: v" + info.currentVersion + "\n\n"
                             + "是否从 GitHub 下载并自动安装？\n"
-                            + "下载后会校验 SHA-256，校验通过才会覆盖当前文件。",
+                            + "会优先使用轻量更新包；下载后校验 SHA-256，校验通过才会覆盖当前文件。",
                     "发现新版本");
             if (choice != JOptionPane.OK_OPTION) return;
 
@@ -131,15 +131,18 @@ final class LicenseRecoverModernGUIUpdateInfo {
     final String tagName;
     final String releasePageUrl;
     final String zipUrl;
+    final String updateZipUrl;
     final String checksumUrl;
 
     LicenseRecoverModernGUIUpdateInfo(String currentVersion, String latestVersion, String tagName,
-                                      String releasePageUrl, String zipUrl, String checksumUrl) {
+                                      String releasePageUrl, String zipUrl, String updateZipUrl,
+                                      String checksumUrl) {
         this.currentVersion = currentVersion;
         this.latestVersion = latestVersion;
         this.tagName = tagName;
         this.releasePageUrl = releasePageUrl;
         this.zipUrl = zipUrl;
+        this.updateZipUrl = updateZipUrl;
         this.checksumUrl = checksumUrl;
     }
 
@@ -171,7 +174,9 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
             throw new IOException("不支持的 GitHub Release 标签: " + tag);
         String base = "https://github.com/" + REPOSITORY + "/releases/download/" + tag + "/";
         return new LicenseRecoverModernGUIUpdateInfo(current, latest, tag, page,
-                base + "LicenseRecover-latest.zip", base + "SHA256SUMS.txt");
+                base + "LicenseRecover-latest.zip",
+                base + "LicenseRecover-update.zip",
+                base + "SHA256SUMS.txt");
     }
 
     static String readCurrentVersion(File toolDir) {
@@ -215,13 +220,22 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
                                  Consumer<String> log) throws IOException {
         Consumer<String> sink = log == null ? s -> { } : log;
         sink.accept("[更新] 下载 SHA256SUMS.txt...\n");
-        String expected = parseChecksum(getText(info.checksumUrl));
-        if (expected == null) throw new IOException("校验文件中未找到 LicenseRecover-latest.zip。 ");
+        String sums = getText(info.checksumUrl);
+
+        String fileName = "LicenseRecover-update.zip";
+        String downloadUrl = info.updateZipUrl;
+        String expected = parseChecksum(sums, fileName);
+        if (expected == null) {
+            fileName = "LicenseRecover-latest.zip";
+            downloadUrl = info.zipUrl;
+            expected = parseChecksum(sums, fileName);
+        }
+        if (expected == null) throw new IOException("校验文件中未找到可用的 LicenseRecover 更新包。 ");
 
         File dir = Files.createTempDirectory("LicenseRecover-update-").toFile();
-        File zip = new File(dir, "LicenseRecover-latest.zip");
-        sink.accept("[更新] 下载发行包...\n");
-        download(info.zipUrl, zip);
+        File zip = new File(dir, fileName);
+        sink.accept("[更新] 下载 " + fileName + "...\n");
+        download(downloadUrl, zip);
         String actual = sha256(zip);
         sink.accept("[更新] SHA-256: " + actual + "\n");
         if (!expected.equalsIgnoreCase(actual)) {
@@ -233,9 +247,13 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
     }
 
     static String parseChecksum(String text) {
-        if (text == null) return null;
+        return parseChecksum(text, "LicenseRecover-latest.zip");
+    }
+
+    static String parseChecksum(String text, String fileName) {
+        if (text == null || fileName == null || fileName.trim().isEmpty()) return null;
         Matcher m = Pattern.compile(
-                "(?im)^\\s*([0-9a-f]{64})\\s+\\*?LicenseRecover-latest\\.zip\\s*$")
+                "(?im)^\\s*([0-9a-f]{64})\\s+\\*?" + Pattern.quote(fileName) + "\\s*$")
                 .matcher(text);
         return m.find() ? m.group(1).toLowerCase(Locale.ROOT) : null;
     }

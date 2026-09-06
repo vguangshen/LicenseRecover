@@ -10,8 +10,17 @@ $verifyDir = Join-Path $buildRoot 'verify'
 $testDir = Join-Path $buildRoot 'test'
 $overlayDir = Join-Path $buildRoot 'overlay-classes'
 $distDir = Join-Path $buildRoot 'dist'
+$portableDistDir = Join-Path $buildRoot 'dist-portable'
+$runtimeCacheDir = Join-Path $buildRoot 'runtime-jre'
+$embeddedJreDir = Join-Path $runtimeCacheDir 'jre'
+$runtimeZip = Join-Path $runtimeCacheDir 'LicenseRecover-jre8-win-x64.zip'
+$runtimeChecksum = Join-Path $runtimeCacheDir 'LicenseRecover-jre8-win-x64.sha256'
+$runtimeNotice = Join-Path $runtimeCacheDir 'JRE_SOURCE_NOTICE.txt'
+$runtimeTag = 'runtime-corretto8-8.492.09.2-win-x64'
+$runtimeBaseUrl = 'https://github.com/vguangshen/LicenseRecover/releases/download/' + $runtimeTag + '/'
 $overlayJar = Join-Path $buildRoot 'LicenseRecoverOverlay.jar'
 $archive = Join-Path $buildRoot 'LicenseRecover-latest.zip'
+$updateArchive = Join-Path $buildRoot 'LicenseRecover-update.zip'
 $checksumFile = Join-Path $buildRoot 'SHA256SUMS.txt'
 $mainSourceDir = Join-Path $repoRoot 'src/main/java'
 $testSourceDir = Join-Path $repoRoot 'src/test/java'
@@ -41,6 +50,69 @@ function Assert-TextContains {
     if ($content.IndexOf($Expected, [StringComparison]::Ordinal) -lt 0) {
         throw "Expected '$Expected' in $Path"
     }
+}
+
+function Ensure-EmbeddedJre {
+    $javaExe = Join-Path $embeddedJreDir 'bin/java.exe'
+    $javawExe = Join-Path $embeddedJreDir 'bin/javaw.exe'
+    if ((Test-Path -LiteralPath $javaExe) -and (Test-Path -LiteralPath $javawExe)) {
+        Write-Host "Using cached embedded JRE: $embeddedJreDir"
+        return
+    }
+
+    if (Test-Path -LiteralPath $runtimeCacheDir) {
+        Remove-Item -LiteralPath $runtimeCacheDir -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $runtimeCacheDir -Force | Out-Null
+
+    $gh = Get-Command gh -ErrorAction SilentlyContinue
+    if ($null -ne $gh -and -not [string]::IsNullOrWhiteSpace($env:GH_TOKEN)) {
+        Write-Host "Downloading embedded JRE through GitHub CLI from $runtimeTag..."
+        Invoke-External -Command $gh.Source -ArgumentList @(
+            'release', 'download', $runtimeTag,
+            '--repo', 'vguangshen/LicenseRecover',
+            '--pattern', 'LicenseRecover-jre8-win-x64.zip',
+            '--pattern', 'LicenseRecover-jre8-win-x64.sha256',
+            '--pattern', 'JRE_SOURCE_NOTICE.txt',
+            '--dir', $runtimeCacheDir
+        )
+    } else {
+        Write-Host "Downloading embedded JRE from public runtime release $runtimeTag..."
+        Invoke-WebRequest -Uri ($runtimeBaseUrl + 'LicenseRecover-jre8-win-x64.zip') -OutFile $runtimeZip -UseBasicParsing
+        Invoke-WebRequest -Uri ($runtimeBaseUrl + 'LicenseRecover-jre8-win-x64.sha256') -OutFile $runtimeChecksum -UseBasicParsing
+        Invoke-WebRequest -Uri ($runtimeBaseUrl + 'JRE_SOURCE_NOTICE.txt') -OutFile $runtimeNotice -UseBasicParsing
+    }
+
+    foreach ($required in @($runtimeZip, $runtimeChecksum, $runtimeNotice)) {
+        if (-not (Test-Path -LiteralPath $required)) {
+            throw "Embedded JRE runtime asset is missing: $required"
+        }
+    }
+
+    $checksumText = Get-Content -LiteralPath $runtimeChecksum -Raw
+    $match = [regex]::Match($checksumText, '(?im)^\s*([0-9a-f]{64})\s+\*?LicenseRecover-jre8-win-x64\.zip\s*$')
+    if (-not $match.Success) {
+        throw 'Embedded JRE checksum file is invalid.'
+    }
+    $expected = $match.Groups[1].Value.ToLowerInvariant()
+    $actual = (Get-FileHash -LiteralPath $runtimeZip -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($expected -ne $actual) {
+        throw "Embedded JRE SHA-256 mismatch. Expected $expected, got $actual"
+    }
+
+    Expand-Archive -LiteralPath $runtimeZip -DestinationPath $runtimeCacheDir -Force
+    foreach ($required in @(
+        (Join-Path $embeddedJreDir 'bin/java.exe'),
+        (Join-Path $embeddedJreDir 'bin/javaw.exe'),
+        (Join-Path $embeddedJreDir 'LICENSE'),
+        (Join-Path $embeddedJreDir 'ASSEMBLY_EXCEPTION'),
+        (Join-Path $embeddedJreDir 'THIRD_PARTY_README')
+    )) {
+        if (-not (Test-Path -LiteralPath $required)) {
+            throw "Embedded JRE is incomplete: $required"
+        }
+    }
+    Write-Host "Embedded JRE verified: Amazon Corretto 8.492.09.2 / 1.8.0_492-b09"
 }
 
 Write-Host '== LicenseRecover source verification =='
@@ -80,13 +152,15 @@ if (-not (Test-Path -LiteralPath $smokeTest)) {
     throw 'Missing src/test/java/RefactorSmokeTest.java.'
 }
 
-foreach ($dir in @($verifyDir, $testDir, $overlayDir, $distDir)) {
+Ensure-EmbeddedJre
+
+foreach ($dir in @($verifyDir, $testDir, $overlayDir, $distDir, $portableDistDir)) {
     if (Test-Path -LiteralPath $dir) {
         Remove-Item -LiteralPath $dir -Recurse -Force
     }
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
 }
-foreach ($generated in @($archive, $checksumFile, $overlayJar)) {
+foreach ($generated in @($archive, $updateArchive, $checksumFile, $overlayJar)) {
     if (Test-Path -LiteralPath $generated) {
         Remove-Item -LiteralPath $generated -Force
     }
@@ -138,11 +212,17 @@ $overlayEntries = @(Invoke-External -Command 'jar' -ArgumentList $listOverlayArg
 if ($overlayEntries -notcontains 'LicenseRecoverModernGUI.class') {
     throw 'Overlay is missing LicenseRecoverModernGUI.class.'
 }
+if ($overlayEntries -notcontains 'LicenseRecoverModernGUILauncher.class') {
+    throw 'Overlay is missing LicenseRecoverModernGUILauncher.class.'
+}
+if ($overlayEntries -notcontains 'LicenseRecoverModernGUIUpdateInstaller.class') {
+    throw 'Overlay is missing LicenseRecoverModernGUIUpdateInstaller.class.'
+}
 if ($overlayEntries -notcontains 'SafeNetRemoverCLI.class') {
     throw 'Overlay is missing SafeNetRemoverCLI.class.'
 }
 
-Write-Host 'Assembling release distribution...'
+Write-Host 'Assembling application-only distribution...'
 $distributionFiles = @(
     'LicenseRecover.jar',
     'LicenseRecoverGUI.jar',
@@ -174,27 +254,58 @@ if ($distVersion -ne $version) {
     throw "Distribution version mismatch: expected $version, got $distVersion"
 }
 Assert-TextContains (Join-Path $distDir 'README.md') $stableTag
+Assert-TextContains (Join-Path $distDir 'run_gui.bat') 'jre\bin\javaw.exe'
 Assert-TextContains (Join-Path $distDir 'run_gui.bat') 'LicenseRecoverOverlay.jar'
-Assert-TextContains (Join-Path $distDir 'run_gui.bat') 'LicenseRecoverModernGUI'
+Assert-TextContains (Join-Path $distDir 'run_gui.bat') 'LicenseRecoverModernGUILauncher'
 Assert-TextContains (Join-Path $distDir 'run_gui_legacy.bat') 'LicenseRecoverGUI.jar'
 Assert-TextContains (Join-Path $distDir 'run_removenet.bat') 'run_removenet_safe.bat'
 Assert-TextContains (Join-Path $distDir 'run_removenet_safe.bat') 'LicenseRecoverOverlay.jar'
 Assert-TextContains (Join-Path $distDir 'run_removenet_safe.bat') 'SafeNetRemoverCLI'
 
-Write-Host 'Creating release distribution archive...'
-Compress-Archive -Path (Join-Path $distDir '*') -DestinationPath $archive -CompressionLevel Optimal -Force
+Write-Host 'Creating slim self-update archive...'
+Compress-Archive -Path (Join-Path $distDir '*') -DestinationPath $updateArchive -CompressionLevel Optimal -Force
+if (-not (Test-Path -LiteralPath $updateArchive)) {
+    throw 'Slim update archive was not created.'
+}
+
+Write-Host 'Assembling portable distribution with embedded JRE...'
+Copy-Item -Path (Join-Path $distDir '*') -Destination $portableDistDir -Recurse -Force
+Copy-Item -LiteralPath $embeddedJreDir -Destination (Join-Path $portableDistDir 'jre') -Recurse -Force
+Copy-Item -LiteralPath $runtimeNotice -Destination (Join-Path $portableDistDir 'JRE_SOURCE_NOTICE.txt') -Force
+foreach ($required in @(
+    (Join-Path $portableDistDir 'jre/bin/java.exe'),
+    (Join-Path $portableDistDir 'jre/bin/javaw.exe'),
+    (Join-Path $portableDistDir 'jre/LICENSE'),
+    (Join-Path $portableDistDir 'jre/ASSEMBLY_EXCEPTION'),
+    (Join-Path $portableDistDir 'jre/THIRD_PARTY_README'),
+    (Join-Path $portableDistDir 'JRE_SOURCE_NOTICE.txt')
+)) {
+    if (-not (Test-Path -LiteralPath $required)) {
+        throw "Portable distribution is missing embedded JRE component: $required"
+    }
+}
+
+Write-Host 'Creating portable release archive...'
+Compress-Archive -Path (Join-Path $portableDistDir '*') -DestinationPath $archive -CompressionLevel Optimal -Force
 if (-not (Test-Path -LiteralPath $archive)) {
-    throw 'Distribution archive was not created.'
+    throw 'Portable distribution archive was not created.'
 }
 
 $sha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
-Set-Content -LiteralPath $checksumFile -Value ($sha256 + '  LicenseRecover-latest.zip') -Encoding ASCII
+$updateSha256 = (Get-FileHash -LiteralPath $updateArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+Set-Content -LiteralPath $checksumFile -Value @(
+    ($sha256 + '  LicenseRecover-latest.zip'),
+    ($updateSha256 + '  LicenseRecover-update.zip')
+) -Encoding ASCII
 if (-not (Test-Path -LiteralPath $checksumFile)) {
     throw 'SHA256SUMS.txt was not created.'
 }
 
 Write-Host "Verified overlay: $overlayJar"
-Write-Host "Verified distribution: $archive"
+Write-Host "Verified portable distribution: $archive"
+Write-Host "Verified slim update: $updateArchive"
+Write-Host "Embedded runtime: Amazon Corretto 8.492.09.2 / 1.8.0_492-b09"
 Write-Host "Stable version: $stableTag"
-Write-Host "SHA-256: $sha256"
+Write-Host "Portable SHA-256: $sha256"
+Write-Host "Update SHA-256: $updateSha256"
 Write-Host 'ALL SOURCE VERIFICATION STEPS PASSED'
