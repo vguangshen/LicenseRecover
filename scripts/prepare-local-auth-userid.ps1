@@ -31,9 +31,7 @@ Write-Host '== Prepare local authorization identity =='
 $source = [IO.File]::ReadAllText($sourcePath, [Text.Encoding]::UTF8)
 
 if ($source.IndexOf('static final String LOCAL_AUTH_USER_ID = "fwq";', [StringComparison]::Ordinal) -lt 0) {
-    $source = Replace-Required $source `
-        '    static boolean backupCfg = true;' `
-        @' 
+    $identityBlock = @'
     static boolean backupCfg = true;
 
     /** 本地授权写入 regName 的运行时 UserID；与外层 WebSerUserID 是两个独立字段。 */
@@ -43,29 +41,32 @@ if ($source.IndexOf('static final String LOCAL_AUTH_USER_ID = "fwq";', [StringCo
         if (info == null) throw new IllegalArgumentException("RegeditInfo 不能为空");
         info.setUserID(LOCAL_AUTH_USER_ID);
     }
-'@ `
-        'local authorization UserID constant/helper'
+'@
+    $source = Replace-Required -Text $source `
+        -Old '    static boolean backupCfg = true;' `
+        -New $identityBlock `
+        -Description 'local authorization UserID constant/helper'
 }
 
 if ($source.IndexOf('        applyLocalAuthIdentity(info);', [StringComparison]::Ordinal) -lt 0) {
-    $source = Replace-Required $source `
-        '        RegeditInfo info = new RegeditInfo();' `
-        "        RegeditInfo info = new RegeditInfo();`n        applyLocalAuthIdentity(info);" `
-        'RegeditInfo local identity assignment'
+    $source = Replace-Required -Text $source `
+        -Old '        RegeditInfo info = new RegeditInfo();' `
+        -New "        RegeditInfo info = new RegeditInfo();`n        applyLocalAuthIdentity(info);" `
+        -Description 'RegeditInfo local identity assignment'
 }
 
 if ($source.IndexOf('regName.UserID       = ', [StringComparison]::Ordinal) -lt 0) {
-    $source = Replace-Required $source `
-        '            System.out.println("  写 reg/regName      = " + (encrypted.length() > 48 ? encrypted.substring(0, 48) + "..." : encrypted));' `
-        "            System.out.println(\"  写 reg/regName      = \" + (encrypted.length() > 48 ? encrypted.substring(0, 48) + \"...\" : encrypted));`n            System.out.println(\"  regName.UserID       = \" + LOCAL_AUTH_USER_ID);" `
-        'dry-run local authorization UserID output'
+    $oldDryRun = '            System.out.println("  写 reg/regName      = " + (encrypted.length() > 48 ? encrypted.substring(0, 48) + "..." : encrypted));'
+    $newDryRun = $oldDryRun + "`n" + '            System.out.println("  regName.UserID       = " + LOCAL_AUTH_USER_ID);'
+    $source = Replace-Required -Text $source -Old $oldDryRun -New $newDryRun `
+        -Description 'dry-run local authorization UserID output'
 }
 
 if ($source.IndexOf('"  userID=" + gi.getUserID()', [StringComparison]::Ordinal) -lt 0) {
-    $source = Replace-Required $source `
-        '                        + "  maxCon=" + gi.getMaxCon());' `
-        '                        + "  maxCon=" + gi.getMaxCon() + "  userID=" + gi.getUserID());' `
-        'self-check UserID output'
+    $source = Replace-Required -Text $source `
+        -Old '                        + "  maxCon=" + gi.getMaxCon());' `
+        -New '                        + "  maxCon=" + gi.getMaxCon() + "  userID=" + gi.getUserID());' `
+        -Description 'self-check UserID output'
 }
 
 [IO.File]::WriteAllText($sourcePath, $source, $utf8NoBom)
@@ -82,7 +83,8 @@ if ($test.IndexOf('local authorization embeds fixed UserID=fwq', [StringComparis
         check("fwq".equals(localAuthIdentity.getUserID()),
                 "local authorization embeds fixed UserID=fwq");
 '@
-    $test = Replace-Required $test $anchor $replacement 'local authorization regression smoke test'
+    $test = Replace-Required -Text $test -Old $anchor -New $replacement `
+        -Description 'local authorization regression smoke test'
     [IO.File]::WriteAllText($testPath, $test, $utf8NoBom)
 }
 
