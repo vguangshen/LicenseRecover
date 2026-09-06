@@ -1,6 +1,7 @@
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -17,9 +18,10 @@ public final class ProcessRunner {
             return OperationResult.failed("命令为空", 1);
         }
         Consumer<String> sink = log == null ? s -> { } : log;
+        List<String> effectiveCommand = normalizeSafety(command, sink);
         Process process = null;
         try {
-            ProcessBuilder pb = new ProcessBuilder(command);
+            ProcessBuilder pb = new ProcessBuilder(effectiveCommand);
             pb.redirectErrorStream(true);
             process = pb.start();
 
@@ -66,5 +68,21 @@ public final class ProcessRunner {
             sink.accept("[错误] 进程执行失败: " + ex + "\n");
             return OperationResult.failed(ex.getMessage(), 1);
         }
+    }
+
+    /**
+     * Java 方式三旧 CLI 不消费 --dry-run。为防止界面勾选“只预览”却实际写入，
+     * 薄 GUI 通过本执行器启动的 Java 方式三在 dry-run 时强制降级为 --scan-net。
+     * .NET 的 -jar 路径保留原生 dry-run 语义。
+     */
+    static List<String> normalizeSafety(List<String> command, Consumer<String> log) {
+        List<String> result = new ArrayList<String>(command);
+        boolean javaClassMode = result.contains("LicenseRecover");
+        int removeIndex = result.indexOf("--remove-net");
+        if (javaClassMode && removeIndex >= 0 && result.contains("--dry-run")) {
+            result.set(removeIndex, "--scan-net");
+            log.accept("[预览] Java 方式三不执行写回；已自动转换为只扫描。\n");
+        }
+        return result;
     }
 }
