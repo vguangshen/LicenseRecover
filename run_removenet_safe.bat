@@ -16,6 +16,13 @@ if not defined JAVA (
   pause
   exit /b 1
 )
+if not exist "%~dp0LicenseRecoverOverlay.jar" (
+  echo.
+  echo   [错误] 缺少 LicenseRecoverOverlay.jar，请使用完整发行包。
+  echo.
+  pause
+  exit /b 1
+)
 
 echo.
 echo   ============================================
@@ -25,7 +32,7 @@ echo   应用目录: %APP%
 echo   提示: 请先停止对应应用服务；执行前会为 Java/.NET 目标建立并校验 prepatch 备份。
 echo.
 
-"%JAVA%" -Dfile.encoding=UTF-8 -cp "%~dp0LicenseRecover.jar" SafeNetRemoverCLI "%APP%"
+"%JAVA%" -Dfile.encoding=UTF-8 -cp "%~dp0LicenseRecoverOverlay.jar;%~dp0LicenseRecover.jar" SafeNetRemoverCLI "%APP%"
 set "RC=%ERRORLEVEL%"
 echo.
 if not "%RC%"=="0" echo   执行失败，退出码: %RC%

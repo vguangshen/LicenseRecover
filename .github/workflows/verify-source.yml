@@ -7,6 +7,8 @@ on:
 
 jobs:
   compile-java:
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -26,15 +28,25 @@ jobs:
         run: |
           set -euo pipefail
           java -cp build/verify:build/test:LicenseRecoverGUI.jar RefactorSmokeTest
+      - name: Build deterministic runtime overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/overlay-classes
+          for prefix in AppDetector AppInfo BatchTarget ConfigSafety LicenseRecoverModernGUI OperationResult PatchSafety ProcessRunner SafeNetRemoverCLI SafetyBackup; do
+            cp build/verify/${prefix}*.class build/overlay-classes/
+          done
+          find build/overlay-classes -exec touch -t 198001010000 {} +
+          jar cfM build/LicenseRecoverOverlay.jar -C build/overlay-classes .
+          jar tf build/LicenseRecoverOverlay.jar | grep -q '^LicenseRecoverModernGUI.class$'
+          jar tf build/LicenseRecoverOverlay.jar | grep -q '^SafeNetRemoverCLI.class$'
       - name: Assemble test distribution
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p build/dist
-          cp LicenseRecover.jar build/dist/LicenseRecover.jar
-          cp LicenseRecoverGUI.jar build/dist/LicenseRecoverGUI.jar
-          jar uf build/dist/LicenseRecover.jar -C build/verify .
-          jar uf build/dist/LicenseRecoverGUI.jar -C build/verify .
+          cp LicenseRecover.jar LicenseRecoverGUI.jar build/dist/
+          cp build/LicenseRecoverOverlay.jar build/dist/
           cp -R LicenseRecover.NET build/dist/LicenseRecover.NET
           cp README.txt PHASE1_REFACTOR.md run.bat build/dist/
           cp run_gui.bat run_gui_modern.bat run_gui_legacy.bat build/dist/
@@ -46,14 +58,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          jar tf build/dist/LicenseRecoverGUI.jar | grep -q '^LicenseRecoverModernGUI.class$'
-          jar tf build/dist/LicenseRecover.jar | grep -q '^SafeNetRemoverCLI.class$'
+          grep -q 'LicenseRecoverOverlay.jar' build/dist/run_gui.bat
           grep -q 'LicenseRecoverModernGUI' build/dist/run_gui.bat
           grep -q -- '-jar.*LicenseRecoverGUI.jar' build/dist/run_gui_legacy.bat
           grep -q 'run_removenet_safe.bat' build/dist/run_removenet.bat
+          grep -q 'LicenseRecoverOverlay.jar' build/dist/run_removenet_safe.bat
           grep -q 'SafeNetRemoverCLI' build/dist/run_removenet_safe.bat
       - uses: actions/upload-artifact@v4
         with:
           name: LicenseRecover-test
           path: build/LicenseRecover-test.zip
           if-no-files-found: error
+      - name: Sync verified overlay to refactor branch
+        if: github.event_name == 'push' && github.ref == 'refs/heads/refactor/phase2-ui-defaults'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp build/LicenseRecoverOverlay.jar LicenseRecoverOverlay.jar
+          if git diff --quiet -- LicenseRecoverOverlay.jar; then
+            echo 'Overlay already matches verified build.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add LicenseRecoverOverlay.jar
+          git commit -m '同步CI验证的运行时overlay'
+          git push origin HEAD:refactor/phase2-ui-defaults

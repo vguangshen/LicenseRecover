@@ -16,5 +16,12 @@ if not defined JAVA (
   pause
   exit /b 1
 )
+if not exist "%~dp0LicenseRecoverOverlay.jar" (
+  echo.
+  echo   [错误] 缺少 LicenseRecoverOverlay.jar，请使用完整发行包。
+  echo.
+  pause
+  exit /b 1
+)
 
-start "" "%JAVA%" -Dfile.encoding=UTF-8 -Dsun.java2d.dpiaware=true -Dsun.java2d.noddraw=true -cp "%~dp0LicenseRecoverGUI.jar" LicenseRecoverModernGUI
+start "" "%JAVA%" -Dfile.encoding=UTF-8 -Dsun.java2d.dpiaware=true -Dsun.java2d.noddraw=true -cp "%~dp0LicenseRecoverOverlay.jar;%~dp0LicenseRecoverGUI.jar" LicenseRecoverModernGUI
