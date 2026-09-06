@@ -78,3 +78,39 @@ jobs:
             build/LicenseRecover-latest.zip \
             build/SHA256SUMS.txt \
             --clobber
+      - name: Publish versioned stable release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(tr -d '\r\n[:space:]' < VERSION.txt)"
+          tag="v${version}"
+          notes_file="release-notes/${tag}.md"
+
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid VERSION.txt value: $version" >&2
+            exit 1
+          fi
+          if [ ! -f "$notes_file" ]; then
+            echo "Missing stable release notes: $notes_file" >&2
+            exit 1
+          fi
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Stable release $tag already exists; leaving it unchanged."
+            exit 0
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "Tag $tag exists without a matching GitHub Release; refusing to overwrite it." >&2
+            exit 1
+          fi
+
+          gh release create "$tag" \
+            build/LicenseRecover-latest.zip \
+            build/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" \
+            --title "LicenseRecover $tag" \
+            --notes-file "$notes_file"

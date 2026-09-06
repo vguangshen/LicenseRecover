@@ -16,6 +16,7 @@ $checksumFile = Join-Path $buildRoot 'SHA256SUMS.txt'
 $mainSourceDir = Join-Path $repoRoot 'src/main/java'
 $testSourceDir = Join-Path $repoRoot 'src/test/java'
 $guiRuntimeJar = Join-Path $repoRoot 'LicenseRecoverGUI.jar'
+$versionFile = Join-Path $repoRoot 'VERSION.txt'
 $classpathSeparator = [IO.Path]::PathSeparator
 
 function Invoke-External {
@@ -54,6 +55,20 @@ $legacyRootArchive = Join-Path $repoRoot 'LicenseRecover-latest.zip'
 if (Test-Path -LiteralPath $legacyRootArchive) {
     throw 'LicenseRecover-latest.zip must be generated under build/ and published as a Release asset, not tracked at repository root.'
 }
+
+if (-not (Test-Path -LiteralPath $versionFile)) {
+    throw 'Missing VERSION.txt.'
+}
+$version = (Get-Content -LiteralPath $versionFile -Raw).Trim()
+if ($version -notmatch '^\d+\.\d+\.\d+$') {
+    throw "VERSION.txt must contain a semantic version such as 1.0.0; found '$version'."
+}
+$stableTag = 'v' + $version
+$releaseNotesPath = Join-Path $repoRoot ('release-notes/' + $stableTag + '.md')
+if (-not (Test-Path -LiteralPath $releaseNotesPath)) {
+    throw "Missing release notes for $stableTag: $releaseNotesPath"
+}
+Write-Host "Stable version metadata: $stableTag"
 
 $mainSources = @(Get-ChildItem -LiteralPath $mainSourceDir -Filter '*.java' -File | Sort-Object Name | ForEach-Object { $_.FullName })
 if ($mainSources.Count -eq 0) {
@@ -131,12 +146,10 @@ Write-Host 'Assembling release distribution...'
 $distributionFiles = @(
     'LicenseRecover.jar',
     'LicenseRecoverGUI.jar',
+    'README.md',
     'README.txt',
-    'DEVELOPMENT.md',
-    'PHASE1_REFACTOR.md',
-    'PHASE2_UI.md',
-    'PHASE3_STRUCTURE.md',
-    'PHASE4_RELEASE.md',
+    'VERSION.txt',
+    'CHANGELOG.md',
     'run.bat',
     'run_gui.bat',
     'run_gui_modern.bat',
@@ -150,11 +163,17 @@ $distributionFiles = @(
 foreach ($file in $distributionFiles) {
     Copy-Item -LiteralPath (Join-Path $repoRoot $file) -Destination $distDir -Force
 }
+Copy-Item -LiteralPath $releaseNotesPath -Destination (Join-Path $distDir 'RELEASE_NOTES.md') -Force
 Copy-Item -LiteralPath $overlayJar -Destination $distDir -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LicenseRecover.NET') -Destination $distDir -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LicenseRecoverGUI.exe') -Destination (Join-Path $distDir 'LicenseRecoverGUI-legacy.exe') -Force
 
-Write-Host 'Verifying modern defaults and legacy fallbacks...'
+Write-Host 'Verifying version metadata and launchers...'
+$distVersion = (Get-Content -LiteralPath (Join-Path $distDir 'VERSION.txt') -Raw).Trim()
+if ($distVersion -ne $version) {
+    throw "Distribution version mismatch: expected $version, got $distVersion"
+}
+Assert-TextContains (Join-Path $distDir 'README.md') $stableTag
 Assert-TextContains (Join-Path $distDir 'run_gui.bat') 'LicenseRecoverOverlay.jar'
 Assert-TextContains (Join-Path $distDir 'run_gui.bat') 'LicenseRecoverModernGUI'
 Assert-TextContains (Join-Path $distDir 'run_gui_legacy.bat') 'LicenseRecoverGUI.jar'
@@ -176,5 +195,6 @@ if (-not (Test-Path -LiteralPath $checksumFile)) {
 
 Write-Host "Verified overlay: $overlayJar"
 Write-Host "Verified distribution: $archive"
+Write-Host "Stable version: $stableTag"
 Write-Host "SHA-256: $sha256"
 Write-Host 'ALL SOURCE VERIFICATION STEPS PASSED'
