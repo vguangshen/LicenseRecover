@@ -6,7 +6,8 @@ logs/
 # Bundled runtime copied into local deployments; obtain Java 8 separately.
 jre/
 
-# Generated backups and temporary patch artifacts.
+# Generated build, backup and temporary patch artifacts.
+build/
 *.bak
 *.bak.*
 *.tmp
