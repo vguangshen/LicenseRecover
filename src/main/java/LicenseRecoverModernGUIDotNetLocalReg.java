@@ -45,6 +45,15 @@ final class LicenseRecoverModernGUIDotNetLocalReg {
 
     private LicenseRecoverModernGUIDotNetLocalReg() { }
 
+    static final class ConfigSnapshot {
+        final File file;
+        final byte[] content;
+        ConfigSnapshot(File file, byte[] content) {
+            this.file = file;
+            this.content = content;
+        }
+    }
+
     static String decodeRequestRegId(String seq) throws Exception {
         if (seq == null || seq.trim().isEmpty()) throw new Exception("注册申请号为空");
         String plain = desDecrypt(seq.trim(), "itmcsoft");
@@ -83,21 +92,47 @@ final class LicenseRecoverModernGUIDotNetLocalReg {
                 + ",\"CountDay\":10}";
     }
 
+    static List<ConfigSnapshot> captureSnapshots(AppInfo info) throws Exception {
+        List<File> configs = configCandidates(info);
+        List<ConfigSnapshot> snapshots = new ArrayList<ConfigSnapshot>();
+        for (File cfg : configs) snapshots.add(new ConfigSnapshot(cfg, Files.readAllBytes(cfg.toPath())));
+        return snapshots;
+    }
+
+    static boolean restoreSnapshots(List<ConfigSnapshot> snapshots, Consumer<String> log) {
+        Consumer<String> sink = log == null ? s -> { } : log;
+        if (snapshots == null) return true;
+        boolean ok = true;
+        for (ConfigSnapshot snapshot : snapshots) {
+            try {
+                Files.write(snapshot.file.toPath(), snapshot.content);
+                sink.accept("[回滚] 已恢复: " + snapshot.file.getAbsolutePath() + "\n");
+            } catch (Exception ex) {
+                ok = false;
+                sink.accept("[回滚/错误] 无法恢复 " + snapshot.file.getAbsolutePath()
+                        + ": " + ex.getMessage() + "\n");
+            }
+        }
+        return ok;
+    }
+
     static OperationResult writeLocalLicense(AppInfo info, String regName, boolean backup,
                                              Consumer<String> log) {
         Consumer<String> sink = log == null ? s -> { } : log;
+        List<ConfigSnapshot> transaction = null;
         try {
-            List<File> configs = configCandidates(info);
-            if (configs.isEmpty()) {
+            transaction = captureSnapshots(info);
+            if (transaction.isEmpty()) {
                 return OperationResult.failed("未找到 .NET config.xml", 4);
             }
             String stamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
-            for (File cfg : configs) {
+            for (ConfigSnapshot snapshot : transaction) {
+                File cfg = snapshot.file;
                 if (backup) {
                     File bak = new File(cfg.getParentFile(), cfg.getName() + ".prewrite." + stamp + ".bak");
                     SafetyBackup.requireCopy(cfg.toPath(), bak.toPath(), sink);
                 }
-                String original = new String(Files.readAllBytes(cfg.toPath()), StandardCharsets.UTF_8);
+                String original = new String(snapshot.content, StandardCharsets.UTF_8);
                 boolean bom = original.startsWith("\uFEFF");
                 String body = bom ? original.substring(1) : original;
                 String updated = upsertLicense(body, regName);
@@ -109,6 +144,10 @@ final class LicenseRecoverModernGUIDotNetLocalReg {
             return OperationResult.success(".NET 本地 regName 已写入");
         } catch (Exception ex) {
             sink.accept("[错误] 写入 .NET 本地授权失败: " + ex.getMessage() + "\n");
+            if (transaction != null && !transaction.isEmpty()) {
+                sink.accept("[一键恢复/.NET] 写入未完整完成，正在恢复事务前状态。\n");
+                restoreSnapshots(transaction, sink);
+            }
             return OperationResult.failed(ex.getMessage(), 4);
         }
     }
