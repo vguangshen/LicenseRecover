@@ -11,8 +11,8 @@ import java.util.regex.Pattern;
  *
  * UI 只暴露“选择目录 -> 一键恢复”，底层仍保留 Java / .NET 不同适配路径：
  * - Java：复用现有 LicenseRecover CLI 的本地 regName 写入与 checkReInfo 自校验；
- * - .NET YX0302：调用内嵌 LicenseRecover.NET.exe，先用目标程序自身授权组件生成
- *   本机申请号+授权码，再用 doreg 模式调用应用自身 DoRegistry 提交，最后 verify；
+ * - .NET YX0302：先调用目标程序自身授权组件生成本机申请号/授权码并取得真实机器标识，
+ *   再由本工具按 ITMC.Regedit.dll 原生 DES/regName 格式生成 UserID=fwq 的本地授权，最后 verify；
  * - DS01xx 等旧协议暂时保留为高级/手工回退，避免误用新版协议。
  */
 final class LicenseRecoverModernGUIOneClickRecovery {
@@ -103,8 +103,8 @@ final class LicenseRecoverModernGUIOneClickRecovery {
         }
 
         String product = dotNetProduct(info.softVersionId);
-        log.accept("[一键恢复/.NET] 自动调用目标授权组件获取本机身份并生成申请号。\n");
-        log.accept("[一键恢复/.NET] 注册码产品号: " + product + "\n");
+        log.accept("[一键恢复/.NET] 调用目标授权组件获取本机身份并生成申请号/授权码。\n");
+        log.accept("[一键恢复/.NET] 本地授权产品号: " + product + "\n");
 
         StringBuilder generated = new StringBuilder();
         Consumer<String> capture = s -> {
@@ -129,29 +129,29 @@ final class LicenseRecoverModernGUIOneClickRecovery {
             return OperationResult.failed("无法解析自动生成的 .NET 申请号或授权码", 3);
         }
 
+        final String regId;
+        final String regName;
+        try {
+            regId = LicenseRecoverModernGUIDotNetLocalReg.decodeRequestRegId(seq);
+            regName = LicenseRecoverModernGUIDotNetLocalReg.buildRegName(regId, product);
+        } catch (Exception ex) {
+            log.accept("[错误] 解析本机身份/生成 regName 失败: " + ex.getMessage() + "\n");
+            return OperationResult.failed(ex.getMessage(), 3);
+        }
+
+        log.accept("[一键恢复/.NET] 本机 RegID: " + regId + "\n");
         log.accept("[一键恢复/.NET] 申请号与授权码已自动生成，无需用户复制粘贴。\n");
+        log.accept("[一键恢复/.NET] 本地 regName 将固定写入 UserID="
+                + LicenseRecoverModernGUIDotNetLocalReg.LOCAL_AUTH_USER_ID + "。\n");
+
         if (dryRun) {
-            log.accept("[预览] 不调用 DoRegistry，不修改目标授权。\n");
-            return OperationResult.preview(".NET 申请号与授权码自动生成完成");
+            log.accept("[预览] 已完成机器身份解析与 regName 构造，不写入目标文件。\n");
+            return OperationResult.preview(".NET 本机授权预览完成（UserID=fwq）");
         }
 
-        List<String> apply = new ArrayList<String>();
-        apply.add(helper.getAbsolutePath());
-        apply.add("doreg");
-        apply.add(info.binDir.getAbsolutePath());
-        apply.add("--seq");
-        apply.add(seq);
-        apply.add("--code");
-        apply.add(code);
-        if (product != null) {
-            apply.add("--product");
-            apply.add(product);
-        }
-        if (!backup) apply.add("--no-backup");
-
-        log.accept("[一键恢复/.NET] 调用应用自身 DoRegistry 自动提交授权。\n");
-        OperationResult applyResult = ProcessRunner.run(apply, log, PROCESS_TIMEOUT_SECONDS);
-        if (!applyResult.isSuccess()) return applyResult;
+        OperationResult write = LicenseRecoverModernGUIDotNetLocalReg.writeLocalLicense(
+                info, regName, backup, log);
+        if (!write.isSuccess()) return write;
 
         List<String> verify = new ArrayList<String>();
         verify.add(helper.getAbsolutePath());
@@ -164,7 +164,7 @@ final class LicenseRecoverModernGUIOneClickRecovery {
         log.accept("[一键恢复/.NET] 重新读取授权并执行 CheckReInfo 自校验。\n");
         OperationResult verifyResult = ProcessRunner.run(verify, log, PROCESS_TIMEOUT_SECONDS);
         return verifyResult.isSuccess()
-                ? OperationResult.success(".NET 本机授权已自动生成、提交并通过自校验")
+                ? OperationResult.success(".NET 本机授权已自动生成、写入并通过自校验（UserID=fwq）")
                 : verifyResult;
     }
 
