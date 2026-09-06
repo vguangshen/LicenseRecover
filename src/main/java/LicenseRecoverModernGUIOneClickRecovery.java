@@ -1,4 +1,6 @@
 import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -13,7 +15,8 @@ import java.util.regex.Pattern;
  * - Java：复用现有 LicenseRecover CLI 的本地 regName 写入与 checkReInfo 自校验；
  * - .NET YX0302：先调用目标程序自身授权组件生成本机申请号/授权码并取得真实机器标识，
  *   再由本工具按 ITMC.Regedit.dll 原生 DES/regName 格式生成 UserID=fwq 的本地授权，最后 verify；
- * - DS01xx 等旧协议暂时保留为高级/手工回退，避免误用新版协议。
+ * - 其它尚未静态确认的 .NET 协议只提示使用高级工具，不会拿 YX0302 协议尝试写入；
+ * - 写入后的 verify 如果失败，自动恢复到一键恢复前的 config.xml 内容。
  */
 final class LicenseRecoverModernGUIOneClickRecovery {
     private static final long PROCESS_TIMEOUT_SECONDS = 600L;
@@ -93,8 +96,16 @@ final class LicenseRecoverModernGUIOneClickRecovery {
 
         String soft = info.softVersionId == null ? "" : info.softVersionId.trim().toUpperCase(Locale.ROOT);
         if (soft.startsWith("DS01")) {
-            log.accept("[一键恢复/.NET] 检测到 DS01xx 旧协议；为避免协议误判，暂时切换到高级/手工工具。\n");
+            log.accept("[一键恢复/.NET] 检测到 DS01xx 旧协议；自动适配器尚未接入，未修改任何文件。\n");
             return OperationResult.failed("DS01xx 自动适配器尚未完成，请暂用高级工具", 20);
+        }
+        if (!isConfirmedYx0302(info)) {
+            log.accept("[一键恢复/.NET] 当前版本尚未确认可使用 YX0302 本地授权协议；为安全起见未写入。\n");
+            return OperationResult.failed("该 .NET 版本尚未接入一键恢复 Adapter，请暂用高级工具", 21);
+        }
+        File modernReg = new File(info.binDir, "ITMC.Regedit.dll");
+        if (!modernReg.isFile()) {
+            return OperationResult.failed("YX0302 一键恢复需要 bin\\ITMC.Regedit.dll", 22);
         }
 
         File helper = new File(new File(toolDir(), "LicenseRecover.NET"), "LicenseRecover.NET.exe");
@@ -102,7 +113,8 @@ final class LicenseRecoverModernGUIOneClickRecovery {
             return OperationResult.failed("缺少 LicenseRecover.NET.exe", 2);
         }
 
-        String product = dotNetProduct(info.softVersionId);
+        String product = "YX0302";
+        log.accept("[一键恢复/.NET] 已确认 YX0302 + ITMC.Regedit.dll Adapter。\n");
         log.accept("[一键恢复/.NET] 调用目标授权组件获取本机身份并生成申请号/授权码。\n");
         log.accept("[一键恢复/.NET] 本地授权产品号: " + product + "\n");
 
@@ -115,10 +127,8 @@ final class LicenseRecoverModernGUIOneClickRecovery {
         gen.add(helper.getAbsolutePath());
         gen.add("gencode");
         gen.add(info.binDir.getAbsolutePath());
-        if (product != null) {
-            gen.add("--product");
-            gen.add(product);
-        }
+        gen.add("--product");
+        gen.add(product);
         OperationResult genResult = ProcessRunner.run(gen, capture, PROCESS_TIMEOUT_SECONDS);
         if (!genResult.isSuccess()) return genResult;
 
@@ -140,13 +150,21 @@ final class LicenseRecoverModernGUIOneClickRecovery {
         }
 
         log.accept("[一键恢复/.NET] 本机 RegID: " + regId + "\n");
-        log.accept("[一键恢复/.NET] 申请号与授权码已自动生成，无需用户复制粘贴。\n");
+        log.accept("[一键恢复/.NET] 申请号与授权码已自动生成并交叉解析，无需用户复制粘贴。\n");
         log.accept("[一键恢复/.NET] 本地 regName 将固定写入 UserID="
                 + LicenseRecoverModernGUIDotNetLocalReg.LOCAL_AUTH_USER_ID + "。\n");
 
         if (dryRun) {
             log.accept("[预览] 已完成机器身份解析与 regName 构造，不写入目标文件。\n");
             return OperationResult.preview(".NET 本机授权预览完成（UserID=fwq）");
+        }
+
+        final List<LicenseRecoverModernGUIDotNetLocalReg.ConfigSnapshot> before;
+        try {
+            before = LicenseRecoverModernGUIDotNetLocalReg.captureSnapshots(info);
+            if (before.isEmpty()) return OperationResult.failed("未找到 .NET config.xml", 4);
+        } catch (Exception ex) {
+            return OperationResult.failed("无法建立写入前事务快照: " + ex.getMessage(), 4);
         }
 
         OperationResult write = LicenseRecoverModernGUIDotNetLocalReg.writeLocalLicense(
@@ -157,15 +175,20 @@ final class LicenseRecoverModernGUIOneClickRecovery {
         verify.add(helper.getAbsolutePath());
         verify.add("verify");
         verify.add(info.binDir.getAbsolutePath());
-        if (product != null) {
-            verify.add("--product");
-            verify.add(product);
-        }
+        verify.add("--product");
+        verify.add(product);
         log.accept("[一键恢复/.NET] 重新读取授权并执行 CheckReInfo 自校验。\n");
         OperationResult verifyResult = ProcessRunner.run(verify, log, PROCESS_TIMEOUT_SECONDS);
-        return verifyResult.isSuccess()
-                ? OperationResult.success(".NET 本机授权已自动生成、写入并通过自校验（UserID=fwq）")
-                : verifyResult;
+        if (verifyResult.isSuccess()) {
+            return OperationResult.success(".NET 本机授权已自动生成、写入并通过自校验（UserID=fwq）");
+        }
+
+        log.accept("[一键恢复/.NET] 自校验失败，正在自动回滚本次授权写入。\n");
+        boolean rolledBack = LicenseRecoverModernGUIDotNetLocalReg.restoreSnapshots(before, log);
+        return OperationResult.failed(rolledBack
+                ? "自校验失败，已自动恢复原授权配置"
+                : "自校验失败，且自动回滚未完全成功，请使用 .prewrite 备份恢复",
+                verifyResult.exitCode == 0 ? 5 : verifyResult.exitCode);
     }
 
     static String dotNetProduct(String softVersionId) {
@@ -174,6 +197,35 @@ final class LicenseRecoverModernGUIOneClickRecovery {
         if (id.startsWith("YX0302")) return "YX0302";
         if (id.startsWith("DS2601")) return "DS26";
         return id;
+    }
+
+    static boolean isConfirmedYx0302(AppInfo info) {
+        if (info == null || info.type != AppInfo.Type.DOTNET || info.binDir == null) return false;
+        String soft = info.softVersionId == null ? "" : info.softVersionId.trim().toUpperCase(Locale.ROOT);
+        if (soft.startsWith("YX0302")) return true;
+
+        // 某些已部署站点的 config.xml 不带 SoftVersionID。ITMC.Web.dll 的 PubBase 静态字段
+        // 会携带实际 ProName；读取二进制常量只用于识别，不修改 DLL。
+        File web = new File(info.binDir, "ITMC.Web.dll");
+        if (!web.isFile()) return false;
+        try {
+            byte[] bytes = Files.readAllBytes(web.toPath());
+            return containsBytes(bytes, "YX0302".getBytes(StandardCharsets.US_ASCII))
+                    || containsBytes(bytes, "YX0302".getBytes("UTF-16LE"));
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    private static boolean containsBytes(byte[] haystack, byte[] needle) {
+        if (haystack == null || needle == null || needle.length == 0 || haystack.length < needle.length) return false;
+        outer: for (int i = 0; i <= haystack.length - needle.length; i++) {
+            for (int j = 0; j < needle.length; j++) {
+                if (haystack[i + j] != needle[j]) continue outer;
+            }
+            return true;
+        }
+        return false;
     }
 
     static String firstMatch(Pattern pattern, String text) {
