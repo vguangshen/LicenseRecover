@@ -736,8 +736,11 @@ public class LicenseRecoverGUI {
                                 return null;
                             }
                             LegacyDotNetProtocol.CodeResult result =
-                                    LegacyDotNetProtocol.generateAuthorizationCode(seq.trim());
-                            appendLog("[识别] DS01xx 旧协议，产品标识 = " + LegacyDotNetProtocol.PRODUCT_NAME + "\n");
+                                    LegacyDotNetProtocol.generateAuthorizationCode(seq.trim(),
+                                            LegacyDotNetProtocol.readSoftVersion(new File(fDotnet)));
+                            appendLog("[识别] DS01xx 旧协议，产品标识 = "
+                                    + LegacyDotNetProtocol.PRODUCT_NAME
+                                    + "，授权版本 = " + result.authorization.product + "\n");
                             appendLog("申请主机码       : " + result.request.regId + "\n");
                             appendLog("申请时间         : " + result.request.requestTime + "\n");
                             appendLog("授权截止日期     : " + result.endDate + "\n");

@@ -118,29 +118,53 @@ public final class LegacyDotNetProtocol {
         return new SequenceInfo(sequence.trim(), plain, regId, requestTime);
     }
 
-    /**
-     * 基于 DS0101 注册页取得的申请号生成旧协议离线授权码。
-     * 申请号所属主机码和申请时间会原样带入授权码，保证跨机器场景仍绑定服务器。
-     */
+    /** 保留 DS0101 默认入口，供旧调用方使用。 */
     public static CodeResult generateAuthorizationCode(String sequence) throws Exception {
+        return generateAuthorizationCode(sequence, "DS0101");
+    }
+
+    /**
+     * 基于注册页取得的申请号生成旧协议离线授权码。
+     * 申请号所属主机码和申请时间会原样带入授权码，保证跨机器场景仍绑定服务器。
+     *
+     * 旧版程序集同时使用两个不同概念：授权码解密密钥固定由产品标识
+     * ``itmcIEC`` 组成，而授权内容末尾必须写入应用的 SoftVersionID（例如
+     * ``DS0101``）。两者不能混用，否则注册页虽然会提示成功，后续
+     * funpublic.CheckReg 仍会把本地注册判定为无效。
+     */
+    public static CodeResult generateAuthorizationCode(String sequence, String softVersionId) throws Exception {
         SequenceInfo request = decodeSequence(sequence);
+        String versionId = normalizeVersionId(softVersionId);
         String endDate = "2099-12-31";
         // 旧协议固定字段布局：
         // [2,21)申请时间 [23,39)主机码 [41,51)截止日期 [53]联网标志
-        // [56,60)并发数 [62,64)班级数 [66,...)产品标识。
+        // [56,60)并发数 [62,64)班级数 [66,...)版本标识。
         String plaintext = "00" + request.requestTime
                 + "00" + request.regId
                 + "00" + endDate
                 + "00" + "1"
                 + "00" + "-001"
                 + "00" + "-1"
-                + "00" + PRODUCT_NAME;
+                + "00" + versionId;
         String code = encrypt(codeKeyForProduct(PRODUCT_NAME), plaintext);
         AuthorizationInfo parsed = decodeAuthorizationCode(code);
-        if (!request.regId.equals(parsed.regId) || !request.requestTime.equals(parsed.requestTime)) {
+        if (!request.regId.equals(parsed.regId)
+                || !request.requestTime.equals(parsed.requestTime)
+                || !versionId.equals(parsed.product)) {
             throw new IllegalStateException("旧协议授权码自校验失败：申请号绑定字段不一致");
         }
         return new CodeResult(code, plaintext, request, parsed, endDate);
+    }
+
+    private static String normalizeVersionId(String softVersionId) {
+        if (softVersionId == null || softVersionId.trim().isEmpty()) {
+            throw new IllegalArgumentException("旧协议应用缺少 SoftVersionID");
+        }
+        String value = softVersionId.trim();
+        if (!isLegacyVersion(value)) {
+            throw new IllegalArgumentException("不是已确认的 DS01xx 旧协议版本: " + value);
+        }
+        return value;
     }
 
     /** 解码并检查旧协议授权码的固定字段，便于生成后做本地格式校验。 */

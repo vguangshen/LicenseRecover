@@ -1072,7 +1072,7 @@ public class LicenseRecover {
         }
         try {
             LegacyDotNetProtocol.CodeResult result =
-                    LegacyDotNetProtocol.generateAuthorizationCode(seq.trim());
+                    LegacyDotNetProtocol.generateAuthorizationCode(seq.trim(), version);
             System.out.println("旧协议申请号      : " + result.request.ciphertext);
             System.out.println("申请主机码        : " + result.request.regId);
             System.out.println("申请时间          : " + result.request.requestTime);
