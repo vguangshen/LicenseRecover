@@ -2,22 +2,33 @@
 
 All notable user-visible and engineering changes are tracked here from the first stable release onward.
 
+## [1.1.2] - 2026-09-06
+
+### Fixed
+
+- Long registration-request and offline-authorization-code values no longer expand the single-application panel and push action buttons off-screen.
+- The legacy/full-featured GUI now constrains those long text fields so overflow stays inside the text box.
+
+### Added
+
+- A visible current-version label and `检查更新` button at the bottom-right of the GUI.
+- Modern and legacy script launchers route through a UI patch layer while preserving the existing recovery logic and GitHub updater.
+
 ## [1.1.1] - 2026-09-06
 
 ### Fixed
 
 - Restored the embedded Java runtime in the portable distribution so users can run the tool without installing Java separately.
-- Portable builds now include the original runtime family used before the repository refactor: Amazon Corretto 8.492.09.2 / OpenJDK 1.8.0_492-b09, Windows x64 JRE.
-- The build verifies `jre/bin/java.exe`, `jre/bin/javaw.exe`, `LICENSE`, `ASSEMBLY_EXCEPTION` and `THIRD_PARTY_README` before publishing.
+- Portable builds now include Amazon Corretto 8.492.09.2 / OpenJDK 1.8.0_492-b09, Windows x64 JRE.
+- The build verifies the embedded JRE before publishing.
 
 ### Added
 
 - Fixed support Release `runtime-corretto8-8.492.09.2-win-x64` stores the embedded JRE outside the source tree.
-- `LicenseRecover-latest.zip` is now the portable package with embedded JRE.
+- `LicenseRecover-latest.zip` is the portable package with embedded JRE.
 - `LicenseRecover-update.zip` is a smaller application-only package for future self-updates.
-- `SHA256SUMS.txt` now covers both portable and slim update packages.
-- The v1.1.1 updater prefers `LicenseRecover-update.zip` when available and falls back to the full portable ZIP for older Releases.
-- Smoke tests verify that applying the slim update package preserves an existing embedded JRE.
+- `SHA256SUMS.txt` covers both portable and slim update packages.
+- The updater prefers `LicenseRecover-update.zip` and falls back to the full portable ZIP for older Releases.
 
 ## [1.1.0] - 2026-09-06
 
