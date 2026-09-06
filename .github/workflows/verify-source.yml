@@ -26,7 +26,7 @@ jobs:
         run: |
           set -euo pipefail
           java -cp build/verify:build/test:LicenseRecoverGUI.jar RefactorSmokeTest
-      - name: Assemble phase-1 test distribution
+      - name: Assemble test distribution
         shell: bash
         run: |
           set -euo pipefail
@@ -36,24 +36,24 @@ jobs:
           jar uf build/dist/LicenseRecover.jar -C build/verify .
           jar uf build/dist/LicenseRecoverGUI.jar -C build/verify .
           cp -R LicenseRecover.NET build/dist/LicenseRecover.NET
-          cp README.txt PHASE1_REFACTOR.md run.bat run_gui_modern.bat run_removenet_safe.bat build/dist/
-          cp run_gui.bat build/dist/run_gui_legacy.bat
-          cp run_gui_modern.bat build/dist/run_gui.bat
-          cp run_removenet.bat build/dist/run_removenet_legacy.bat
-          cp run_removenet_safe.bat build/dist/run_removenet.bat
+          cp README.txt PHASE1_REFACTOR.md run.bat build/dist/
+          cp run_gui.bat run_gui_modern.bat run_gui_legacy.bat build/dist/
+          cp run_removenet.bat run_removenet_safe.bat run_removenet_legacy.bat build/dist/
           cp LicenseRecoverGUI.exe build/dist/LicenseRecoverGUI-legacy.exe
           cp LicenseRecoverGUI.ico virbox_keystream.bin build/dist/
-          (cd build/dist && zip -qr ../LicenseRecover-phase1.zip .)
-      - name: Verify modern GUI and safe CLI are packaged
+          (cd build/dist && zip -qr ../LicenseRecover-test.zip .)
+      - name: Verify default and fallback entrypoints
         shell: bash
         run: |
           set -euo pipefail
           jar tf build/dist/LicenseRecoverGUI.jar | grep -q '^LicenseRecoverModernGUI.class$'
           jar tf build/dist/LicenseRecover.jar | grep -q '^SafeNetRemoverCLI.class$'
           grep -q 'LicenseRecoverModernGUI' build/dist/run_gui.bat
-          grep -q 'SafeNetRemoverCLI' build/dist/run_removenet.bat
+          grep -q -- '-jar.*LicenseRecoverGUI.jar' build/dist/run_gui_legacy.bat
+          grep -q 'run_removenet_safe.bat' build/dist/run_removenet.bat
+          grep -q 'SafeNetRemoverCLI' build/dist/run_removenet_safe.bat
       - uses: actions/upload-artifact@v4
         with:
-          name: LicenseRecover-phase1
-          path: build/LicenseRecover-phase1.zip
+          name: LicenseRecover-test
+          path: build/LicenseRecover-test.zip
           if-no-files-found: error
