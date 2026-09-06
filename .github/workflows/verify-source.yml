@@ -27,7 +27,9 @@ jobs:
           x86_64-w64-mingw32-gcc --version | head -n 1
       - name: Prepare Java sample compatibility
         shell: bash
-        run: python3 ./scripts/prepare-java-sample-profiles.py
+        run: |
+          python3 ./scripts/prepare-java-sample-profiles.py
+          python3 ./scripts/prepare-java-detection.py
       - name: Prepare local authorization runtime
         shell: pwsh
         run: ./scripts/prepare-local-auth-userid.ps1
@@ -68,6 +70,8 @@ jobs:
           cp build/LicenseRecoverOverlay.jar LicenseRecoverOverlay.jar
           tracked=(
             src/main/java/LicenseRecover.java
+            src/main/java/AppDetector.java
+            src/main/java/LicenseRecoverModernGUIAutoRecovery.java
             src/test/java/RefactorSmokeTest.java
             LicenseRecover.jar
             LicenseRecoverOverlay.jar
@@ -79,7 +83,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add "${tracked[@]}"
-          git commit -m '同步固定UserID本地授权与CI验证运行时'
+          git commit -m '同步Java样本识别与一键授权运行时'
           git push origin "HEAD:${GITHUB_REF_NAME}"
       - name: Publish rolling latest release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
