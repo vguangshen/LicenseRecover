@@ -20,6 +20,42 @@ public final class RefactorSmokeTest {
 
         check("fwq".equals(LicenseRecover.LOCAL_AUTH_USER_ID),
                 "local authorization UserID fixed to fwq");
+        check("fwq".equals(LicenseRecoverModernGUIDotNetLocalReg.LOCAL_AUTH_USER_ID),
+                ".NET one-click local authorization UserID fixed to fwq");
+
+        String dotNetVectorPlain = "123456test654321";
+        String dotNetVectorCipher = LicenseRecoverModernGUIDotNetLocalReg.desEncrypt(
+                dotNetVectorPlain, "*ITMCYX0302OK*");
+        check("E0F7BBD9E7EDE6F14E3363FE2016474119CF6CCB28E6C24D".equals(dotNetVectorCipher),
+                ".NET DES/CBC encryption matches ITMC.Regedit test vector");
+        check(dotNetVectorPlain.equals(LicenseRecoverModernGUIDotNetLocalReg.desDecrypt(
+                dotNetVectorCipher, "*ITMCYX0302OK*")),
+                ".NET DES/CBC encryption round-trip");
+        String dotNetJson = LicenseRecoverModernGUIDotNetLocalReg.buildRegInfoJson(
+                "F000606A59904719", "YX0302", LicenseRecoverModernGUIDotNetLocalReg.YX0302_REGSTR);
+        check(dotNetJson.contains("\"UserID\":\"fwq\"")
+                        && dotNetJson.contains("\"RegID\":\"F000606A59904719\""),
+                ".NET local RegInfo JSON embeds fwq and RegID");
+        String multiRegXml = "<ROOT>\n"
+                + "  <reg><regType>0</regType><Service>http://old/Service.asmx</Service></reg>\n"
+                + "  <reg><regName>OLD</regName></reg>\n"
+                + "  <reg><WebSerUserID>olduser</WebSerUserID></reg>\n"
+                + "</ROOT>";
+        String normalizedXml = LicenseRecoverModernGUIDotNetLocalReg.upsertLicense(
+                multiRegXml, "NEWREGNAME");
+        int firstReg = normalizedXml.indexOf("<reg>");
+        int firstRegEnd = normalizedXml.indexOf("</reg>", firstReg);
+        String firstRegBlock = normalizedXml.substring(firstReg, firstRegEnd);
+        check(firstRegBlock.contains("<regType>1</regType>")
+                        && firstRegBlock.contains("<regName>NEWREGNAME</regName>")
+                        && firstRegBlock.contains("<WebSerUserID>itmc</WebSerUserID>")
+                        && firstRegBlock.contains("http://127.0.0.1:9/Service.asmx"),
+                ".NET one-click normalizes the first reg block with complete local authorization fields");
+        check(!normalizedXml.contains("<regName>OLD</regName>")
+                        && !normalizedXml.contains("<WebSerUserID>olduser</WebSerUserID>"),
+                ".NET one-click synchronizes duplicate reg fields instead of leaving conflicting values");
+        check("YX0302".equals(LicenseRecoverModernGUIOneClickRecovery.dotNetProduct("YX030201")),
+                "one-click maps YX030201 to YX0302 license product");
 
         Path javaRoot = base.resolve("javaApp");
         Path javaLib = javaRoot.resolve("WEB-INF/lib");
