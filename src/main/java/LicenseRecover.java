@@ -589,6 +589,7 @@ public class LicenseRecover {
         if (id.matches("QT401\\d{2}")) return "QT401";
         if ("QT100101".equals(id)) return "QT100101";
         if ("DS2406".equals(id)) return "DS24";
+        if ("YT00138".equals(id)) return "YT001";
         if (id.startsWith("DS501")) return "DS501";
         if (id.startsWith("YX0305")) return "YX0305";
         if ("DS2601".equals(id)) return "DS26";
@@ -743,6 +744,9 @@ public class LicenseRecover {
         }
 
         if ("DS2406".equalsIgnoreCase(softId)) return "DS2406";
+        // YT00138 production RegisterUtil falls back to RegisterMain("YT001", rootPath)
+        // and requires the returned RegStr to contain the concrete VersionID.
+        if ("YT00138".equalsIgnoreCase(softId)) return "YT00138";
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("DS501")) return softId.trim();
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("DS28\\d{2}")) return softId.trim();
         if ("YT00129".equalsIgnoreCase(softId)) return "QT0420";
@@ -770,6 +774,10 @@ public class LicenseRecover {
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("QT401\\d{2}")) return "QT401";
         if (softId != null && "QT100101".equalsIgnoreCase(softId.trim())) return "QT100101";
         if (softId != null && "DS2406".equalsIgnoreCase(softId.trim())) return "DS24";
+        // Exact YT00138 sample: SysParamInit -> RegisterUtil.checkRegister() falls through
+        // to productMain=YT001 and productMainNum=YT00138. Using QT1001 creates a
+        // regName that the real Tomcat startup path cannot decrypt and can NPE in CheckLocalReg.
+        if (softId != null && "YT00138".equalsIgnoreCase(softId.trim())) return "YT001";
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("DS501")) return softId.trim();
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("YX0305")) return softId.trim();
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("DS28\\d{2}")) return "DS28";

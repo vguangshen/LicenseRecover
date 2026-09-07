@@ -91,6 +91,26 @@ public final class RefactorSmokeTest {
         check("QT0420".equals(yt129Plan.regStr) && yt129Plan.rootConfigStyle,
                 "Java GUI plan exposes YT00129 RegStr and root config target");
 
+        Path yt138Root = base.resolve("java-YT00138");
+        Path yt138Lib = yt138Root.resolve("WEB-INF/lib");
+        Files.createDirectories(yt138Lib);
+        Files.createDirectories(yt138Root.resolve("data"));
+        Files.write(yt138Lib.resolve("ITMCReg.jar"), new byte[]{1});
+        Files.write(yt138Root.resolve("systemConfig.yml"), Arrays.asList("global.system.VersionID=YT00138"), StandardCharsets.UTF_8);
+        Files.write(yt138Root.resolve("data/config.xml"), Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>YT00138</SoftVersionID></SystemSoft></ROOT>"), StandardCharsets.UTF_8);
+        check("YT001".equals(LicenseRecover.productMainFor("YT00138")),
+                "YT00138 runtime RegisterMain uses YT001 family");
+        check("YT001".equals(LicenseRecover.localRegisterProductFor("YT00138", false)),
+                "YT00138 local registration uses YT001 family");
+        check("YT00138".equals(LicenseRecover.resolveJavaRegStr(yt138Root.toString(), "YT00138")),
+                "YT00138 RegStr uses the concrete VersionID required by RegisterUtil");
+        LicenseRecoverModernGUIJavaPlan yt138Plan = LicenseRecoverModernGUIJavaPlan.inspect(yt138Root.toFile());
+        check("YT001".equals(yt138Plan.authorizationFamily) && "YT001".equals(yt138Plan.runtimeProductId),
+                "YT00138 GUI plan matches production startup family");
+        check("YT00138".equals(yt138Plan.regStr) && yt138Plan.automaticRecoveryReady,
+                "YT00138 GUI plan is ready with exact sample-verified RegStr");
+
         Path ds2406Root = base.resolve("java-DS2406");
         Path ds2406Lib = ds2406Root.resolve("WEB-INF/lib");
         Files.createDirectories(ds2406Lib);
@@ -322,6 +342,21 @@ public final class RefactorSmokeTest {
                         LicenseRecoverModernGUIAutoRecovery.detectProductList(
                                 productFixture.toFile(), "YX0303")),
                 "one-click derives YX0303 local product list");
+
+        Path yx302CrossFixture = base.resolve("YX030107-YX0302-Web.dll");
+        writeUtf16Fixture(yx302CrossFixture, "YX030107", "YX0302", "YX030201", "YX030204", "YX030219");
+        check("YX0302".equals(LicenseRecoverModernGUIAutoRecovery.detectProduct(
+                        yx302CrossFixture.toFile(), "YX030107")),
+                "YX030107 does not get misclassified as YX0301 when target DLL proves YX0302 family");
+        check("YX030201,YX030204,YX030219".equals(
+                        LicenseRecoverModernGUIAutoRecovery.detectProductList(yx302CrossFixture.toFile(), "YX0302")),
+                "YX030107/YX0302 sample derives the target-local product list");
+
+        String nativeOut = "注册申请号     : A1B2C3D4\n离线授权码     : 001122AABB\n";
+        check("A1B2C3D4".equals(LicenseRecoverModernGUIAutoRecovery.findLabeledHex(nativeOut, "注册申请号")),
+                "native .NET one-click parses target request code");
+        check("001122AABB".equals(LicenseRecoverModernGUIAutoRecovery.findLabeledHex(nativeOut, "离线授权码")),
+                "native .NET one-click parses target authorization code");
 
         Path dsFixture = base.resolve("DS01-Web.dll");
         writeUtf16Fixture(dsFixture, "itmcIEC", "DS0101", "DS0107", "DS0110", "DS0112");
