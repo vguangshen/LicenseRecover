@@ -1,0 +1,36 @@
+name: Apply QT40101 v1.2.10
+
+on:
+  push:
+    branches:
+      - feature/qt40101-min-regstr-v1.2.10
+    paths:
+      - '.github/workflows/apply-qt40101-v1.2.10.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Apply QT40101 exact-sample patch
+        run: python3 scripts/apply-qt40101-v1.2.10.py
+      - name: Verify patched source compiles
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          assert Path('VERSION.txt').read_text().strip() == '1.2.10'
+          assert 'return "QT40101";' in Path('src/main/java/LicenseRecoverModernGUIJavaPlan.java').read_text()
+          assert 'QT40101 automatic recovery is ready' in Path('src/test/java/RefactorSmokeTest.java').read_text()
+          PY
+      - name: Commit result
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'v1.2.10：确认 QT40101 最小 RegStr'
+          git push
