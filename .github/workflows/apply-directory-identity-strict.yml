@@ -1,0 +1,59 @@
+name: Apply directory-only registration identity hardening
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'scripts/apply-directory-identity-strict.py'
+      - '.github/workflows/apply-directory-identity-strict.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Apply strict directory identity policy
+        run: python3 scripts/apply-directory-identity-strict.py
+      - name: Validate scope and policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          grep -F '注册ID、运行校验ID与 RegStr 必须从目标软件目录确认' src/main/java/LicenseRecover.java
+          grep -F 'default product fallback is disabled' src/main/java/LicenseRecoverModernGUIAutoRecovery.java
+          grep -F 'default-list fallback is disabled' src/main/java/LicenseRecoverModernGUIAutoRecovery.java
+          grep -F 'readProductName' src/main/java/LegacyDotNetProtocol.java
+          grep -F 'directory-only registration identity policy' scripts/verify.ps1
+          if grep -Fq '+ ALL_NUMS' src/main/java/LicenseRecover.java; then
+            echo 'ALL_NUMS fallback still used' >&2
+            exit 1
+          fi
+          if grep -Fq 'if (blank(regStr)) regStr = d.versionId' src/main/java/LicenseRecoverModernGUIAutoRecovery.java; then
+            echo '.NET RegStr VersionID fallback still used' >&2
+            exit 1
+          fi
+      - name: Commit hardening to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain -- src/main/java src/test/java scripts/verify.ps1)" ]; then
+            echo 'No source changes produced.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main/java/LegacyJavaRegistrationMetadata.java \
+                  src/main/java/LicenseRecoverModernGUIJavaPlan.java \
+                  src/main/java/LicenseRecover.java \
+                  src/main/java/LicenseRecoverModernGUIAutoRecovery.java \
+                  src/main/java/LegacyDotNetProtocol.java \
+                  src/test/java/RefactorSmokeTest.java \
+                  scripts/verify.ps1
+          git commit -m 'fix: Java和NET注册身份仅从目标目录解析'
+          git push origin HEAD:main
