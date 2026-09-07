@@ -1,0 +1,121 @@
+name: Apply dynamic RegStr v1.2.9
+
+on:
+  push:
+    branches: [ "feature/dynamic-regstr-v1.2.9" ]
+    paths: [ ".github/workflows/apply-dynamic-regstr-v1.2.9.yml" ]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: feature/dynamic-regstr-v1.2.9
+      - name: Apply dynamic RegStr patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new, desc):
+              p = Path(path)
+              s = p.read_text(encoding='utf-8')
+              if old not in s:
+                  raise RuntimeError('anchor not found for %s in %s' % (desc, path))
+              p.write_text(s.replace(old, new, 1), encoding='utf-8', newline='\n')
+
+          # Core: static regInfo first, then an existing local regName (regType=1 only),
+          # then sample-verified derived rules. regType=3 is never dynamically probed.
+          core = 'src/main/java/LicenseRecover.java'
+          replace_once(core,
+              '''        if (classes != null) return classes;\n        if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("DS501")) return softId.trim();''',
+              '''        if (classes != null) return classes;\n\n        String runtimeProduct = productMainFor(softId);\n        String libPath = locateLibDir(appRoot == null ? root.getAbsolutePath() : appRoot);\n        if (libPath != null) {\n            String recovered = ExistingLocalRegStrProbe.recover(root, new File(libPath), runtimeProduct);\n            if (recovered != null) return recovered;\n        }\n\n        // Actual QT100101 business code checks RegStr.contains(RegisterContant.versionID),\n        // and VersionID is QT100101 in the supplied production sample. This is therefore\n        // a verified minimum authorization item, not the old 44-item fallback.\n        if ("QT100101".equalsIgnoreCase(softId)) {\n            String concrete = readJavaConfigElement(new File(root, "WEB-INF" + File.separator\n                    + "classes" + File.separator + "config.xml"), "SoftVersionID");\n            if ("QT100101".equalsIgnoreCase(concrete)) return "QT100101";\n        }\n\n        if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("DS501")) return softId.trim();''',
+              'core local RegStr recovery and QT100101 verified RegStr')
+
+          # GUI plan: same decision order, so batch scanning can promote an app with an
+          # existing valid local regName to READY without ever invoking a network branch.
+          plan = 'src/main/java/LicenseRecoverModernGUIJavaPlan.java'
+          replace_once(plan,
+              '''        String products = resolveRegStr(root, soft);\n        boolean ready = true;''',
+              '''        File jar = findRegJar(lib);\n        boolean packed = jar != null && isVirboxPackedJar(jar);\n        String products = resolveRegStr(root, soft, runtimeProduct, lib);\n        boolean ready = true;''',
+              'GUI plan resolve inputs')
+          replace_once(plan,
+              '''        File jar = findRegJar(lib);\n        boolean packed = jar != null && isVirboxPackedJar(jar);\n\n        String libConfig = relative(root, new File(lib, "config.xml"));''',
+              '''        String libConfig = relative(root, new File(lib, "config.xml"));''',
+              'remove duplicate jar discovery')
+          replace_once(plan,
+              '''    private static String resolveRegStr(File root, String softId) {\n        String data = normalizeCsv(readElement(new File(root, "data" + File.separator + "config.xml"), "regInfo"));''',
+              '''    private static String resolveRegStr(File root, String softId, String runtimeProduct, File lib) {\n        String data = normalizeCsv(readElement(new File(root, "data" + File.separator + "config.xml"), "regInfo"));''',
+              'GUI resolve signature')
+          replace_once(plan,
+              '''        if (classes != null) return classes;\n        if (softId != null && softId.toUpperCase(Locale.ROOT).startsWith("DS501")) return softId.trim();''',
+              '''        if (classes != null) return classes;\n\n        String recovered = ExistingLocalRegStrProbe.recover(root, lib, runtimeProduct);\n        if (recovered != null) return recovered;\n\n        if ("QT100101".equalsIgnoreCase(softId)\n                && "QT100101".equals(confirmedClassesAuthorizationFamily(root, softId))) {\n            return "QT100101";\n        }\n\n        if (softId != null && softId.toUpperCase(Locale.ROOT).startsWith("DS501")) return softId.trim();''',
+              'GUI local recovery and QT100101 verified RegStr')
+
+          # Smoke tests: QT100101 is now safely READY; also lock the no-cloud probe gate.
+          test = 'src/test/java/RefactorSmokeTest.java'
+          replace_once(test,
+              '''        check(LicenseRecover.resolveJavaRegStr(qt100101Root.toString(), "QT100101") == null,\n                "QT100101 keeps dynamic RegStr unresolved when config has no regInfo");''',
+              '''        check("QT100101".equals(LicenseRecover.resolveJavaRegStr(qt100101Root.toString(), "QT100101")),\n                "QT100101 derives the verified minimum RegStr from its real application gate");''',
+              'QT100101 core RegStr assertion')
+          replace_once(test,
+              '''        check(qt100101Plan.regStr == null && !qt100101Plan.automaticRecoveryReady\n                        && qt100101Plan.recoveryReadiness.contains("RegStr"),\n                "QT100101 automatic recovery stays blocked until dynamic RegStr is recovered");''',
+              '''        check("QT100101".equals(qt100101Plan.regStr) && qt100101Plan.automaticRecoveryReady\n                        && qt100101Plan.recoveryReadiness.contains("可安全"),\n                "QT100101 automatic recovery is ready with the sample-verified RegStr");\n\n        check(!ExistingLocalRegStrProbe.isSafeLocalConfig(qt100101Classes.resolve("config.xml").toFile()),\n                "regType=3 is never eligible for local RegStr probing");\n        Path localProbeCfg = base.resolve("existing-local-config.xml");\n        Files.write(localProbeCfg, Arrays.asList(\n                "<ROOT><reg><regType>1</regType><regName>LOCAL-CIPHER-TEXT</regName></reg></ROOT>"),\n                StandardCharsets.UTF_8);\n        check(ExistingLocalRegStrProbe.isSafeLocalConfig(localProbeCfg.toFile()),\n                "only regType=1 with non-empty regName is eligible for offline RegStr probing");''',
+              'QT100101 ready and local-probe gate tests')
+
+          # Ensure the new helper is shipped in both the CLI runtime patch and GUI overlay.
+          prep = 'scripts/prepare-local-auth-userid.ps1'
+          replace_once(prep,
+              '''$runtimeClasses = @(Get-ChildItem -LiteralPath $outDir -Filter 'LicenseRecover*.class' -File |\n        Where-Object { $_.Name -eq 'LicenseRecover.class' -or $_.Name.StartsWith('LicenseRecover$') } |\n        Sort-Object Name)''',
+              '''$runtimeClasses = @(Get-ChildItem -LiteralPath $outDir -Filter '*.class' -File |\n        Where-Object { $_.Name -eq 'LicenseRecover.class' -or $_.Name.StartsWith('LicenseRecover$') `\n            -or $_.Name -eq 'ExistingLocalRegStrProbe.class' -or $_.Name.StartsWith('ExistingLocalRegStrProbe$') } |\n        Sort-Object Name)''',
+              'include ExistingLocalRegStrProbe in CLI jar')
+          replace_once(prep,
+              '''foreach ($classFile in $runtimeClasses) {\n    & jar uf $cliJar -C $outDir $classFile.Name\n    if ($LASTEXITCODE -ne 0) { throw "jar update failed for $($classFile.Name)" }\n}\n\n$javapCode =''',
+              '''foreach ($classFile in $runtimeClasses) {\n    & jar uf $cliJar -C $outDir $classFile.Name\n    if ($LASTEXITCODE -ne 0) { throw "jar update failed for $($classFile.Name)" }\n}\n$cliEntries = @(& jar tf $cliJar)\nif ($cliEntries -notcontains 'ExistingLocalRegStrProbe.class') {\n    throw 'Patched LicenseRecover.jar is missing ExistingLocalRegStrProbe.class.'\n}\n\n$javapCode =''',
+              'verify CLI probe class')
+
+          verify = 'scripts/verify.ps1'
+          replace_once(verify,
+              '''$classPrefixes = @(\n    'AppDetector',''',
+              '''$classPrefixes = @(\n    'AppDetector',\n    'ExistingLocalRegStrProbe',''',
+              'include probe in GUI overlay')
+          replace_once(verify,
+              '''if ($overlayEntries -notcontains 'SafeNetRemoverCLI.class') {\n    throw 'Overlay is missing SafeNetRemoverCLI.class.'\n}\n''',
+              '''if ($overlayEntries -notcontains 'SafeNetRemoverCLI.class') {\n    throw 'Overlay is missing SafeNetRemoverCLI.class.'\n}\nif ($overlayEntries -notcontains 'ExistingLocalRegStrProbe.class') {\n    throw 'Overlay is missing ExistingLocalRegStrProbe.class.'\n}\n''',
+              'verify GUI probe class')
+
+          Path('VERSION.txt').write_text('1.2.9\n', encoding='utf-8', newline='\n')
+
+          p = Path('README.md')
+          s = p.read_text(encoding='utf-8').replace('当前稳定版本：**v1.2.8**', '当前稳定版本：**v1.2.9**', 1)
+          p.write_text(s, encoding='utf-8', newline='\n')
+
+          p = Path('README.txt')
+          s = p.read_text(encoding='utf-8').replace('LicenseRecover v1.2.8', 'LicenseRecover v1.2.9', 1)
+          p.write_text(s, encoding='utf-8', newline='\n')
+
+          p = Path('CHANGELOG.md')
+          s = p.read_text(encoding='utf-8')
+          marker = '## [1.2.8] - 2026-09-07\n'
+          if marker not in s:
+              raise RuntimeError('CHANGELOG v1.2.8 marker not found')
+          entry = '''## [1.2.9] - 2026-09-07\n\n### Added\n\n- 新增现有本地授权 RegStr 只读恢复：仅当配置明确为 `regType=1` 且存在 `regName` 时，使用应用自己的 `RegisterMain.getRegInfo()` 离线读取原 RegStr。\n- GUI 扫描与 CLI 一键恢复共用同一安全探测器；多个本地配置恢复出的 RegStr 不一致时保持待确认，不猜测。\n\n### Fixed\n\n- 根据 QT100101 实际业务代码确认其授权门槛为 `RegStr.contains(VersionID)`，且真实 VersionID 为 `QT100101`；因此无旧本地授权时也可使用经过样本验证的最小 RegStr `QT100101`，不再长期停留在待确认。\n\n### Safety\n\n- 动态探测绝不对 `regType=3` 调用 `getRegInfo()`，避免进入厂商网络授权分支；探测过程也不会调用 `checkReInfo()`。\n- QT40101 若存在有效旧本地 `regName`，可自动恢复原 RegStr；若没有，仍保持待确认。\n\n'''
+          p.write_text(s.replace(marker, entry + marker, 1), encoding='utf-8', newline='\n')
+
+          Path('release-notes/v1.2.9.md').write_text('''# LicenseRecover v1.2.9\n\n本版本完成 Java classes-config 平台的 RegStr 安全恢复链路，并根据 QT100101 真实业务代码解除其不必要的“待确认”状态。\n\n## QT100101\n\n对用户提供的真实 QT100101 应用代码脱壳分析后确认，启动授权判断最终检查 `RegeditInfo.getRegStr().contains(RegisterContant.versionID)`，而该项目 `systemConfig.yml` 的 VersionID 为 `QT100101`。因此 `QT100101` 是经过实际业务门槛验证的最小 RegStr，而不是猜测或 44 项通用回退。\n\nv1.2.9 中 QT100101 将显示：\n\n- 类型/授权代际：`Java / QT1001系列 / classes-config`\n- SoftVersionID：`QT100101`\n- 授权族：`QT100101`\n- 运行校验ID：`QT100101`\n- RegStr：`QT100101`\n- 状态：`待处理`（可安全自动恢复）\n\n## 现有本地授权 RegStr 恢复\n\n当 classes-config 平台没有静态 `regInfo` 时，程序会检查 classes、webapp 根、data 与 WEB-INF/lib 下的 config.xml。只有同时满足以下条件才进入只读恢复：\n\n1. `regType=1`；\n2. 存在非空 `regName`。\n\n随后通过该应用自己的 ITMCReg（Virbox 版本会临时脱壳到临时目录）创建 RegisterMain，并只调用 `getRegInfo()` 读取原 `RegStr`。不会调用 `checkReInfo()`。\n\n如果多个本地配置恢复出的 RegStr 不一致，程序不会任选其一，而是继续保持待确认。\n\n## 联网安全边界\n\n- `regType=3` 永远不会进入动态 RegStr 探测，因为该分支可能访问厂商授权 WebService。\n- 没有旧本地授权的 QT40101 仍保持待确认；若未来机器上保留有效 `regType=1 + regName`，扫描可离线恢复其真实 RegStr。\n''', encoding='utf-8', newline='\n')
+
+          # Remove this one-shot workflow from the resulting branch tree.
+          Path('.github/workflows/apply-dynamic-regstr-v1.2.9.yml').unlink()
+          PY
+      - name: Commit result
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "v1.2.9：安全恢复 Java 动态 RegStr"
+          git push origin HEAD:feature/dynamic-regstr-v1.2.9
