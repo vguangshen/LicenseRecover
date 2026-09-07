@@ -591,11 +591,18 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
 
     static long parseAssetSize(String json, String fileName) {
         if (json == null || fileName == null || fileName.trim().isEmpty()) return -1L;
-        Matcher m = Pattern.compile("(?s)\\"name\\"\\s*:\\s*\\""
-                + Pattern.quote(fileName) + "\\".{0,8192}?\\"size\\"\\s*:\\s*(\\d+)")
-                .matcher(json);
-        if (!m.find()) return -1L;
-        try { return Long.parseLong(m.group(1)); }
+        int namePos = json.indexOf("\"" + fileName + "\"");
+        if (namePos < 0) return -1L;
+        int sizeKey = json.indexOf("\"size\"", namePos);
+        if (sizeKey < 0 || sizeKey - namePos > 8192) return -1L;
+        int colon = json.indexOf(':', sizeKey);
+        if (colon < 0) return -1L;
+        int i = colon + 1;
+        while (i < json.length() && Character.isWhitespace(json.charAt(i))) i++;
+        int begin = i;
+        while (i < json.length() && Character.isDigit(json.charAt(i))) i++;
+        if (begin == i) return -1L;
+        try { return Long.parseLong(json.substring(begin, i)); }
         catch (NumberFormatException ex) { return -1L; }
     }
 
