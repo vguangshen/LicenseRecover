@@ -1,0 +1,38 @@
+name: Fix v1.2.4 Java compile
+
+on:
+  push:
+    branches: [ "fix/updater-v1.2.4" ]
+    paths: [ ".github/workflows/fix-v1.2.4-regex.yml" ]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/updater-v1.2.4
+      - name: Replace asset-size parser
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/main/java/LicenseRecoverModernGUILauncher.java')
+          s = p.read_text(encoding='utf-8')
+          start = s.index('    static long parseAssetSize(String json, String fileName) {')
+          end = s.index('    static long parseContentRangeTotal(String value) {', start)
+          method = '''    static long parseAssetSize(String json, String fileName) {\n        if (json == null || fileName == null || fileName.trim().isEmpty()) return -1L;\n        int namePos = json.indexOf("\\\"" + fileName + "\\\"");\n        if (namePos < 0) return -1L;\n        int sizeKey = json.indexOf("\\\"size\\\"", namePos);\n        if (sizeKey < 0 || sizeKey - namePos > 8192) return -1L;\n        int colon = json.indexOf(':', sizeKey);\n        if (colon < 0) return -1L;\n        int i = colon + 1;\n        while (i < json.length() && Character.isWhitespace(json.charAt(i))) i++;\n        int begin = i;\n        while (i < json.length() && Character.isDigit(json.charAt(i))) i++;\n        if (begin == i) return -1L;\n        try { return Long.parseLong(json.substring(begin, i)); }\n        catch (NumberFormatException ex) { return -1L; }\n    }\n\n'''
+          p.write_text(s[:start] + method + s[end:], encoding='utf-8')
+          Path('.github/workflows/fix-v1.2.4-regex.yml').unlink()
+          PY
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "v1.2.4：修复 Release 资产大小解析编译错误"
+          git push origin HEAD:fix/updater-v1.2.4
