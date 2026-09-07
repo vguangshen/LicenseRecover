@@ -93,6 +93,9 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     private static Result recoverJava(Detection d, boolean backup, boolean blockNet, boolean dryRun, Consumer<String> log) throws Exception {
         LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(d.appRoot);
         if (plan.detected) log.accept(plan.logSummary());
+        if (plan.detected && !plan.automaticRecoveryReady) {
+            return Result.fail("自动恢复已阻止：" + plan.recoveryReadiness + "。未修改任何文件。", d);
+        }
         File cli=new File(toolDir(),"LicenseRecover.jar");
         if (!cli.isFile()) return Result.fail("LicenseRecover.jar was not found.",d);
         List<String> cmd=new ArrayList<String>();

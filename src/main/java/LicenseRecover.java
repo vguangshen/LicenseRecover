@@ -313,7 +313,14 @@ public class LicenseRecover {
         info.setClassNum(-1);          // -1 = 不限班级数
         info.setNet(false);            // 不要求联网
         info.setCountDay(0);
-        info.setRegStr(resolveJavaRegStr(appRoot, softId));
+        String resolvedRegStr = resolveJavaRegStr(appRoot, softId);
+        if (resolvedRegStr == null || resolvedRegStr.trim().isEmpty()) {
+            System.err.println("自动恢复已阻止：当前 classes-config 应用没有静态 regInfo，RegStr 未确认。");
+            System.err.println("不会使用 44 项通用列表猜测授权项，也不会修改任何配置文件。");
+            System.out.println("RESULT: FAILED");
+            return 2;
+        }
+        info.setRegStr(resolvedRegStr);
         Calendar begin = Calendar.getInstance();
         begin.set(2000, Calendar.JANUARY, 1, 0, 0, 0);
         Calendar end = Calendar.getInstance();
@@ -550,6 +557,7 @@ public class LicenseRecover {
     static String localRegisterProductFor(String softId, boolean dataStyle) {
         if (softId == null || softId.trim().isEmpty()) return "YT001";
         String id = softId.toUpperCase(java.util.Locale.ROOT);
+        if (id.matches("QT401\\d{2}")) return "QT401";
         if (id.startsWith("DS501")) return "DS501";
         if (id.startsWith("YX0305")) return "YX0305";
         if ("DS2601".equals(id)) return "DS26";
@@ -679,6 +687,8 @@ public class LicenseRecover {
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("DS501")) return softId.trim();
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("DS28\\d{2}")) return softId.trim();
         if ("YT00129".equalsIgnoreCase(softId)) return "QT0420";
+        if (new File(root, "WEB-INF" + File.separator + "classes" + File.separator + "config.xml").isFile())
+            return null;
         return ALL_NUMS;
     }
 
@@ -698,6 +708,7 @@ public class LicenseRecover {
 
     // Direct config rebuild must use the id application startup passes to RegisterMain.checkReInfo().
     static String productMainFor(String softId) {
+        if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("QT401\\d{2}")) return "QT401";
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("DS501")) return softId.trim();
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("YX0305")) return softId.trim();
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("DS28\\d{2}")) return "DS28";

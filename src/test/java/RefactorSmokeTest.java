@@ -135,6 +135,54 @@ public final class RefactorSmokeTest {
                         && "QT100101,QT100102".equals(yx305Plan.regStr),
                 "Java GUI plan separates YX0305 family, runtime id and feature RegStr");
 
+        Path qt401Root = base.resolve("java-QT40101");
+        Path qt401Lib = qt401Root.resolve("WEB-INF/lib");
+        Path qt401Classes = qt401Root.resolve("WEB-INF/classes");
+        Files.createDirectories(qt401Lib);
+        Files.createDirectories(qt401Classes);
+        Files.write(qt401Lib.resolve("ITMCReg-1.0.5.jar"), new byte[]{1});
+        Files.write(qt401Root.resolve("systemConfig.yml"), Arrays.asList(
+                "global.system.VersionID=QT40101",
+                "global.system.VersionName=paas管理平台"), StandardCharsets.UTF_8);
+        Files.write(qt401Classes.resolve("config.xml"), Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>QT40101</SoftVersionID></SystemSoft></ROOT>"),
+                StandardCharsets.UTF_8);
+        Files.write(qt401Classes.resolve("config1.xml"), Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>QT401</SoftVersionID></SystemSoft>"
+                        + "<System id=\"QT40101\"><SoftName>paas管理平台</SoftName></System></ROOT>"),
+                StandardCharsets.UTF_8);
+        check("QT401".equals(LicenseRecover.productMainFor("QT40101")),
+                "QT40101 direct runtime family maps to QT401");
+        check("QT401".equals(LicenseRecover.localRegisterProductFor("QT40101", false)),
+                "QT40101 local family maps to QT401");
+        check(LicenseRecover.resolveJavaRegStr(qt401Root.toString(), "QT40101") == null,
+                "QT40101 does not inherit the 44-item fallback when regInfo is absent");
+        LicenseRecoverModernGUIJavaPlan qt401Plan =
+                LicenseRecoverModernGUIJavaPlan.inspect(qt401Root.toFile());
+        check(qt401Plan.generation.contains("QT401")
+                        && "QT401".equals(qt401Plan.authorizationFamily)
+                        && "QT401".equals(qt401Plan.runtimeProductId),
+                "Java GUI plan confirms QT401 family from config1.xml evidence");
+        check(qt401Plan.regStr == null && !qt401Plan.automaticRecoveryReady
+                        && qt401Plan.recoveryReadiness.contains("RegStr"),
+                "QT401 automatic recovery is blocked until dynamic RegStr can be recovered");
+
+        Path genericClassesRoot = base.resolve("java-generic-classes");
+        Path genericClassesLib = genericClassesRoot.resolve("WEB-INF/lib");
+        Path genericClassesCfg = genericClassesRoot.resolve("WEB-INF/classes");
+        Files.createDirectories(genericClassesLib);
+        Files.createDirectories(genericClassesCfg);
+        Files.write(genericClassesLib.resolve("ITMCReg.jar"), new byte[]{1});
+        Files.write(genericClassesCfg.resolve("config.xml"), Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>ZZ99999</SoftVersionID></SystemSoft></ROOT>"),
+                StandardCharsets.UTF_8);
+        LicenseRecoverModernGUIJavaPlan genericClassesPlan =
+                LicenseRecoverModernGUIJavaPlan.inspect(genericClassesRoot.toFile());
+        check("未确认".equals(genericClassesPlan.authorizationFamily)
+                        && genericClassesPlan.regStr == null
+                        && !genericClassesPlan.automaticRecoveryReady,
+                "unknown classes-config apps stay blocked instead of receiving catch-all RegStr");
+
         Path nestedRoot = base.resolve("nestedApp");
         Path nestedLib = nestedRoot.resolve("WEB-INF/WEB-INF/lib");
         Files.createDirectories(nestedLib);
