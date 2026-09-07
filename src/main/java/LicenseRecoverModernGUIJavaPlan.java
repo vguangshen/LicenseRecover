@@ -37,6 +37,11 @@ public final class LicenseRecoverModernGUIJavaPlan {
     public final File regJar;
     public final String softVersionId;
     public final String generation;
+    /** Vendor local-registration family, e.g. DS501 / YX0305. */
+    public final String authorizationFamily;
+    /** Concrete id used by application startup RegisterMain.checkReInfo(). */
+    public final String runtimeProductId;
+    /** Backward-compatible alias for direct-rebuild ProName. */
     public final String productName;
     public final String regStr;
     public final String configTargets;
@@ -45,16 +50,19 @@ public final class LicenseRecoverModernGUIJavaPlan {
     public final boolean packedRegistrationJar;
 
     private LicenseRecoverModernGUIJavaPlan(boolean detected, File appRoot, File libDir, File regJar,
-                                            String softVersionId, String generation, String productName,
-                                            String regStr, String configTargets, String verificationPlan,
-                                            boolean rootConfigStyle, boolean packedRegistrationJar) {
+                                            String softVersionId, String generation, String authorizationFamily,
+                                            String runtimeProductId, String regStr, String configTargets,
+                                            String verificationPlan, boolean rootConfigStyle,
+                                            boolean packedRegistrationJar) {
         this.detected = detected;
         this.appRoot = appRoot;
         this.libDir = libDir;
         this.regJar = regJar;
         this.softVersionId = softVersionId;
         this.generation = generation;
-        this.productName = productName;
+        this.authorizationFamily = authorizationFamily;
+        this.runtimeProductId = runtimeProductId;
+        this.productName = runtimeProductId;
         this.regStr = regStr;
         this.configTargets = configTargets;
         this.verificationPlan = verificationPlan;
@@ -80,14 +88,17 @@ public final class LicenseRecoverModernGUIJavaPlan {
         boolean newStyle = !blank(readElement(dataConfig, "regInfo"));
         boolean rootConfig = dataConfig.isFile() || classesConfig.isFile();
 
+        String upper = soft == null ? "" : soft.toUpperCase(Locale.ROOT);
         String generation;
         if (newStyle) {
             generation = "QT30xxx / data-config";
         } else if (classesConfig.isFile()) {
-            generation = soft != null && soft.toUpperCase(Locale.ROOT).startsWith("XMT01")
-                    ? "XMT / classes-config" : "新式 / classes-config";
+            if (upper.startsWith("XMT01")) generation = "XMT / classes-config";
+            else if (upper.startsWith("DS501")) generation = "DS501 / classes-config";
+            else if (upper.startsWith("YX0305")) generation = "YX0305 / classes-config";
+            else generation = "通用 / classes-config";
         } else if (dataConfig.isFile()) {
-            generation = soft != null && soft.toUpperCase(Locale.ROOT).matches("DS28\\d{2}")
+            generation = upper.matches("DS28\d{2}")
                     ? "DS28 / data-config" : "YT/兼容根配置 / data-config";
         } else if (relative(root, lib).toLowerCase(Locale.ROOT)
                 .contains("web-inf" + File.separator + "web-inf")) {
@@ -96,7 +107,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
             generation = "经典 Java / WEB-INF/lib";
         }
 
-        String product = newStyle && !blank(soft) ? soft.trim() : productMainFor(soft);
+        String family = authorizationFamilyFor(soft, newStyle, classesConfig.isFile());
+        String runtimeProduct = newStyle && !blank(soft) ? soft.trim() : runtimeProductFor(soft);
         String products = resolveRegStr(root, soft);
         File jar = findRegJar(lib);
         boolean packed = jar != null && isVirboxPackedJar(jar);
@@ -109,7 +121,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 : "RegisterMain.checkReInfo(): lib";
 
         return new LicenseRecoverModernGUIJavaPlan(true, root, lib, jar,
-                soft, generation, product, products, targets, verify, rootConfig, packed);
+                soft, generation, family, runtimeProduct, products, targets, verify, rootConfig, packed);
     }
 
     public String regStrSummary() {
@@ -136,7 +148,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
         StringBuilder out = new StringBuilder();
         out.append("[java-plan] generation=").append(generation).append('\n');
         out.append("[java-plan] SoftVersionID=").append(value(softVersionId))
-                .append(" ProName=").append(value(productName)).append('\n');
+                .append(" AuthorizationFamily=").append(value(authorizationFamily))
+                .append(" RuntimeProductID/ProName=").append(value(runtimeProductId)).append('\n');
         out.append("[java-plan] RegStr=").append(value(regStr)).append('\n');
         out.append("[java-plan] config targets=").append(configTargets).append('\n');
         out.append("[java-plan] registration jar=").append(registrationJarSummary()).append('\n');
@@ -175,21 +188,38 @@ public final class LicenseRecoverModernGUIJavaPlan {
         String classes = normalizeCsv(readElement(new File(root, "WEB-INF" + File.separator
                 + "classes" + File.separator + "config.xml"), "regInfo"));
         if (classes != null) return classes;
+        if (softId != null && softId.toUpperCase(Locale.ROOT).startsWith("DS501")) return softId.trim();
         if (softId != null && softId.toUpperCase(Locale.ROOT).matches("DS28\\d{2}")) return softId.trim();
         if ("YT00129".equalsIgnoreCase(softId)) return "QT0420";
         return FALLBACK_ALL_NUMS;
     }
 
-    private static String productMainFor(String softId) {
-        if (softId != null && softId.toUpperCase(Locale.ROOT).matches("DS28\\d{2}")) return "DS28";
-        if (softId != null && softId.toUpperCase(Locale.ROOT).startsWith("XMT01")) return "XMT01";
-        if (softId == null) return "QT1001";
+    static String authorizationFamilyFor(String softId, boolean newStyle, boolean classesStyle) {
+        if (blank(softId)) return newStyle ? "QT30xxx" : (classesStyle ? "未确认" : "QT1001");
         String id = softId.toUpperCase(Locale.ROOT);
+        if (id.startsWith("DS501")) return "DS501";
+        if (id.startsWith("YX0305")) return "YX0305";
+        if (id.startsWith("XMT01")) return "XMT01";
+        if (id.matches("DS28\d{2}")) return "DS28";
+        if (newStyle) return softId.trim();
         if ("YT00128".equals(id) || "YT00127".equals(id) || "YT00129".equals(id)
                 || "YT00139".equals(id) || "YT00132".equals(id) || "YT00141".equals(id)
-                || "YT00126".equals(id) || "YT00154".equals(id) || "BKSM4".equals(id)) {
-            return "QT04";
-        }
+                || "YT00126".equals(id) || "YT00154".equals(id) || "BKSM4".equals(id)) return "QT04";
+        if (classesStyle) return "未确认";
+        return "QT1001";
+    }
+
+    static String runtimeProductFor(String softId) {
+        if (blank(softId)) return "QT1001";
+        String id = softId.toUpperCase(Locale.ROOT);
+        // Real DS501/YX0305 samples use a broader id on the local-registration page,
+        // while application startup checks the concrete SoftVersionID.
+        if (id.startsWith("DS501") || id.startsWith("YX0305")) return softId.trim();
+        if (id.matches("DS28\d{2}")) return "DS28";
+        if (id.startsWith("XMT01")) return "XMT01";
+        if ("YT00128".equals(id) || "YT00127".equals(id) || "YT00129".equals(id)
+                || "YT00139".equals(id) || "YT00132".equals(id) || "YT00141".equals(id)
+                || "YT00126".equals(id) || "YT00154".equals(id) || "BKSM4".equals(id)) return "QT04";
         return "QT1001";
     }
 
@@ -266,7 +296,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
 
     private static LicenseRecoverModernGUIJavaPlan unknown() {
         return new LicenseRecoverModernGUIJavaPlan(false, null, null, null,
-                null, "未识别", null, null, "—", "—", false, false);
+                null, "未识别", null, null, null, "—", "—", false, false);
     }
 
     private static String relative(File root, File child) {

@@ -1,4 +1,4 @@
-LicenseRecover v1.2.4
+LicenseRecover v1.2.5
 =====================
 
 ITMC 云实训平台离线授权恢复工具
@@ -48,6 +48,13 @@ v1.2.4 更新可靠性
 - GitHub 下载连接超时提高到 30 秒，读取超时提高到 60 秒；
 - 下载失败会自动重试 4 次，并在服务器支持时从已下载字节继续；
 - 原生 EXE 启动内置 Java 时启用 Windows 系统代理发现，避免浏览器能访问 GitHub 而 Java 直连超时。
+
+v1.2.5 Java classes-config 授权族识别
+------------------------------------
+- 不再把已确认的 classes-config 平台统称为“新式”；
+- DS501xx：授权族 DS501，运行校验ID 为具体 SoftVersionID，缺少 regInfo 时 RegStr 使用具体 SoftVersionID；
+- YX0305xx：授权族 YX0305，运行校验ID 为具体 SoftVersionID，RegStr 使用 classes/config.xml 显式 regInfo；
+- 单应用与批量表均分别展示“授权族”和“运行校验ID”。
 
 软件自动更新
 ------------

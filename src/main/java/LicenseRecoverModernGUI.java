@@ -47,10 +47,10 @@ public final class LicenseRecoverModernGUI {
     private JPanel advancedPanel;
 
     private final JTextField batchRootField = new JTextField();
-    private static final int BATCH_COL_VERIFY = 6;
-    private static final int BATCH_COL_STATUS = 7;
+    private static final int BATCH_COL_VERIFY = 7;
+    private static final int BATCH_COL_STATUS = 8;
     private final DefaultTableModel batchModel = new DefaultTableModel(
-            new String[]{"应用", "类型 / 授权代际", "SoftVersionID", "ProName", "RegStr", "配置目标", "原生校验", "状态", "路径"}, 0) {
+            new String[]{"应用", "类型 / 授权代际", "SoftVersionID", "授权族", "运行校验ID", "RegStr", "配置目标", "原生校验", "状态", "路径"}, 0) {
         public boolean isCellEditable(int row, int column) { return false; }
     };
     private final JTable batchTable = new JTable(batchModel);
@@ -315,7 +315,7 @@ public final class LicenseRecoverModernGUI {
 
         batchTable.setFillsViewportHeight(true);
         batchTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-        int[] widths = new int[]{120, 190, 120, 100, 220, 230, 160, 90, 420};
+        int[] widths = new int[]{120, 190, 120, 100, 120, 220, 230, 160, 90, 420};
         for (int i = 0; i < widths.length; i++) batchTable.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
         root.add(new JScrollPane(batchTable), BorderLayout.CENTER);
 
@@ -556,8 +556,8 @@ public final class LicenseRecoverModernGUI {
                     LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(info.appRoot);
                     batchModel.addRow(new Object[]{child.getName(),
                             plan.detected ? "Java / " + plan.generation : "Java",
-                            valueOrDash(plan.softVersionId), valueOrDash(plan.productName),
-                            plan.regStrSummary(), plan.configTargets,
+                            valueOrDash(plan.softVersionId), valueOrDash(plan.authorizationFamily),
+                            valueOrDash(plan.runtimeProductId), plan.regStrSummary(), plan.configTargets,
                             plan.detected ? "待执行: RegisterMain" : "待识别", "待处理",
                             info.appRoot.getAbsolutePath()});
                     detected++;
@@ -570,12 +570,12 @@ public final class LicenseRecoverModernGUI {
                     String verify = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
                             ? "待执行: 写回解密校验" : "兼容方式一: 不适用";
                     batchModel.addRow(new Object[]{child.getName(), kind,
-                            valueOrDash(d.versionId), valueOrDash(d.productName), "—", "config.xml",
-                            verify, "待处理", info.binDir.getAbsolutePath()});
+                            valueOrDash(d.versionId), valueOrDash(d.productName), valueOrDash(d.productName),
+                            "—", "config.xml", verify, "待处理", info.binDir.getAbsolutePath()});
                     detected++;
                 } else {
                     target = BatchTarget.skipped(child.getName());
-                    batchModel.addRow(new Object[]{child.getName(), "—", "—", "—", "—", "—", "—", "未识别", child.getAbsolutePath()});
+                    batchModel.addRow(new Object[]{child.getName(), "—", "—", "—", "—", "—", "—", "—", "未识别", child.getAbsolutePath()});
                     skipped++;
                 }
                 batchTargets.add(target);
@@ -584,7 +584,7 @@ public final class LicenseRecoverModernGUI {
                 batchTargets.add(BatchTarget.skipped(child.getName()));
                 String msg = ex.getMessage();
                 String reason = ex.getClass().getSimpleName() + (msg == null || msg.trim().isEmpty() ? "" : ": " + msg.trim());
-                batchModel.addRow(new Object[]{child.getName(), "检测异常", "—", "—", "—", "—", "—",
+                batchModel.addRow(new Object[]{child.getName(), "检测异常", "—", "—", "—", "—", "—", "—",
                         reason, child.getAbsolutePath()});
                 appendLog("[批量扫描] " + child.getName() + " 检测异常: " + reason + "\n");
             }

@@ -503,13 +503,9 @@ public class LicenseRecover {
         if (appArg != null && !pGiven) {
             String softId = readSoftId(appArg);
             if (softId != null && !softId.trim().isEmpty()) {
-                if (isNewStyleApp(appArg)) {
-                    registerPid = softId.trim();
-                    System.out.println("[识别] 新架构(data/config.xml 存在)，注册码产品号 = " + registerPid);
-                } else {
-                    registerPid = "DS2601".equals(softId) ? "DS26" : "YT001";
-                    System.out.println("[识别] systemConfig.yml VersionID = " + softId + "  -> 注册码产品号 " + registerPid);
-                }
+                boolean dataStyle = isNewStyleApp(appArg);
+                registerPid = localRegisterProductFor(softId, dataStyle);
+                System.out.println("[识别] VersionID = " + softId + "  -> 本地注册产品族 " + registerPid);
             }
         }
         System.out.println("======================================================");
@@ -548,6 +544,17 @@ public class LicenseRecover {
             return 1;
         }
         return 0;
+    }
+
+    /** Product family used by the vendor local-registration page / doRegistry path. */
+    static String localRegisterProductFor(String softId, boolean dataStyle) {
+        if (softId == null || softId.trim().isEmpty()) return "YT001";
+        String id = softId.toUpperCase(java.util.Locale.ROOT);
+        if (id.startsWith("DS501")) return "DS501";
+        if (id.startsWith("YX0305")) return "YX0305";
+        if ("DS2601".equals(id)) return "DS26";
+        if (dataStyle) return softId.trim();
+        return "YT001";
     }
 
     // ================= 方式三: 移除联网授权代码 (暴力) =================
@@ -669,6 +676,7 @@ public class LicenseRecover {
         String classes = normalizeCsv(readJavaConfigElement(
                 new File(root, "WEB-INF" + File.separator + "classes" + File.separator + "config.xml"), "regInfo"));
         if (classes != null) return classes;
+        if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("DS501")) return softId.trim();
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("DS28\\d{2}")) return softId.trim();
         if ("YT00129".equalsIgnoreCase(softId)) return "QT0420";
         return ALL_NUMS;
@@ -688,8 +696,10 @@ public class LicenseRecover {
         return regInfo != null && !regInfo.trim().isEmpty();
     }
 
-    // 与 Global.registerProductBeans 的首个命中规则保持一致
+    // Direct config rebuild must use the id application startup passes to RegisterMain.checkReInfo().
     static String productMainFor(String softId) {
+        if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("DS501")) return softId.trim();
+        if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("YX0305")) return softId.trim();
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("DS28\\d{2}")) return "DS28";
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("XMT01")) return "XMT01";
         if (softId == null) return "QT1001";
