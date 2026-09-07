@@ -219,6 +219,15 @@ public final class LicenseRecoverModernGUIJavaPlan {
         String recovered = ExistingLocalRegStrProbe.recover(root, lib, runtimeProduct);
         if (recovered != null) return recovered;
 
+        // QT40101 production sample: RegisterListener sets hasRegister/authorizeFlag=true
+        // before consuming RegStr, and no application-side startup gate requires a
+        // ClassPid match. Use the concrete VersionID as the deterministic minimum
+        // non-empty RegStr. Do not generalize this rule to other QT401xx products.
+        if ("QT40101".equalsIgnoreCase(softId)
+                && "QT401".equals(confirmedClassesAuthorizationFamily(root, softId))) {
+            return "QT40101";
+        }
+
         if ("QT100101".equalsIgnoreCase(softId)
                 && "QT100101".equals(confirmedClassesAuthorizationFamily(root, softId))) {
             return "QT100101";

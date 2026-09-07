@@ -693,6 +693,16 @@ public class LicenseRecover {
             if (recovered != null) return recovered;
         }
 
+        // QT40101 production sample: application startup sets hasRegister and
+        // authorizeFlag true before it inspects RegStr; no ClassPid match is required
+        // for startup. The concrete VersionID is therefore a deterministic minimum
+        // non-empty RegStr for this exact product.
+        if ("QT40101".equalsIgnoreCase(softId)) {
+            String family = readJavaConfigElement(new File(root, "WEB-INF" + File.separator
+                    + "classes" + File.separator + "config1.xml"), "SoftVersionID");
+            if ("QT401".equalsIgnoreCase(family)) return "QT40101";
+        }
+
         // Actual QT100101 business code checks RegStr.contains(RegisterContant.versionID),
         // and VersionID is QT100101 in the supplied production sample. This is therefore
         // a verified minimum authorization item, not the old 44-item fallback.

@@ -2,6 +2,19 @@
 
 All notable user-visible and engineering changes are tracked here from the first stable release onward.
 
+## [1.2.10] - 2026-09-07
+
+### Fixed
+
+- 根据 QT40101 真实生产样本的 RegisterListener / RegisterInterceptor 字节码，确认启动阶段在读取 RegStr 前即将 `hasRegister` 与 `authorizeFlag` 置为 true，启动授权不要求 RegStr 命中 `StoreIPAddress.json` 的 ClassPid。
+- QT40101 在没有旧本地授权可动态恢复时，使用具体 VersionID `QT40101` 作为经过该样本验证的最小非空 RegStr，不再停留在“待确认”。
+- 规则仅对 `QT40101 + config1.xml SoftVersionID=QT401` 精确生效，不推广到其它 QT401xx 产品。
+
+### Safety
+
+- 仍优先使用 v1.2.9 的旧本地授权动态 RegStr 恢复；若能恢复真实 RegStr，则真实值优先于最小回退。
+- 未确认的其它 classes-config 产品仍保持自动写入阻止，不恢复 44 项通用 fallback。
+
 ## [1.2.9] - 2026-09-07
 
 ### Added
