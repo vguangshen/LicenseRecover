@@ -91,6 +91,8 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     }
 
     private static Result recoverJava(Detection d, boolean backup, boolean blockNet, boolean dryRun, Consumer<String> log) throws Exception {
+        LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(d.appRoot);
+        if (plan.detected) log.accept(plan.logSummary());
         File cli=new File(toolDir(),"LicenseRecover.jar");
         if (!cli.isFile()) return Result.fail("LicenseRecover.jar was not found.",d);
         List<String> cmd=new ArrayList<String>();
@@ -99,6 +101,10 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         cmd.add("LicenseRecover"); cmd.add(d.appRoot.getAbsolutePath());
         if (dryRun) cmd.add("--dry-run"); if (!backup) cmd.add("--no-backup"); if (!blockNet) cmd.add("--no-block-net");
         int rc=run(cmd,log);
+        if (dryRun) log.accept("[java-plan] native verify=PREVIEW (write-back check not executed)\n");
+        else log.accept(rc==0
+                ? "[java-plan] native verify=PASS (RegisterMain.checkReInfo())\n"
+                : "[java-plan] native verify=FAILED (see CLI log)\n");
         return new Result(rc==0,rc==0?"Java local authorization recovery completed and native self-check passed.":"Java recovery failed; see log.",d,null,null,null);
     }
 
@@ -324,7 +330,20 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     private static String firstValue(String raw,String prefix){if(raw==null)return null;for(String l:raw.split("\\r?\\n")){String s=l.trim();if(s.regionMatches(true,0,prefix,0,prefix.length())){String v=s.substring(prefix.length()).trim();if(!v.isEmpty())return v;}}return null;}
     private static String runCapture(String[]cmd){try{Process p=new ProcessBuilder(cmd).redirectErrorStream(true).start();ByteArrayOutputStream o=new ByteArrayOutputStream();InputStream in=p.getInputStream();byte[]b=new byte[4096];int n;while((n=in.read(b))>=0)o.write(b,0,n);p.waitFor();if(p.exitValue()!=0)return null;Charset c;try{c=Charset.forName("GBK");}catch(Exception e){c=StandardCharsets.UTF_8;}return new String(o.toByteArray(),c);}catch(Throwable e){return null;}}
 
-    private static int run(List<String>cmd,Consumer<String>log)throws Exception{Process p=new ProcessBuilder(cmd).redirectErrorStream(true).start();BufferedReader r=new BufferedReader(new InputStreamReader(p.getInputStream(),StandardCharsets.UTF_8));String s;while((s=r.readLine())!=null)log.accept(s+"\n");return p.waitFor();}
+    private static int run(List<String>cmd,Consumer<String>log)throws Exception{
+        Process p=new ProcessBuilder(cmd).redirectErrorStream(true).start();
+        try{
+            BufferedReader r=new BufferedReader(new InputStreamReader(p.getInputStream(),StandardCharsets.UTF_8));
+            String s;while((s=r.readLine())!=null)log.accept(s+"\n");
+            return p.waitFor();
+        }catch(InterruptedException ex){
+            p.destroy();
+            try{p.waitFor();}catch(InterruptedException again){Thread.currentThread().interrupt();}
+            try{if(p.isAlive())p.destroyForcibly();}catch(Throwable ignore){}
+            Thread.currentThread().interrupt();
+            throw ex;
+        }
+    }
     private static String firstElement(String xml,String name){Matcher m=Pattern.compile("(?is)<"+Pattern.quote(name)+"\\b[^>]*>\\s*([^<]*?)\\s*</"+Pattern.quote(name)+"\\s*>").matcher(xml);return m.find()?unxml(m.group(1).trim()):null;}
     private static void validateXml(String xml)throws Exception{DocumentBuilderFactory f=DocumentBuilderFactory.newInstance();try{f.setFeature("http://apache.org/xml/features/disallow-doctype-decl",true);}catch(Exception ignore){}f.setExpandEntityReferences(false);f.setXIncludeAware(false);f.newDocumentBuilder().parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));}
     private static String readUtf8(File f)throws IOException{return new String(Files.readAllBytes(f.toPath()),StandardCharsets.UTF_8);} private static String match(Pattern p,String s){Matcher m=p.matcher(s==null?"":s);return m.find()?m.group(1).trim():null;}

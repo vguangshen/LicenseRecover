@@ -2,6 +2,21 @@
 
 All notable user-visible and engineering changes are tracked here from the first stable release onward.
 
+## [1.2.2] - 2026-09-07
+
+### Added
+
+- Java 单个应用一键恢复区新增授权计划详情：授权代际、ProName、RegStr、实际 config.xml 目标、ITMCReg 组件与原生校验状态。
+- 新增共享 `LicenseRecoverModernGUIJavaPlan`，让单个 GUI、批量 GUI 与真实 CLI 使用同一套 Java 产品/配置识别规则。
+- 批量表新增 SoftVersionID、ProName、RegStr、配置目标与原生校验列，并提供独立的备份、阻断联网、只预览选项。
+
+### Changed
+
+- 批量默认“方式一”升级为与单个应用相同的一键恢复协调器；Java 项执行后逐行显示 `RegisterMain.checkReInfo()` 结果。
+- .NET Modern 批量项使用一键写回校验；.NET Legacy 保持兼容方式一，仅阻断失效授权服务，避免改变旧代协议行为。
+- 批量取消会中断并终止当前 Java 子进程，避免取消后恢复任务继续在后台运行。
+
+
 ## [1.2.1] - 2026-09-07
 
 ### Fixed

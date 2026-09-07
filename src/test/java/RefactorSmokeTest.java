@@ -50,6 +50,11 @@ public final class RefactorSmokeTest {
         check(LicenseRecover.usesRootConfigApp(yt129Root.toString()), "YT00129 uses webapp-root authorization config");
         check("QT04".equals(LicenseRecover.productMainFor("YT00129")), "YT00129 maps to QT04 ProName");
         check("QT0420".equals(LicenseRecover.resolveJavaRegStr(yt129Root.toString(), "YT00129")), "YT00129 embeds QT0420 authorization product");
+        LicenseRecoverModernGUIJavaPlan yt129Plan = LicenseRecoverModernGUIJavaPlan.inspect(yt129Root.toFile());
+        check(yt129Plan.detected && "QT04".equals(yt129Plan.productName),
+                "Java GUI plan maps YT00129 to QT04");
+        check("QT0420".equals(yt129Plan.regStr) && yt129Plan.rootConfigStyle,
+                "Java GUI plan exposes YT00129 RegStr and root config target");
 
         Path qt30103Root = base.resolve("java-QT30103");
         Path qt30103Lib = qt30103Root.resolve("WEB-INF/lib");
@@ -60,6 +65,11 @@ public final class RefactorSmokeTest {
         Files.write(qt30103Root.resolve("data/config.xml"), Arrays.asList("<ROOT><SystemSoft><SoftVersionID>QT30103</SoftVersionID><regInfo>QT30101,QT30102,QT30103,QT30104</regInfo></SystemSoft></ROOT>"), StandardCharsets.UTF_8);
         check(LicenseRecover.isNewStyleApp(qt30103Root.toString()), "QT30103 regInfo selects QT30xxx style");
         check("QT30101,QT30102,QT30103,QT30104".equals(LicenseRecover.resolveJavaRegStr(qt30103Root.toString(), "QT30103")), "QT30103 preserves data regInfo");
+        LicenseRecoverModernGUIJavaPlan qtPlan = LicenseRecoverModernGUIJavaPlan.inspect(qt30103Root.toFile());
+        check(qtPlan.detected && "QT30103".equals(qtPlan.productName),
+                "Java GUI plan keeps QT30xxx SoftVersionID as ProName");
+        check(qtPlan.generation.contains("QT30xxx") && qtPlan.configTargets.contains("webapp根"),
+                "Java GUI plan reports QT30xxx generation and dual config targets");
 
         Path xmtRoot = base.resolve("java-XMT0107");
         Path xmtLib = xmtRoot.resolve("WEB-INF/lib");
@@ -77,6 +87,11 @@ public final class RefactorSmokeTest {
         check("XMT0107".equals(xmtOneClick.versionId), "one-click detector reads XMT0107 classes config");
         check(LicenseRecover.usesRootConfigApp(xmtRoot.toString()), "XMT0107 uses webapp-root authorization config");
         check("QT0423,QT0428,QT0424,QT0425,QT0427,QT0426,QT0406,QT0430".equals(LicenseRecover.resolveJavaRegStr(xmtRoot.toString(), "XMT0107")), "XMT0107 preserves classes regInfo");
+        LicenseRecoverModernGUIJavaPlan xmtPlan = LicenseRecoverModernGUIJavaPlan.inspect(xmtRoot.toFile());
+        check(xmtPlan.detected && "XMT01".equals(xmtPlan.productName),
+                "Java GUI plan maps XMT0107 to XMT01");
+        check(xmtPlan.generation.contains("XMT") && xmtPlan.regStrSummary().startsWith("8 项"),
+                "Java GUI plan exposes XMT generation and compact RegStr summary");
 
         Path nestedRoot = base.resolve("nestedApp");
         Path nestedLib = nestedRoot.resolve("WEB-INF/WEB-INF/lib");

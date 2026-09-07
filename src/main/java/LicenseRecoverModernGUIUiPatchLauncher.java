@@ -61,18 +61,51 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
 
         JPanel primary = new JPanel(new BorderLayout(8, 8));
         primary.setName(ONE_CLICK_CONTROL_NAME);
-        JLabel help = new JLabel("自动识别软件 → 获取本机标识 → 生成本地授权 → 写入 → 重新读取验证");
+        JLabel help = new JLabel("自动识别软件 → 展示授权计划 → 获取本机标识 → 写入 → 原生重新读取验证");
         help.setForeground(new Color(0x57606a));
-        primary.add(help, BorderLayout.NORTH);
+
+        final JLabel generationValue = new JLabel("—");
+        final JLabel productValue = new JLabel("—");
+        final JTextArea regStrValue = detailArea();
+        final JTextArea targetValue = detailArea();
+        final JLabel jarValue = new JLabel("—");
+        final JLabel verifyValue = new JLabel("待执行");
+        JPanel details = new JPanel(new GridBagLayout());
+        details.setBorder(BorderFactory.createTitledBorder("授权识别详情"));
+        addDetailRow(details, 0, "授权代际", generationValue);
+        addDetailRow(details, 1, "ProName", productValue);
+        addDetailRow(details, 2, "RegStr", regStrValue);
+        addDetailRow(details, 3, "配置目标", targetValue);
+        addDetailRow(details, 4, "授权组件", jarValue);
+        addDetailRow(details, 5, "原生校验", verifyValue);
+
+        JPanel overview = new JPanel(new BorderLayout(0, 6));
+        overview.add(help, BorderLayout.NORTH);
+        overview.add(details, BorderLayout.CENTER);
+        primary.add(overview, BorderLayout.NORTH);
 
         final JButton recover = new JButton("一键恢复授权");
         recover.setFont(recover.getFont().deriveFont(Font.BOLD, 15f));
         recover.setPreferredSize(new Dimension(220, 42));
-        recover.setToolTipText("自动选择 Java / .NET 授权适配器；写入前默认备份，成功后自动校验");
-        recover.addActionListener(e -> runOneClick(frame, recover));
+        recover.setToolTipText("Java 会展示授权代际 / ProName / RegStr / config 目标，并在写入后执行 RegisterMain 原生校验");
+        recover.addActionListener(e -> runOneClick(frame, recover,
+                generationValue, productValue, regStrValue, targetValue, jarValue, verifyValue));
         JPanel buttonRow = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 2));
         buttonRow.add(recover);
         primary.add(buttonRow, BorderLayout.CENTER);
+
+        final JTextField planRoot = findTextFieldInTitledPanel(frame.getContentPane(), "应用目录");
+        final Runnable refresh = () -> refreshPlan(frame, generationValue, productValue,
+                regStrValue, targetValue, jarValue, verifyValue);
+        if (planRoot != null) {
+            planRoot.getDocument().addDocumentListener(new DocumentListener() {
+                private void changed() { SwingUtilities.invokeLater(refresh); }
+                public void insertUpdate(DocumentEvent e) { changed(); }
+                public void removeUpdate(DocumentEvent e) { changed(); }
+                public void changedUpdate(DocumentEvent e) { changed(); }
+            });
+        }
+        SwingUtilities.invokeLater(refresh);
 
         final JButton manualToggle = new JButton("显示手动兼容工具");
         manualToggle.addActionListener(e -> {
@@ -94,7 +127,69 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         card.repaint();
     }
 
-    private static void runOneClick(final JFrame frame, final JButton button) {
+    private static void addDetailRow(JPanel panel, int row, String name, Component value) {
+        GridBagConstraints c = new GridBagConstraints();
+        c.insets = new Insets(2, 5, 2, 5);
+        c.gridy = row; c.gridx = 0; c.weightx = 0;
+        c.anchor = GridBagConstraints.NORTHWEST;
+        JLabel label = new JLabel(name + ":");
+        label.setFont(label.getFont().deriveFont(Font.BOLD));
+        panel.add(label, c);
+        c.gridx = 1; c.weightx = 1; c.fill = GridBagConstraints.HORIZONTAL;
+        panel.add(value, c);
+    }
+
+    private static JTextArea detailArea() {
+        JTextArea area = new JTextArea(2, 48);
+        area.setEditable(false);
+        area.setLineWrap(true);
+        area.setWrapStyleWord(true);
+        area.setOpaque(false);
+        area.setBorder(null);
+        area.setFont(UIManager.getFont("Label.font"));
+        return area;
+    }
+
+    private static void refreshPlan(JFrame frame, JLabel generation, JLabel product,
+                                    JTextArea regStr, JTextArea targets, JLabel jar, JLabel verify) {
+        JTextField appRoot = findTextFieldInTitledPanel(frame.getContentPane(), "应用目录");
+        if (appRoot == null || appRoot.getText().trim().isEmpty()) {
+            generation.setText("—"); product.setText("—"); regStr.setText("—"); targets.setText("—");
+            jar.setText("—"); verify.setText("待选择应用");
+            return;
+        }
+        File selected = new File(appRoot.getText().trim());
+        LicenseRecoverModernGUIAutoRecovery.Detection detection = LicenseRecoverModernGUIAutoRecovery.detect(selected);
+        if (detection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.JAVA) {
+            LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(selected);
+            generation.setText(plan.generation);
+            product.setText(value(plan.productName));
+            regStr.setText(value(plan.regStr)); regStr.setCaretPosition(0);
+            targets.setText(plan.configTargets); targets.setCaretPosition(0);
+            jar.setText(plan.registrationJarSummary());
+            verify.setText("待执行: " + plan.verificationPlan);
+        } else if (detection.isDetected()) {
+            generation.setText(detection.kind.toString());
+            product.setText(value(detection.productName));
+            regStr.setText(".NET 由对应适配器自动识别");
+            targets.setText("config.xml / 授权 sidecar（按检测结果）");
+            jar.setText("不适用");
+            verify.setText(detection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
+                    ? "待执行: 写回解密校验" : "Legacy: 仅兼容路径");
+        } else {
+            generation.setText("未识别"); product.setText("—"); regStr.setText("—"); targets.setText("—");
+            jar.setText("—"); verify.setText("未识别到支持的授权结构");
+        }
+    }
+
+    private static String value(String text) {
+        return text == null || text.trim().isEmpty() ? "—" : text;
+    }
+
+    private static void runOneClick(final JFrame frame, final JButton button,
+                                    final JLabel generationValue, final JLabel productValue,
+                                    final JTextArea regStrValue, final JTextArea targetValue,
+                                    final JLabel jarValue, final JLabel verifyValue) {
         final JTextField appRoot = findTextFieldInTitledPanel(frame.getContentPane(), "应用目录");
         if (appRoot == null || appRoot.getText().trim().isEmpty()) {
             JOptionPane.showMessageDialog(frame, "请先选择 ITMC 软件目录。",
@@ -110,6 +205,8 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         final boolean doBackup = backup == null || backup.isSelected();
         final boolean doBlock = blockNet == null || blockNet.isSelected();
         final boolean preview = dryRun != null && dryRun.isSelected();
+        refreshPlan(frame, generationValue, productValue, regStrValue, targetValue, jarValue, verifyValue);
+        verifyValue.setText(preview ? "预览执行中..." : "执行并校验中...");
         button.setEnabled(false);
         append(logArea, "\n===== 一键恢复授权 =====\n");
 
@@ -122,9 +219,20 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
                 button.setEnabled(true);
                 try {
                     LicenseRecoverModernGUIAutoRecovery.Result result = get();
+                    boolean javaTarget = result.detection != null
+                            && result.detection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.JAVA;
+                    if (javaTarget) {
+                        verifyValue.setText(preview ? "PREVIEW: 未执行写后校验"
+                                : (result.success ? "PASS: RegisterMain.checkReInfo()" : "FAILED: 查看运行日志"));
+                    } else {
+                        verifyValue.setText(preview ? "PREVIEW: 未执行写回校验"
+                                : (result.success ? "PASS: 写回校验" : "FAILED: 查看运行日志"));
+                    }
                     if (result.success) {
                         StringBuilder msg = new StringBuilder(result.message);
-                        if (result.machineId != null) msg.append("\n\n机器标识: ").append(result.machineId);
+                        if (javaTarget) msg.append("\n\n原生校验: ")
+                                .append(preview ? "预览模式未执行" : "RegisterMain.checkReInfo() 通过");
+                        if (result.machineId != null) msg.append("\n机器标识: ").append(result.machineId);
                         JOptionPane.showMessageDialog(frame, msg.toString(),
                                 "一键恢复完成", JOptionPane.INFORMATION_MESSAGE);
                     } else {
@@ -132,6 +240,7 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
                                 "一键恢复未完成", JOptionPane.WARNING_MESSAGE);
                     }
                 } catch (Exception ex) {
+                    verifyValue.setText("FAILED: " + value(ex.getMessage()));
                     JOptionPane.showMessageDialog(frame, "一键恢复失败：" + ex.getMessage(),
                             "一键恢复授权", JOptionPane.ERROR_MESSAGE);
                 }

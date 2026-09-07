@@ -47,14 +47,19 @@ public final class LicenseRecoverModernGUI {
     private JPanel advancedPanel;
 
     private final JTextField batchRootField = new JTextField();
+    private static final int BATCH_COL_VERIFY = 6;
+    private static final int BATCH_COL_STATUS = 7;
     private final DefaultTableModel batchModel = new DefaultTableModel(
-            new String[]{"应用", "类型", "状态", "路径"}, 0) {
+            new String[]{"应用", "类型 / 授权代际", "SoftVersionID", "ProName", "RegStr", "配置目标", "原生校验", "状态", "路径"}, 0) {
         public boolean isCellEditable(int row, int column) { return false; }
     };
     private final JTable batchTable = new JTable(batchModel);
     private final List<BatchTarget> batchTargets = new ArrayList<BatchTarget>();
-    private final JRadioButton batchWay1 = new JRadioButton("方式一：配置 / 本地授权", true);
+    private final JRadioButton batchWay1 = new JRadioButton("一键恢复授权（推荐）", true);
     private final JRadioButton batchWay3 = new JRadioButton("方式三：移除联网授权代码");
+    private final JCheckBox batchBackupCheck = new JCheckBox("写入前备份", true);
+    private final JCheckBox batchBlockNetCheck = new JCheckBox("同时阻止残留联网", true);
+    private final JCheckBox batchDryRunCheck = new JCheckBox("只预览，不写入", false);
     private final JButton batchScanButton = new JButton("扫描子目录");
     private final JButton batchRunButton = new JButton("批量执行");
     private final JButton batchCancelButton = new JButton("取消");
@@ -297,13 +302,21 @@ public final class LicenseRecoverModernGUI {
         actions.add(batchRunButton);
         actions.add(batchCancelButton);
         top.add(actions, c);
+
+        c.gridx = 0; c.gridy = 2; c.gridwidth = 1; c.weightx = 0;
+        top.add(new JLabel("选项:"), c);
+        c.gridx = 1; c.gridwidth = 3; c.weightx = 1;
+        JPanel batchOptions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        batchOptions.add(batchBackupCheck);
+        batchOptions.add(batchBlockNetCheck);
+        batchOptions.add(batchDryRunCheck);
+        top.add(batchOptions, c);
         root.add(top, BorderLayout.NORTH);
 
         batchTable.setFillsViewportHeight(true);
-        batchTable.getColumnModel().getColumn(0).setPreferredWidth(120);
-        batchTable.getColumnModel().getColumn(1).setPreferredWidth(70);
-        batchTable.getColumnModel().getColumn(2).setPreferredWidth(100);
-        batchTable.getColumnModel().getColumn(3).setPreferredWidth(520);
+        batchTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
+        int[] widths = new int[]{120, 190, 120, 100, 220, 230, 160, 90, 420};
+        for (int i = 0; i < widths.length; i++) batchTable.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
         root.add(new JScrollPane(batchTable), BorderLayout.CENTER);
 
         batchProgress.setStringPainted(true);
@@ -495,9 +508,13 @@ public final class LicenseRecoverModernGUI {
     }
 
     private OperationResult runNetFor(AppInfo info, boolean patch) {
+        return runNetFor(info, patch, dryRunCheck.isSelected());
+    }
+
+    private OperationResult runNetFor(AppInfo info, boolean patch, boolean preview) {
         File cli = cliJar();
         if (!cli.isFile()) return OperationResult.failed("未找到 LicenseRecover.jar", 1);
-        if (patch && !PatchSafety.prepare(info, this::appendLog)) {
+        if (patch && !preview && !PatchSafety.prepare(info, this::appendLog)) {
             return OperationResult.failed("安全备份预检失败", 3);
         }
         List<String> cmd = new ArrayList<String>();
@@ -513,7 +530,7 @@ public final class LicenseRecoverModernGUI {
         }
         cmd.add(patch ? "--remove-net" : "--scan-net");
         cmd.add((info.type == AppInfo.Type.DOTNET ? info.binDir : info.appRoot).getAbsolutePath());
-        if (dryRunCheck.isSelected()) cmd.add("--dry-run");
+        if (preview) cmd.add("--dry-run");
         return ProcessRunner.run(cmd, this::appendLog, PROCESS_TIMEOUT_SECONDS);
     }
 
@@ -533,22 +550,36 @@ public final class LicenseRecoverModernGUI {
             BatchTarget target;
             if (info.type == AppInfo.Type.JAVA) {
                 target = BatchTarget.javaTarget(child.getName(), info.appRoot, info.libDir);
-                batchModel.addRow(new Object[]{child.getName(), "Java", "待处理", info.appRoot.getAbsolutePath()});
+                LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(info.appRoot);
+                batchModel.addRow(new Object[]{child.getName(),
+                        plan.detected ? "Java / " + plan.generation : "Java",
+                        valueOrDash(plan.softVersionId), valueOrDash(plan.productName),
+                        plan.regStrSummary(), plan.configTargets,
+                        plan.detected ? "待执行: RegisterMain" : "待识别", "待处理",
+                        info.appRoot.getAbsolutePath()});
                 detected++;
             } else if (info.type == AppInfo.Type.DOTNET) {
                 target = BatchTarget.dotNetTarget(child.getName(), info.binDir);
-                batchModel.addRow(new Object[]{child.getName(), ".NET", "待处理", info.binDir.getAbsolutePath()});
+                LicenseRecoverModernGUIAutoRecovery.Detection d =
+                        LicenseRecoverModernGUIAutoRecovery.detect(info.binDir);
+                String kind = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
+                        ? ".NET Modern" : ".NET Legacy";
+                String verify = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
+                        ? "待执行: 写回解密校验" : "兼容方式一: 不适用";
+                batchModel.addRow(new Object[]{child.getName(), kind,
+                        valueOrDash(d.versionId), valueOrDash(d.productName), "—", "config.xml",
+                        verify, "待处理", info.binDir.getAbsolutePath()});
                 detected++;
             } else {
                 target = BatchTarget.skipped(child.getName());
-                batchModel.addRow(new Object[]{child.getName(), "—", "跳过", child.getAbsolutePath()});
+                batchModel.addRow(new Object[]{child.getName(), "—", "—", "—", "—", "—", "—", "跳过", child.getAbsolutePath()});
             }
             batchTargets.add(target);
         }
         batchProgress.setMinimum(0);
         batchProgress.setMaximum(batchTargets.size());
         batchProgress.setValue(0);
-        batchProgress.setString("已识别 " + detected + " 个 ITMC 应用");
+        batchProgress.setString("已识别 " + detected + " 个 ITMC 应用；Java 授权计划已展开");
         setStatus("批量扫描完成", true);
     }
 
@@ -558,7 +589,10 @@ public final class LicenseRecoverModernGUI {
             if (batchTargets.isEmpty()) return;
         }
         final boolean usePatch = batchWay3.isSelected();
-        if (usePatch) {
+        final boolean backup = batchBackupCheck.isSelected();
+        final boolean blockNet = batchBlockNetCheck.isSelected();
+        final boolean preview = batchDryRunCheck.isSelected();
+        if (usePatch && !preview) {
             int answer = JOptionPane.showConfirmDialog(frame,
                     "批量方式三会逐个修改授权文件，并为每个应用先建立 prepatch 备份。\n请确认相关应用服务已停止。",
                     "确认批量危险操作", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
@@ -579,14 +613,25 @@ public final class LicenseRecoverModernGUI {
                         updateBatchProgress(done, "跳过 " + target.name);
                         continue;
                     }
-                    SwingUtilities.invokeLater(() -> batchModel.setValueAt("处理中", currentRow, 2));
+                    SwingUtilities.invokeLater(() -> {
+                        batchModel.setValueAt("处理中", currentRow, BATCH_COL_STATUS);
+                        batchModel.setValueAt(usePatch ? "方式三" : "执行中", currentRow, BATCH_COL_VERIFY);
+                    });
                     AppInfo info = AppDetector.detect(target.type == BatchTarget.Type.JAVA ? target.appRoot : target.binDir);
-                    appendLog("\n===== [" + target.name + "] " + (usePatch ? "方式三" : "方式一") + " =====\n");
-                    OperationResult result = usePatch ? runNetFor(info, true) : runWay1For(info);
-                    String text = result.isSuccess() ? "OK" : (result.status == OperationResult.Status.CANCELLED ? "取消" : "FAILED");
-                    SwingUtilities.invokeLater(() -> batchModel.setValueAt(text, currentRow, 2));
+                    appendLog("\n===== [" + target.name + "] " + (usePatch ? "方式三" : "一键恢复") + " =====\n");
+                    OperationResult result = usePatch
+                            ? runNetFor(info, true, preview)
+                            : runBatchRecommended(target, backup, blockNet, preview);
+                    if (isCancelled()) break;
+                    final String textResult = result.isSuccess() ? (result.status == OperationResult.Status.PREVIEW ? "PREVIEW" : "OK")
+                            : (result.status == OperationResult.Status.CANCELLED ? "取消" : "FAILED");
+                    final String verify = batchVerification(target, usePatch, preview, result);
+                    SwingUtilities.invokeLater(() -> {
+                        batchModel.setValueAt(verify, currentRow, BATCH_COL_VERIFY);
+                        batchModel.setValueAt(textResult, currentRow, BATCH_COL_STATUS);
+                    });
                     done++;
-                    updateBatchProgress(done, target.name + " : " + text);
+                    updateBatchProgress(done, target.name + " : " + textResult);
                     if (result.status == OperationResult.Status.CANCELLED) break;
                 }
                 return null;
@@ -600,6 +645,43 @@ public final class LicenseRecoverModernGUI {
             }
         };
         batchWorker.execute();
+    }
+
+    private OperationResult runBatchRecommended(BatchTarget target, boolean backup, boolean blockNet, boolean preview) {
+        File selected = target.type == BatchTarget.Type.JAVA ? target.appRoot : target.binDir;
+        LicenseRecoverModernGUIAutoRecovery.Detection d = LicenseRecoverModernGUIAutoRecovery.detect(selected);
+        if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY) {
+            return runLegacyBatchWay1(target.binDir, backup, preview);
+        }
+        LicenseRecoverModernGUIAutoRecovery.Result result =
+                LicenseRecoverModernGUIAutoRecovery.recover(selected, backup, blockNet, preview, this::appendLog);
+        if (Thread.currentThread().isInterrupted()) return OperationResult.cancelled("批量任务已取消");
+        if (!result.success) return OperationResult.failed(result.message, 1);
+        return preview ? OperationResult.preview(result.message) : OperationResult.success(result.message);
+    }
+
+    private OperationResult runLegacyBatchWay1(File binDir, boolean backup, boolean preview) {
+        File cli = cliJar();
+        if (!cli.isFile()) return OperationResult.failed("未找到 LicenseRecover.jar", 1);
+        List<String> cmd = new ArrayList<String>();
+        cmd.add(javaExe()); cmd.add("-Dfile.encoding=UTF-8"); cmd.add("-jar"); cmd.add(cli.getAbsolutePath());
+        cmd.add("--block-net"); cmd.add(binDir.getAbsolutePath());
+        if (preview) cmd.add("--dry-run");
+        if (!backup) cmd.add("--no-backup");
+        appendLog("[batch] .NET Legacy 使用兼容方式一：仅阻断失效授权服务，不重建本地授权。\n");
+        return ProcessRunner.run(cmd, this::appendLog, PROCESS_TIMEOUT_SECONDS);
+    }
+
+    private String batchVerification(BatchTarget target, boolean usePatch, boolean preview, OperationResult result) {
+        if (usePatch) return preview ? "方式三预览/扫描" : (result.isSuccess() ? "方式三完成" : "方式三失败");
+        if (target.type == BatchTarget.Type.JAVA) {
+            if (preview) return "预览: 未执行写后校验";
+            return result.isSuccess() ? "RegisterMain: OK" : "RegisterMain: FAILED";
+        }
+        LicenseRecoverModernGUIAutoRecovery.Detection d = LicenseRecoverModernGUIAutoRecovery.detect(target.binDir);
+        if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY) return "兼容方式一: 不适用";
+        if (preview) return "预览: 未执行写回校验";
+        return result.isSuccess() ? "写回解密校验: OK" : "写回解密校验: FAILED";
     }
 
     private void cancelBatch() {
@@ -693,5 +775,9 @@ public final class LicenseRecoverModernGUI {
 
     private static boolean empty(String value) {
         return value == null || value.trim().isEmpty();
+    }
+
+    private static String valueOrDash(String value) {
+        return empty(value) ? "—" : value;
     }
 }
