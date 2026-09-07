@@ -291,10 +291,11 @@ public final class RefactorSmokeTest {
                 StandardCharsets.UTF_8);
         LicenseRecoverModernGUIJavaPlan genericClassesPlan =
                 LicenseRecoverModernGUIJavaPlan.inspect(genericClassesRoot.toFile());
-        check("未确认".equals(genericClassesPlan.authorizationFamily)
+        check(genericClassesPlan.authorizationFamily == null
+                        && genericClassesPlan.runtimeProductId == null
                         && genericClassesPlan.regStr == null
                         && !genericClassesPlan.automaticRecoveryReady,
-                "unknown classes-config apps stay blocked instead of receiving catch-all RegStr");
+                "unknown classes-config apps expose no guessed identity or catch-all RegStr");
 
         Path nestedRoot = base.resolve("nestedApp");
         Path nestedLib = nestedRoot.resolve("WEB-INF/WEB-INF/lib");
