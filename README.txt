@@ -1,4 +1,4 @@
-LicenseRecover v1.2.10
+LicenseRecover v1.2.11
 =====================
 
 ITMC 云实训平台离线授权恢复工具
