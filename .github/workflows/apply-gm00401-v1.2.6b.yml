@@ -1,0 +1,149 @@
+name: Apply GM00401 v1.2.6 support retry
+
+on:
+  push:
+    branches: [ "fix/gm00401-v1.2.6" ]
+    paths: [ ".github/workflows/apply-gm00401-v1.2.6b.yml" ]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/gm00401-v1.2.6
+      - name: Apply GM00401 detector patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          src = Path('src/main/java/LicenseRecoverModernGUIAutoRecovery.java')
+          s = src.read_text(encoding='utf-8')
+          start = s.index('    static String detectProduct(File webDll,String version) {')
+          end = s.index('    static Set<String> extractUtf16Ascii(File f) {', start)
+          lines = [
+              '    static String detectProduct(File webDll,String version) {',
+              '        Set<String> s=extractUtf16Ascii(webDll);',
+              '        if(s.contains("itmcIEC"))return "itmcIEC";',
+              '        // GM00401: require evidence from the target assembly itself.',
+              '        if(version!=null && version.matches("GM\\\\d{5}")) {',
+              '            String family=version.substring(0,5);',
+              '            if(s.contains(version) && s.contains(family)) return family;',
+              '        }',
+              '        if(version!=null && version.matches("YX\\\\d{6}"))return version.substring(0,6);',
+              '        for(String x:s)if(x.matches("YX\\\\d{4}"))return x;',
+              '        TreeSet<String> gmFamilies=new TreeSet<String>();',
+              '        for(String x:s)if(x.matches("GM\\\\d{5}")) {',
+              '            String family=x.substring(0,5);',
+              '            if(s.contains(family)) gmFamilies.add(family);',
+              '        }',
+              '        if(gmFamilies.size()==1)return gmFamilies.first();',
+              '        TreeSet<String> derived=new TreeSet<String>(); for(String x:s)if(x.matches("YX\\\\d{6}"))derived.add(x.substring(0,6));',
+              '        return derived.size()==1?derived.first():null;',
+              '    }',
+              '    static String detectProductList(File webDll,String product) {',
+              '        Set<String>s=extractUtf16Ascii(webDll);TreeSet<String> out=new TreeSet<String>();',
+              '        if("itmcIEC".equals(product)){for(String x:s)if(x.matches("DS\\\\d{4}"))out.add(x);}',
+              '        else if(product!=null&&product.matches("YX\\\\d{4}")){for(String x:s)if(x.matches(Pattern.quote(product)+"\\\\d{2}"))out.add(x);}',
+              '        else if(product!=null&&product.matches("GM\\\\d{3}")){for(String x:s)if(x.matches(Pattern.quote(product)+"\\\\d{2}"))out.add(x);}',
+              '        StringBuilder b=new StringBuilder();for(String x:out){if(b.length()>0)b.append(\',\');b.append(x);}return b.toString();',
+              '    }',
+              ''
+          ]
+          src.write_text(s[:start] + '\n'.join(lines) + s[end:], encoding='utf-8')
+
+          test = Path('src/test/java/RefactorSmokeTest.java')
+          t = test.read_text(encoding='utf-8')
+          needle = '        String knownPlain = "123456{\\"UserID\\":\\"fwq\\"}654321";\n'
+          if 'GM004-Web.dll' not in t:
+              gm = (
+                  '        Path gmFixture = base.resolve("GM004-Web.dll");\n'
+                  '        writeUtf16Fixture(gmFixture, "GM004", "GM00401", "SoftVersionID", "ProName", "RegStr");\n'
+                  '        check("GM004".equals(LicenseRecoverModernGUIAutoRecovery.detectProduct(\n'
+                  '                        gmFixture.toFile(), "GM00401")),\n'
+                  '                "one-click confirms GM004 family from concrete DLL evidence");\n'
+                  '        check("GM00401".equals(LicenseRecoverModernGUIAutoRecovery.detectProductList(\n'
+                  '                        gmFixture.toFile(), "GM004")),\n'
+                  '                "one-click derives GM00401 local product list");\n\n'
+              )
+              if needle not in t:
+                  raise SystemExit('test insertion marker missing')
+              t = t.replace(needle, gm + needle, 1)
+              test.write_text(t, encoding='utf-8')
+
+          Path('VERSION.txt').write_text('1.2.6\n', encoding='utf-8')
+
+          p = Path('README.md')
+          r = p.read_text(encoding='utf-8')
+          r = r.replace('当前稳定版本：**v1.2.5**', '当前稳定版本：**v1.2.6**', 1)
+          marker = '支持包含 `ITMC.Web.dll` 与 `ITMC.Regedit.dll` / `itmcRegedit.dll` 等组件的 ASP.NET / .NET 应用。DS01xx、YX0301/YX0302/YX0303 等已验证家族会按检测结果自动选择兼容路径。'
+          extra = ' v1.2.6 根据 GM00401 实际样本新增 GM004 家族：config.xml 为 GM00401，且 ITMC.Web.dll 同时包含 GM00401 与 GM004 时确认 ProName=GM004，并提取 RegStr=GM00401；样本 Web.config 中遗留的 productName=YX0301 不参与授权产品识别。'
+          if marker not in r:
+              raise SystemExit('README marker missing')
+          p.write_text(r.replace(marker, marker + extra, 1), encoding='utf-8')
+
+          p = Path('README.txt')
+          r = p.read_text(encoding='utf-8').replace('LicenseRecover v1.2.5', 'LicenseRecover v1.2.6', 1)
+          marker = '软件自动更新\n------------\n'
+          extra = ('v1.2.6 GM00401 .NET 识别\n'
+                   '-------------------------\n'
+                   '- 实际 config.xml 确认 SoftVersionID=GM00401；\n'
+                   '- ITMC.Web.dll 同时包含 GM00401 与 GM004 时确认授权族 GM004；\n'
+                   '- RegStr 从 DLL 同族具体项提取，本样本为 GM00401；\n'
+                   '- 忽略 Web.config 中与实际产品冲突的历史 productName=YX0301。\n\n')
+          if marker not in r:
+              raise SystemExit('README.txt marker missing')
+          p.write_text(r.replace(marker, extra + marker, 1), encoding='utf-8')
+
+          p = Path('CHANGELOG.md')
+          r = p.read_text(encoding='utf-8')
+          anchor = 'All notable user-visible and engineering changes are tracked here from the first stable release onward.\n\n'
+          entry = ('## [1.2.6] - 2026-09-07\n\n'
+                   '### Fixed\n\n'
+                   '- 根据 GM00401 实际安装样本补齐 .NET `GM004` 产品族识别；此前 detector 只覆盖 itmcIEC / YX 家族，所以只能显示 SoftVersionID。\n'
+                   '- 只有目标 ITMC.Web.dll 同时出现具体 GM00401 与家族 GM004 时才确认 ProName=GM004。\n'
+                   '- GM004 家族 RegStr 从 DLL 内同族具体产品项提取；当前样本为 GM00401。\n'
+                   '- 不采用样本 Web.config 中与 GM00401 冲突的遗留 productName=YX0301。\n\n'
+                   '### Tests\n\n'
+                   '- 新增 GM004 / GM00401 UTF-16 程序集字符串回归 fixture。\n\n')
+          if anchor not in r:
+              raise SystemExit('CHANGELOG marker missing')
+          p.write_text(r.replace(anchor, anchor + entry, 1), encoding='utf-8')
+
+          notes = [
+              '# LicenseRecover v1.2.6',
+              '',
+              '本版本根据实际 GM00401 ASP.NET 安装样本补齐 GM004 家族识别。',
+              '',
+              '## GM00401 样本结论',
+              '',
+              '- 根目录 config.xml 明确 SoftVersionID=GM00401，且没有 regInfo。',
+              '- ITMC.Web.dll 同时包含 GM00401 与 GM004；GM004 位于 SystemSoft、SoftVersionID、WebSerSoftNo、regName、regType 等注册配置字符串附近。',
+              '- 因此确认授权产品族 / ProName 为 GM004。',
+              '- DLL 当前只发现同族具体项 GM00401，因此 RegStr 为 GM00401。',
+              '- Web.config 中 productName=YX0301 与实际 GM00401 身份冲突，按历史遗留业务配置处理，不参与授权产品识别。',
+              '',
+              '## 安全规则',
+              '',
+              '只有目标程序集同时提供具体 GM00401 和家族 GM004 证据时才接受映射；否则保持产品号未确认并拒绝 .NET 一键写回。',
+              ''
+          ]
+          Path('release-notes/v1.2.6.md').write_text('\n'.join(notes), encoding='utf-8')
+
+          for wf in ['.github/workflows/apply-gm00401-v1.2.6.yml', '.github/workflows/apply-gm00401-v1.2.6b.yml']:
+              q = Path(wf)
+              if q.exists():
+                  q.unlink()
+          PY
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "v1.2.6：补齐 GM00401 .NET 产品族识别"
+          git push origin HEAD:fix/gm00401-v1.2.6
