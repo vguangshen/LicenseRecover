@@ -460,8 +460,41 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         StringBuilder b=new StringBuilder();for(String x:out){if(b.length()>0)b.append(',');b.append(x);}return b.toString();
     }
     static Set<String> extractUtf16Ascii(File f) {
-        LinkedHashSet<String> out=new LinkedHashSet<String>(); if(f==null||!f.isFile())return out;
-        try{byte[]b=Files.readAllBytes(f.toPath());for(int parity=0;parity<2;parity++){StringBuilder s=new StringBuilder();for(int i=parity;i+1<b.length;i+=2){int c=b[i]&255,z=b[i+1]&255;if(z==0&&c>=32&&c<=126)s.append((char)c);else{if(s.length()>=4)out.add(s.toString());s.setLength(0);}}if(s.length()>=4)out.add(s.toString());}}catch(Exception ignore){}return out;
+        LinkedHashSet<String> raw = new LinkedHashSet<String>();
+        LinkedHashSet<String> out = new LinkedHashSet<String>();
+        if (f == null || !f.isFile()) return out;
+        try {
+            byte[] b = Files.readAllBytes(f.toPath());
+            // .NET #US strings are commonly UTF-16LE.
+            for (int parity = 0; parity < 2; parity++) {
+                StringBuilder s = new StringBuilder();
+                for (int i = parity; i + 1 < b.length; i += 2) {
+                    int c = b[i] & 255, z = b[i + 1] & 255;
+                    if (z == 0 && c >= 32 && c <= 126) s.append((char) c);
+                    else { if (s.length() >= 4) raw.add(s.toString()); s.setLength(0); }
+                }
+                if (s.length() >= 4) raw.add(s.toString());
+            }
+            // Metadata/string heaps can also expose plain ASCII/UTF-8 runs.
+            StringBuilder ascii = new StringBuilder();
+            for (byte value : b) {
+                int c = value & 255;
+                if (c >= 32 && c <= 126) ascii.append((char) c);
+                else { if (ascii.length() >= 4) raw.add(ascii.toString()); ascii.setLength(0); }
+            }
+            if (ascii.length() >= 4) raw.add(ascii.toString());
+        } catch (Exception ignore) { return out; }
+
+        Pattern token = Pattern.compile("(?i)(?<![A-Z0-9])(itmcIEC|DS\\d{4}|YX\\d{4}(?:\\d{2})?|GM\\d{3}(?:\\d{2})?)(?![A-Z0-9])");
+        for (String text : raw) {
+            out.add(text);
+            Matcher m = token.matcher(text);
+            while (m.find()) {
+                String x = m.group(1);
+                out.add("itmcIEC".equalsIgnoreCase(x) ? "itmcIEC" : x.toUpperCase(Locale.ROOT));
+            }
+        }
+        return out;
     }
     private static boolean containsAscii(File f,String text) {
         try{byte[]b=Files.readAllBytes(f.toPath()),n=text.getBytes(StandardCharsets.US_ASCII);outer:for(int i=0;i+n.length<=b.length;i++){for(int j=0;j<n.length;j++)if(b[i+j]!=n[j])continue outer;return true;}}catch(Exception ignore){}return false;

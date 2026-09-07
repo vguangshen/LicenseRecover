@@ -314,8 +314,14 @@ public class LicenseRecover {
         info.setCountDay(0);
         String resolvedRegStr = plan.regStr;
         if (resolvedRegStr == null || resolvedRegStr.trim().isEmpty()) {
-            System.err.println("自动恢复已阻止：当前 classes-config 应用没有静态 regInfo，RegStr 未确认。");
-            System.err.println("不会使用 44 项通用列表猜测授权项，也不会修改任何配置文件。");
+            resolvedRegStr = probeTargetRegStr(productMain, appRoot, libDir, rootConfigStyle);
+            if (resolvedRegStr != null && !resolvedRegStr.trim().isEmpty()) {
+                System.out.println("[识别] RegStr(目标组件 getRegInfo) = " + resolvedRegStr);
+            }
+        }
+        if (resolvedRegStr == null || resolvedRegStr.trim().isEmpty()) {
+            System.err.println("自动恢复已阻止：目标目录没有静态 RegStr，且目标 RegisterMain.getRegInfo() 也未返回 RegStr。");
+            System.err.println("不会使用 44 项通用列表、VersionID 或任何默认授权项，也不会修改任何配置文件。");
             System.out.println("RESULT: FAILED");
             return 2;
         }
@@ -460,6 +466,50 @@ public class LicenseRecover {
      * fallback 错把 json 当成第二参传入，导致 checkReInfo() 实际没有读取
      * 刚写好的 config.xml，随后跌落到 HASP 检查并报 Aladdin/Hasp 缺失。
      */
+    /**
+     * Read RegStr from the selected application's own RegisterMain/RegeditInfo before any write.
+     * This is intentionally read-only and is used only after product identity is proven from
+     * target-directory evidence. Returning null keeps the caller fail-closed.
+     */
+    static String probeTargetRegStr(String product, String appRoot, String libDir, boolean rootConfigStyle) {
+        if (product == null || product.trim().isEmpty() || libDir == null) return null;
+        String jsonForMain;
+        try { jsonForMain = new GetRegisterCode().encrypt(product + "RegeditNew", "itmcsoft"); }
+        catch (Throwable ex) { return null; }
+        String[] dirs = rootConfigStyle && appRoot != null
+                ? new String[]{libDir, appRoot} : new String[]{libDir};
+        for (String dir : dirs) {
+            if (dir == null || dir.trim().isEmpty()) continue;
+            String path = dir.endsWith(File.separator) ? dir : dir + File.separator;
+            try {
+                RegisterMain reg = newRegisterMain(product, jsonForMain, path);
+                RegeditInfo info = reg.getRegInfo();
+                String value = normalizeTargetRegStr(info == null ? null : info.getRegStr());
+                if (value != null) return value;
+            } catch (Throwable ex) {
+                System.out.println("[只读探测] RegisterMain.getRegInfo(" + dir + ") 未返回可用 RegStr: "
+                        + ex.getClass().getSimpleName() + ": " + String.valueOf(ex.getMessage()));
+            }
+        }
+        return null;
+    }
+
+    static String normalizeTargetRegStr(String raw) {
+        if (raw == null) return null;
+        LinkedHashSet<String> values = new LinkedHashSet<String>();
+        for (String part : raw.split(",")) {
+            String x = part == null ? "" : part.trim();
+            if (!x.isEmpty()) values.add(x);
+        }
+        if (values.isEmpty()) return null;
+        StringBuilder out = new StringBuilder();
+        for (String x : values) {
+            if (out.length() > 0) out.append(',');
+            out.append(x);
+        }
+        return out.toString();
+    }
+
     static RegisterMain newRegisterMain(String product, String json, String path) {
         try {
             Class<?> rm = Class.forName("itmc.regedit.RegisterMain");
@@ -550,6 +600,22 @@ public class LicenseRecover {
         }
         String registerPid = plan.authorizationFamily;
         String regStr = plan.regStr;
+        if (regStr == null || regStr.trim().isEmpty()) {
+            String libDir = locateLibDir(appArg);
+            File libFile = libDir == null ? null : new File(libDir);
+            File rootFile = libFile == null ? null : libFile.getParentFile();
+            rootFile = rootFile == null ? null : rootFile.getParentFile();
+            String resolvedRoot = rootFile == null ? appArg : rootFile.getAbsolutePath();
+            regStr = probeTargetRegStr(plan.runtimeProductId, resolvedRoot, libDir,
+                    usesRootConfigApp(resolvedRoot));
+            if (regStr != null && !regStr.trim().isEmpty())
+                System.out.println("[识别] RegStr(目标组件 getRegInfo) = " + regStr);
+        }
+        if (regStr == null || regStr.trim().isEmpty()) {
+            System.err.println("[错误] 目标 RegisterMain.getRegInfo() 未返回 RegStr；不会使用默认授权项。");
+            System.out.println("RESULT: FAILED");
+            return 2;
+        }
         if (productOverride != null && !productOverride.trim().isEmpty()
                 && !productOverride.trim().equalsIgnoreCase(registerPid)) {
             System.err.println("[错误] -p 指定值与目标目录解析出的本地注册产品族不一致："

@@ -1,3 +1,4 @@
+import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.InputStream;
@@ -124,12 +125,21 @@ public final class LicenseRecoverModernGUIJavaPlan {
         // No product-family/runtime-id guessing here. The executable plan receives
         // identity only from target-directory evidence: parsed Global/RegisterUtil,
         // confirmed classes config, or a self-describing data/config.xml generation.
+        // Candidate rules are never executable evidence by themselves. For product families
+        // that are prefixes of the concrete SoftVersionID (DS24/DS28/DS501/XMT/YX0305...),
+        // accept the candidate only when that exact token is also present in this target's
+        // own class/JAR bytes. This keeps fail-closed semantics without discarding real apps
+        // whose registration identity lives in bytecode instead of XML.
+        String binaryFamily = confirmedBinaryAuthorizationFamily(
+                root, lib, soft, newStyle, classesConfig.isFile());
         String family = directoryMapping != null ? directoryMapping.productMain
                 : (!blank(confirmedClassesFamily) ? confirmedClassesFamily
-                : (directDataIdentity ? soft.trim() : null));
+                : (directDataIdentity ? soft.trim() : binaryFamily));
+        String binaryRuntime = confirmedBinaryRuntimeProduct(
+                root, lib, soft, binaryFamily, newStyle, classesConfig.isFile());
         String runtimeProduct = directoryMapping != null ? directoryMapping.productMain
                 : (!blank(confirmedClassesFamily) ? confirmedClassesFamily
-                : (directDataIdentity ? soft.trim() : null));
+                : (directDataIdentity ? soft.trim() : binaryRuntime));
         File jar = findRegJar(lib);
         boolean packed = jar != null && isVirboxPackedJar(jar);
         String products = directoryMapping != null ? directoryMapping.productMainNum
@@ -137,10 +147,16 @@ public final class LicenseRecoverModernGUIJavaPlan {
 
         String recoveredLocalRegStr = blank(runtimeProduct)
                 ? null : ExistingLocalRegStrProbe.recover(root, lib, runtimeProduct);
+        boolean binaryIdentity = !blank(binaryFamily) && !blank(binaryRuntime);
         boolean directoryIdentity = directoryMapping != null
-                || directDataIdentity || !blank(confirmedClassesFamily);
+                || directDataIdentity || !blank(confirmedClassesFamily) || binaryIdentity;
         boolean directoryRegStr = directoryMapping != null
                 || dataRegInfo != null || classesRegInfo != null || recoveredLocalRegStr != null;
+        // A missing static regInfo is not itself a reason to guess. If the target ships
+        // ITMCReg and its product identity is already proven by directory evidence, the
+        // CLI can ask that exact target RegisterMain.getRegInfo() for RegStr before any write.
+        boolean runtimeRegStrProbe = !directoryRegStr && jar != null
+                && directoryIdentity && !blank(runtimeProduct);
 
         boolean ready = true;
         String readiness = "可安全自动恢复（注册ID/RegStr均来自目标目录）";
@@ -152,13 +168,17 @@ public final class LicenseRecoverModernGUIJavaPlan {
             readiness = "目标软件自带注册分派类，但未解析出注册ID映射";
         } else if (!directoryIdentity) {
             ready = false;
-            readiness = "注册ID仅能由旧兼容规则推测，缺少目标目录证据";
+            readiness = "注册ID仅能由旧兼容规则推测，缺少目标目录二进制/配置证据";
         } else if (blank(family) || "未确认".equals(family) || blank(runtimeProduct)) {
             ready = false;
             readiness = "目标软件目录未确认授权族/运行注册ID";
         } else if (!directoryRegStr || blank(products)) {
-            ready = false;
-            readiness = "目标软件目录未声明或恢复出 RegStr，禁止使用默认授权项";
+            if (runtimeRegStrProbe) {
+                readiness = "可安全自动恢复（注册ID来自目标目录；RegStr执行时由目标RegisterMain.getRegInfo()读取）";
+            } else {
+                ready = false;
+                readiness = "目标软件目录未声明 RegStr，且无法使用目标注册组件只读获取";
+            }
         }
         String libConfig = relative(root, new File(lib, "config.xml"));
         String targets = libConfig;
@@ -173,7 +193,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
     }
 
     public String regStrSummary() {
-        if (blank(regStr)) return "未静态声明";
+        if (blank(regStr)) return automaticRecoveryReady ? "目标组件动态读取" : "未静态声明";
         String[] parts = regStr.split(",");
         if (parts.length <= 4) return regStr;
         StringBuilder out = new StringBuilder();
@@ -291,6 +311,120 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 || "YT00139".equals(id) || "YT00132".equals(id) || "YT00141".equals(id)
                 || "YT00126".equals(id) || "YT00154".equals(id) || "BKSM4".equals(id)) return "QT04";
         return "QT1001";
+    }
+
+    static String confirmedBinaryAuthorizationFamily(File root, File lib, String softId,
+                                                       boolean newStyle, boolean classesStyle) {
+        if (blank(softId)) return null;
+        String candidate = authorizationFamilyFor(softId, newStyle, classesStyle);
+        if (blank(candidate) || "未确认".equals(candidate)) return null;
+        String id = softId.trim().toUpperCase(Locale.ROOT);
+        String c = candidate.trim().toUpperCase(Locale.ROOT);
+        // Never use unrelated legacy mappings (for example YT -> QT04) as binary-prefix proof.
+        if (!id.equals(c) && !id.startsWith(c)) return null;
+        if (newStyle && id.equals(c)) return candidate.trim();
+        return hasDirectoryBinaryToken(root, lib, candidate) ? candidate.trim() : null;
+    }
+
+    static String confirmedBinaryRuntimeProduct(File root, File lib, String softId,
+                                                String confirmedFamily,
+                                                boolean newStyle, boolean classesStyle) {
+        if (blank(softId) || blank(confirmedFamily)) return null;
+        String candidate = runtimeProductFor(softId);
+        if (blank(candidate)) return null;
+        String id = softId.trim().toUpperCase(Locale.ROOT);
+        String c = candidate.trim().toUpperCase(Locale.ROOT);
+        if (!id.equals(c) && !id.startsWith(c)) return null;
+        if (candidate.equalsIgnoreCase(confirmedFamily)) return confirmedFamily;
+        // Concrete runtime IDs (DS501xx/YX0305xx) must also occur as an exact token
+        // in target bytecode; the occurrence in config.xml alone is intentionally insufficient.
+        return hasDirectoryBinaryToken(root, lib, candidate) ? candidate.trim() : null;
+    }
+
+    static boolean hasDirectoryBinaryToken(File root, File lib, String token) {
+        if (root == null || blank(token)) return false;
+        File jar = findRegJar(lib);
+        if (jar != null && jarContainsToken(jar, token.trim())) return true;
+        int[] budget = new int[]{12000};
+        File classes = new File(root, "WEB-INF" + File.separator + "classes");
+        if (classTreeContainsToken(classes, token.trim(), budget)) return true;
+        File nested = new File(root, "WEB-INF" + File.separator + "WEB-INF"
+                + File.separator + "classes");
+        return classTreeContainsToken(nested, token.trim(), budget);
+    }
+
+    private static boolean classTreeContainsToken(File dir, String token, int[] budget) {
+        if (dir == null || !dir.isDirectory() || budget[0] <= 0) return false;
+        File[] files = dir.listFiles();
+        if (files == null) return false;
+        for (File f : files) {
+            if (budget[0]-- <= 0) return false;
+            if (f.isDirectory()) {
+                if (classTreeContainsToken(f, token, budget)) return true;
+            } else if (f.getName().toLowerCase(Locale.ROOT).endsWith(".class")
+                    && f.length() <= 8L * 1024L * 1024L) {
+                try {
+                    if (bytesContainExactAsciiToken(Files.readAllBytes(f.toPath()), token)) return true;
+                } catch (Exception ignore) { }
+            }
+        }
+        return false;
+    }
+
+    private static boolean jarContainsToken(File jar, String token) {
+        JarFile jf = null;
+        try {
+            jf = new JarFile(jar);
+            java.util.Enumeration<JarEntry> entries = jf.entries();
+            byte[] buffer = new byte[8192];
+            while (entries.hasMoreElements()) {
+                JarEntry entry = entries.nextElement();
+                if (entry.isDirectory() || !entry.getName().endsWith(".class")) continue;
+                if (entry.getSize() > 8L * 1024L * 1024L) continue;
+                InputStream in = null;
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                try {
+                    in = jf.getInputStream(entry);
+                    int n;
+                    while ((n = in.read(buffer)) >= 0) {
+                        out.write(buffer, 0, n);
+                        if (out.size() > 8 * 1024 * 1024) break;
+                    }
+                    if (bytesContainExactAsciiToken(out.toByteArray(), token)) return true;
+                } catch (Exception ignore) {
+                } finally {
+                    try { if (in != null) in.close(); } catch (Exception ignore) { }
+                }
+            }
+        } catch (Exception ignore) {
+            return false;
+        } finally {
+            try { if (jf != null) jf.close(); } catch (Exception ignore) { }
+        }
+        return false;
+    }
+
+    private static boolean bytesContainExactAsciiToken(byte[] data, String token) {
+        if (data == null || blank(token)) return false;
+        byte[] needle = token.getBytes(StandardCharsets.US_ASCII);
+        outer:
+        for (int i = 0; i + needle.length <= data.length; i++) {
+            for (int j = 0; j < needle.length; j++) {
+                int a = data[i + j] & 0xff;
+                int b = needle[j] & 0xff;
+                if (a != b && Character.toUpperCase((char) a) != Character.toUpperCase((char) b))
+                    continue outer;
+            }
+            if (i > 0 && isProductTokenChar(data[i - 1] & 0xff)) continue;
+            int after = i + needle.length;
+            if (after < data.length && isProductTokenChar(data[after] & 0xff)) continue;
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean isProductTokenChar(int c) {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
     }
 
     private static String readElement(File file, String element) {

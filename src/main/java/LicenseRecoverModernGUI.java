@@ -579,11 +579,22 @@ public final class LicenseRecoverModernGUI {
                             LicenseRecoverModernGUIAutoRecovery.detect(info.binDir);
                     String kind = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
                             ? ".NET Modern" : ".NET Legacy";
+                    String dotNetRegStr = d.productName == null ? null
+                            : LicenseRecoverModernGUIAutoRecovery.detectProductList(
+                                    new File(info.binDir, "ITMC.Web.dll"), d.productName);
+                    boolean dotNetIdentityReady = d.productName != null && !d.productName.trim().isEmpty();
+                    boolean dotNetRegReady = dotNetRegStr != null && !dotNetRegStr.trim().isEmpty();
                     String verify = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
-                            ? "待执行: 写回解密校验" : "兼容方式一: 不适用";
+                            ? (dotNetIdentityReady && dotNetRegReady
+                                    ? "待执行: DoRegistry + CheckReInfo"
+                                    : "未执行: DLL注册证据不足")
+                            : "兼容方式一: 不适用";
+                    String dotNetStatus = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
+                            && (!dotNetIdentityReady || !dotNetRegReady) ? "待确认" : "待处理";
                     batchModel.addRow(new Object[]{child.getName(), kind,
                             valueOrDash(d.versionId), valueOrDash(d.productName), valueOrDash(d.productName),
-                            "—", "config.xml", verify, "待处理", info.binDir.getAbsolutePath()});
+                            valueOrDash(dotNetRegStr), "config.xml", verify, dotNetStatus,
+                            info.binDir.getAbsolutePath()});
                     detected++;
                 } else {
                     target = BatchTarget.skipped(child.getName());

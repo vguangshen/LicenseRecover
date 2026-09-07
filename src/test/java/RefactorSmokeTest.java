@@ -121,6 +121,16 @@ public final class RefactorSmokeTest {
         check(!ds2406Plan.automaticRecoveryReady
                         && ds2406Plan.recoveryReadiness.contains("目录"),
                 "DS2406 stays blocked when fixture lacks directory registration-id evidence");
+        Files.createDirectories(ds2406Root.resolve("WEB-INF/classes"));
+        Files.write(ds2406Root.resolve("WEB-INF/classes/RegistrationEvidence.class"),
+                "DS24".getBytes(StandardCharsets.US_ASCII));
+        ds2406Plan = LicenseRecoverModernGUIJavaPlan.inspect(ds2406Root.toFile());
+        check("DS24".equals(ds2406Plan.authorizationFamily)
+                        && "DS24".equals(ds2406Plan.runtimeProductId)
+                        && ds2406Plan.automaticRecoveryReady
+                        && ds2406Plan.regStr == null
+                        && ds2406Plan.regStrSummary().contains("动态"),
+                "DS2406 accepts target-binary family evidence and defers RegStr to target component");
 
         Path qt30103Root = base.resolve("java-QT30103");
         Path qt30103Lib = qt30103Root.resolve("WEB-INF/lib");
@@ -166,6 +176,13 @@ public final class RefactorSmokeTest {
         check(xmtPlan.generation.contains("XMT") && xmtPlan.regStrSummary().startsWith("8 项")
                         && !xmtPlan.automaticRecoveryReady,
                 "XMT directory RegStr may be displayed but execution stays blocked until identity is proven");
+        Files.write(xmtClasses.resolve("RegistrationEvidence.class"),
+                "XMT01".getBytes(StandardCharsets.US_ASCII));
+        xmtPlan = LicenseRecoverModernGUIJavaPlan.inspect(xmtRoot.toFile());
+        check("XMT01".equals(xmtPlan.authorizationFamily)
+                        && "XMT01".equals(xmtPlan.runtimeProductId)
+                        && xmtPlan.automaticRecoveryReady,
+                "XMT family becomes executable only after exact token appears in target bytecode");
 
         Path ds501Root = base.resolve("java-DS50109");
         Path ds501Lib = ds501Root.resolve("WEB-INF/lib");
@@ -187,6 +204,14 @@ public final class RefactorSmokeTest {
         check(ds501Plan.runtimeProductId == null && ds501Plan.regStr == null
                         && !ds501Plan.automaticRecoveryReady,
                 "DS501 stays fail-closed without directory identity/RegStr evidence");
+        Files.write(ds501Classes.resolve("RegistrationEvidence.class"),
+                "DS501 DS50109".getBytes(StandardCharsets.US_ASCII));
+        ds501Plan = LicenseRecoverModernGUIJavaPlan.inspect(ds501Root.toFile());
+        check("DS501".equals(ds501Plan.authorizationFamily)
+                        && "DS50109".equals(ds501Plan.runtimeProductId)
+                        && ds501Plan.automaticRecoveryReady
+                        && ds501Plan.regStrSummary().contains("动态"),
+                "DS501 family/runtime IDs require exact target-binary tokens and use runtime RegStr probe");
 
         Path yx305Root = base.resolve("java-YX030506");
         Path yx305Lib = yx305Root.resolve("WEB-INF/lib");
@@ -210,6 +235,13 @@ public final class RefactorSmokeTest {
                         && "QT100101,QT100102".equals(yx305Plan.regStr)
                         && !yx305Plan.automaticRecoveryReady,
                 "YX0305 directory RegStr is retained for diagnostics but execution is blocked without identity proof");
+        Files.write(yx305Classes.resolve("RegistrationEvidence.class"),
+                "YX0305 YX030506".getBytes(StandardCharsets.US_ASCII));
+        yx305Plan = LicenseRecoverModernGUIJavaPlan.inspect(yx305Root.toFile());
+        check("YX0305".equals(yx305Plan.authorizationFamily)
+                        && "YX030506".equals(yx305Plan.runtimeProductId)
+                        && yx305Plan.automaticRecoveryReady,
+                "YX0305 family/runtime IDs become ready only with target-binary evidence");
 
         Path qt401Root = base.resolve("java-QT40101");
         Path qt401Lib = qt401Root.resolve("WEB-INF/lib");
@@ -370,6 +402,15 @@ public final class RefactorSmokeTest {
                         LicenseRecoverModernGUIAutoRecovery.detectProductList(
                                 dsFixture.toFile(), "itmcIEC")),
                 "one-click derives DS01xx local product list");
+        Path dsAsciiFixture = base.resolve("DS01-Web-ascii.dll");
+        Files.write(dsAsciiFixture,
+                "ProName=itmcIEC;RegStr=DS0101,DS0105,DS0107".getBytes(StandardCharsets.US_ASCII));
+        check("itmcIEC".equals(LicenseRecoverModernGUIAutoRecovery.detectProduct(
+                        dsAsciiFixture.toFile(), "DS0101"))
+                        && "DS0101,DS0105,DS0107".equals(
+                                LicenseRecoverModernGUIAutoRecovery.detectProductList(
+                                        dsAsciiFixture.toFile(), "itmcIEC")),
+                ".NET parser extracts product tokens from ASCII/CSV metadata instead of requiring whole-string equality");
 
         Path gmFixture = base.resolve("GM004-Web.dll");
         writeUtf16Fixture(gmFixture, "GM004", "GM00401", "SoftVersionID", "ProName", "RegStr");
