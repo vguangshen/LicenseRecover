@@ -121,7 +121,9 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 ? confirmedClassesFamily : authorizationFamilyFor(soft, newStyle, classesConfig.isFile());
         String runtimeProduct = !blank(confirmedClassesFamily)
                 ? confirmedClassesFamily : (newStyle && !blank(soft) ? soft.trim() : runtimeProductFor(soft));
-        String products = resolveRegStr(root, soft);
+        File jar = findRegJar(lib);
+        boolean packed = jar != null && isVirboxPackedJar(jar);
+        String products = resolveRegStr(root, soft, runtimeProduct, lib);
         boolean ready = true;
         String readiness = "可安全自动恢复";
         if (blank(family) || "未确认".equals(family)) {
@@ -134,9 +136,6 @@ public final class LicenseRecoverModernGUIJavaPlan {
             ready = false;
             readiness = "RegStr 未静态声明；需从现有授权动态恢复";
         }
-        File jar = findRegJar(lib);
-        boolean packed = jar != null && isVirboxPackedJar(jar);
-
         String libConfig = relative(root, new File(lib, "config.xml"));
         String targets = libConfig;
         if (rootConfig) targets += " + config.xml(webapp根)";
@@ -210,12 +209,21 @@ public final class LicenseRecoverModernGUIJavaPlan {
         return blank(classes) ? null : classes.trim();
     }
 
-    private static String resolveRegStr(File root, String softId) {
+    private static String resolveRegStr(File root, String softId, String runtimeProduct, File lib) {
         String data = normalizeCsv(readElement(new File(root, "data" + File.separator + "config.xml"), "regInfo"));
         if (data != null) return data;
         String classes = normalizeCsv(readElement(new File(root, "WEB-INF" + File.separator
                 + "classes" + File.separator + "config.xml"), "regInfo"));
         if (classes != null) return classes;
+
+        String recovered = ExistingLocalRegStrProbe.recover(root, lib, runtimeProduct);
+        if (recovered != null) return recovered;
+
+        if ("QT100101".equalsIgnoreCase(softId)
+                && "QT100101".equals(confirmedClassesAuthorizationFamily(root, softId))) {
+            return "QT100101";
+        }
+
         if (softId != null && softId.toUpperCase(Locale.ROOT).startsWith("DS501")) return softId.trim();
         if (softId != null && softId.toUpperCase(Locale.ROOT).matches("DS28\\d{2}")) return softId.trim();
         if ("YT00129".equalsIgnoreCase(softId)) return "QT0420";

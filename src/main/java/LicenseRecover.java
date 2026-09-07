@@ -685,6 +685,23 @@ public class LicenseRecover {
         String classes = normalizeCsv(readJavaConfigElement(
                 new File(root, "WEB-INF" + File.separator + "classes" + File.separator + "config.xml"), "regInfo"));
         if (classes != null) return classes;
+
+        String runtimeProduct = productMainFor(softId);
+        String libPath = locateLibDir(appRoot == null ? root.getAbsolutePath() : appRoot);
+        if (libPath != null) {
+            String recovered = ExistingLocalRegStrProbe.recover(root, new File(libPath), runtimeProduct);
+            if (recovered != null) return recovered;
+        }
+
+        // Actual QT100101 business code checks RegStr.contains(RegisterContant.versionID),
+        // and VersionID is QT100101 in the supplied production sample. This is therefore
+        // a verified minimum authorization item, not the old 44-item fallback.
+        if ("QT100101".equalsIgnoreCase(softId)) {
+            String concrete = readJavaConfigElement(new File(root, "WEB-INF" + File.separator
+                    + "classes" + File.separator + "config.xml"), "SoftVersionID");
+            if ("QT100101".equalsIgnoreCase(concrete)) return "QT100101";
+        }
+
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("DS501")) return softId.trim();
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("DS28\\d{2}")) return softId.trim();
         if ("YT00129".equalsIgnoreCase(softId)) return "QT0420";
