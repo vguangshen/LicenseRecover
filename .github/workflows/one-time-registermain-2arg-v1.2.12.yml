@@ -1,0 +1,185 @@
+name: One-time RegisterMain 2-arg v1.2.12 fix
+
+on:
+  push:
+    branches:
+      - fix/registermain-2arg-v1.2.12
+    paths:
+      - .github/workflows/one-time-registermain-2arg-v1.2.12.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/registermain-2arg-v1.2.12
+          fetch-depth: 0
+
+      - name: Apply RegisterMain constructor compatibility fix
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one match, found {count}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          core = 'src/main/java/LicenseRecover.java'
+          old = '''    /**
+     * 构造应用自身的 RegisterMain。优先 3 参构造器(显式指定 config 路径，新架构 webapp 根需要)；
+     * 部分版本只有 2 参构造器(路径取 getComfigPath()=jar 所在 WEB-INF/lib)，反射回退。
+     */
+    static RegisterMain newRegisterMain(String product, String json, String path) {
+        try {
+            return new RegisterMain(product, json, path);
+        } catch (NoSuchMethodError e) {
+            try {
+                Class<?> rm = Class.forName("itmc.regedit.RegisterMain");
+                java.lang.reflect.Constructor<?> c = rm.getConstructor(String.class, String.class);
+                return (RegisterMain) c.newInstance(product, json);
+            } catch (Exception e2) {
+                throw new RuntimeException("RegisterMain 构造器不兼容（需 3 参或 2 参）: " + e2, e2);
+            }
+        }
+    }
+'''
+          new = '''    /**
+     * 构造应用自身的 RegisterMain。
+     *
+     * 新版 ITMCReg 使用 3 参 (product, json, configPath)；DS2406 的真实
+     * ITMCReg-1.0.2.jar 只有 2 参 (product, configPath)。v1.2.11 以前的
+     * fallback 错把 json 当成第二参传入，导致 checkReInfo() 实际没有读取
+     * 刚写好的 config.xml，随后跌落到 HASP 检查并报 Aladdin/Hasp 缺失。
+     */
+    static RegisterMain newRegisterMain(String product, String json, String path) {
+        try {
+            Class<?> rm = Class.forName("itmc.regedit.RegisterMain");
+            return (RegisterMain) instantiateRegisterMainCompatible(rm, product, json, path);
+        } catch (Exception e) {
+            throw new RuntimeException("RegisterMain 构造器不兼容（需 3 参或 2 参）: " + e, e);
+        }
+    }
+
+    /** 包级可见，供回归测试验证不同 ITMCReg 构造器代际的参数语义。 */
+    static Object instantiateRegisterMainCompatible(Class<?> rm, String product, String json, String path)
+            throws Exception {
+        try {
+            java.lang.reflect.Constructor<?> c = rm.getConstructor(
+                    String.class, String.class, String.class);
+            return c.newInstance(product, json, path);
+        } catch (NoSuchMethodException noThreeArg) {
+            java.lang.reflect.Constructor<?> c = rm.getConstructor(String.class, String.class);
+            // 真实 ITMCReg-1.0.2 的第二参是 ConfigPath，不是 json。
+            return c.newInstance(product, path);
+        }
+    }
+'''
+          replace_once(core, old, new)
+
+          test = 'src/test/java/RefactorSmokeTest.java'
+          marker = '''    private static void check(boolean value, String message) {
+        if (!value) throw new AssertionError(message);
+        System.out.println("PASS: " + message);
+    }
+
+'''
+          helper = '''    private static void check(boolean value, String message) {
+        if (!value) throw new AssertionError(message);
+        System.out.println("PASS: " + message);
+    }
+
+    public static final class LegacyRegisterMain2 {
+        final String product;
+        final String configPath;
+        public LegacyRegisterMain2(String product, String configPath) {
+            this.product = product;
+            this.configPath = configPath;
+        }
+    }
+
+    public static final class ModernRegisterMain3 {
+        final String product;
+        final String json;
+        final String configPath;
+        public ModernRegisterMain3(String product, String json, String configPath) {
+            this.product = product;
+            this.json = json;
+            this.configPath = configPath;
+        }
+    }
+
+'''
+          replace_once(test, marker, helper)
+
+          marker2 = '''        check("fwq".equals(LicenseRecover.LOCAL_AUTH_USER_ID),
+                "local authorization UserID fixed to fwq");
+
+'''
+          tests = '''        check("fwq".equals(LicenseRecover.LOCAL_AUTH_USER_ID),
+                "local authorization UserID fixed to fwq");
+
+        LegacyRegisterMain2 legacyCtor = (LegacyRegisterMain2)
+                LicenseRecover.instantiateRegisterMainCompatible(
+                        LegacyRegisterMain2.class, "DS24", "encrypted-json", "D:/app/WEB-INF/lib/");
+        check("DS24".equals(legacyCtor.product)
+                        && "D:/app/WEB-INF/lib/".equals(legacyCtor.configPath),
+                "legacy 2-arg RegisterMain receives configPath as second argument");
+
+        ModernRegisterMain3 modernCtor = (ModernRegisterMain3)
+                LicenseRecover.instantiateRegisterMainCompatible(
+                        ModernRegisterMain3.class, "QT30103", "encrypted-json", "D:/app/");
+        check("QT30103".equals(modernCtor.product)
+                        && "encrypted-json".equals(modernCtor.json)
+                        && "D:/app/".equals(modernCtor.configPath),
+                "modern 3-arg RegisterMain keeps json and configPath arguments");
+
+'''
+          replace_once(test, marker2, tests)
+
+          Path('VERSION.txt').write_text('1.2.12\n', encoding='utf-8')
+          for name in ('README.md', 'README.txt'):
+              p = Path(name)
+              if p.exists():
+                  text = p.read_text(encoding='utf-8')
+                  text = text.replace('v1.2.11', 'v1.2.12').replace('1.2.11', '1.2.12')
+                  p.write_text(text, encoding='utf-8')
+
+          changelog = Path('CHANGELOG.md')
+          old_change = changelog.read_text(encoding='utf-8')
+          section = '''## v1.2.12 — 修复旧版 ITMCReg 两参数 RegisterMain 路径传参\n\n- 根据 DS2406 真实 `ITMCReg-1.0.2.jar` 核对：其 `RegisterMain(String, String)` 第二参数是 `ConfigPath`。\n- 修复旧 fallback 把加密 `json` 当成配置路径的问题；这会让 `checkReInfo()` 看不到刚写入的本地授权并错误跌落到 HASP。\n- 3 参数新版仍按 `(product, json, configPath)` 调用，2 参数旧版改为 `(product, configPath)`。\n- 新增双代构造器回归测试，避免以后再次把二参语义写反。\n- 保留 v1.2.11 的失败回滚保护：原生校验最终未通过时恢复写入前配置。\n\n'''
+          if '## v1.2.12 ' not in old_change:
+              changelog.write_text(section + old_change, encoding='utf-8')
+
+          notes = Path('release-notes/v1.2.12.md')
+          notes.parent.mkdir(parents=True, exist_ok=True)
+          notes.write_text('''# LicenseRecover v1.2.12\n\n本版修复 DS2406 实机验证暴露出的旧版 `ITMCReg` 构造器兼容问题。\n\n- DS2406 的 `ITMCReg-1.0.2.jar` 只有 `RegisterMain(String product, String configPath)` 两参数构造器。\n- v1.2.11 的兼容 fallback 错把 `jsonForMain` 作为第二参数，导致 `checkReInfo()` 从错误路径读取配置；本地授权即使已按 `DS24` 写入，也会继续跌落到 HASP 检查并报 `NoClassDefFoundError: Aladdin/Hasp`。\n- v1.2.12 改为反射识别构造器：3 参数版本传 `(product, json, configPath)`；2 参数版本传 `(product, configPath)`。\n- DS2406 的授权模型仍保持 `SoftVersionID=DS2406 / ProName=DS24 / RegStr=DS2406`。\n- 保留原生校验失败自动回滚。\n''', encoding='utf-8')
+
+          Path('.github/workflows/one-time-registermain-2arg-v1.2.12.yml').unlink()
+          PY
+
+      - name: Verify staged changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -n 'instantiateRegisterMainCompatible' src/main/java/LicenseRecover.java src/test/java/RefactorSmokeTest.java
+          grep -n '^1.2.12$' VERSION.txt
+          test ! -e .github/workflows/one-time-registermain-2arg-v1.2.12.yml
+
+      - name: Commit fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'v1.2.12: 修复旧版 RegisterMain 二参路径传参'
+          git push origin HEAD:fix/registermain-2arg-v1.2.12
