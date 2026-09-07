@@ -1,13 +1,12 @@
 name: Apply QT100101 v1.2.8
-
 on:
   push:
-    branches: [ "feature/qt100101-v1.2.8" ]
-    paths: [ ".github/workflows/apply-qt100101-v1.2.8.yml" ]
-
+    branches:
+      - feature/qt100101-v1.2.8
+    paths:
+      - .github/workflows/apply-qt100101-v1.2.8.yml
 permissions:
   contents: write
-
 jobs:
   apply:
     runs-on: ubuntu-latest
@@ -15,113 +14,9 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: feature/qt100101-v1.2.8
-      - name: Apply QT100101 mapping and tests
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          def replace_once(path, old, new, desc):
-              p = Path(path)
-              s = p.read_text(encoding='utf-8')
-              if old not in s:
-                  raise RuntimeError('anchor not found for %s in %s' % (desc, path))
-              p.write_text(s.replace(old, new, 1), encoding='utf-8', newline='\n')
-
-          plan = 'src/main/java/LicenseRecoverModernGUIJavaPlan.java'
-          replace_once(plan,
-              '            if ("QT401".equals(confirmedClassesFamily)) generation = "QT401 / classes-config";\n            else if (upper.startsWith("XMT01")) generation = "XMT / classes-config";',
-              '            if ("QT401".equals(confirmedClassesFamily)) generation = "QT401 / classes-config";\n            else if ("QT100101".equals(confirmedClassesFamily)) generation = "QT1001系列 / classes-config";\n            else if (upper.startsWith("XMT01")) generation = "XMT / classes-config";',
-              'QT100101 generation')
-
-          replace_once(plan,
-              '        if (id.matches("QT401\\\\d{2}")) {\n            File config1 = new File(root, "WEB-INF" + File.separator + "classes"\n                    + File.separator + "config1.xml");\n            String family = readElement(config1, "SoftVersionID");\n            if ("QT401".equalsIgnoreCase(family)) return "QT401";\n        }\n        return null;',
-              '        if (id.matches("QT401\\\\d{2}")) {\n            File config1 = new File(root, "WEB-INF" + File.separator + "classes"\n                    + File.separator + "config1.xml");\n            String family = readElement(config1, "SoftVersionID");\n            if ("QT401".equalsIgnoreCase(family)) return "QT401";\n        }\n        if ("QT100101".equals(id)) {\n            File config = new File(root, "WEB-INF" + File.separator + "classes"\n                    + File.separator + "config.xml");\n            String concrete = readElement(config, "SoftVersionID");\n            if ("QT100101".equalsIgnoreCase(concrete)) return "QT100101";\n        }\n        return null;',
-              'QT100101 confirmed class family')
-
-          replace_once(plan,
-              '        if (id.startsWith("DS501")) return "DS501";\n        if (id.startsWith("YX0305")) return "YX0305";',
-              '        if ("QT100101".equals(id)) return "QT100101";\n        if (id.startsWith("DS501")) return "DS501";\n        if (id.startsWith("YX0305")) return "YX0305";',
-              'QT100101 authorization family')
-
-          replace_once(plan,
-              '        if (id.startsWith("DS501") || id.startsWith("YX0305")) return softId.trim();\n        if (id.matches("DS28\\\\d{2}")) return "DS28";',
-              '        if ("QT100101".equals(id)) return "QT100101";\n        if (id.startsWith("DS501") || id.startsWith("YX0305")) return softId.trim();\n        if (id.matches("DS28\\\\d{2}")) return "DS28";',
-              'QT100101 runtime product')
-
-          core = 'src/main/java/LicenseRecover.java'
-          replace_once(core,
-              '        if (id.matches("QT401\\\\d{2}")) return "QT401";\n        if (id.startsWith("DS501")) return "DS501";',
-              '        if (id.matches("QT401\\\\d{2}")) return "QT401";\n        if ("QT100101".equals(id)) return "QT100101";\n        if (id.startsWith("DS501")) return "DS501";',
-              'QT100101 local registration product')
-
-          replace_once(core,
-              '        if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("QT401\\\\d{2}")) return "QT401";\n        if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("DS501")) return softId.trim();',
-              '        if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("QT401\\\\d{2}")) return "QT401";\n        if (softId != null && "QT100101".equalsIgnoreCase(softId.trim())) return "QT100101";\n        if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("DS501")) return softId.trim();',
-              'QT100101 direct runtime product')
-
-          test = 'src/test/java/RefactorSmokeTest.java'
-          p = Path(test)
-          s = p.read_text(encoding='utf-8')
-          anchor = '        Path genericClassesRoot = base.resolve("java-generic-classes");\n'
-          if anchor not in s:
-              raise RuntimeError('test anchor not found')
-          block = r'''        Path qt100101Root = base.resolve("java-QT100101");
-        Path qt100101Lib = qt100101Root.resolve("WEB-INF/lib");
-        Path qt100101Classes = qt100101Root.resolve("WEB-INF/classes");
-        Files.createDirectories(qt100101Lib);
-        Files.createDirectories(qt100101Classes);
-        Files.write(qt100101Lib.resolve("ITMCReg.jar"), new byte[]{1});
-        Files.write(qt100101Root.resolve("systemConfig.yml"), Arrays.asList(
-                "global.system.VersionID=QT100101",
-                "global.system.VersionName=互联网营销师大赛平台"), StandardCharsets.UTF_8);
-        Files.write(qt100101Classes.resolve("config.xml"), Arrays.asList(
-                "<ROOT><reg><regType>3</regType></reg><SystemSoft><SoftVersionID>QT100101</SoftVersionID></SystemSoft></ROOT>"),
-                StandardCharsets.UTF_8);
-        check("QT100101".equals(LicenseRecover.productMainFor("QT100101")),
-                "QT100101 startup RegisterMain uses concrete QT100101 id");
-        check("QT100101".equals(LicenseRecover.localRegisterProductFor("QT100101", false)),
-                "QT100101 local-registration page uses concrete QT100101 id");
-        check(LicenseRecover.resolveJavaRegStr(qt100101Root.toString(), "QT100101") == null,
-                "QT100101 keeps dynamic RegStr unresolved when config has no regInfo");
-        LicenseRecoverModernGUIJavaPlan qt100101Plan =
-                LicenseRecoverModernGUIJavaPlan.inspect(qt100101Root.toFile());
-        check(qt100101Plan.generation.contains("QT1001系列")
-                        && "QT100101".equals(qt100101Plan.authorizationFamily)
-                        && "QT100101".equals(qt100101Plan.runtimeProductId),
-                "Java GUI plan confirms QT100101 family and runtime id from real sample pattern");
-        check(qt100101Plan.regStr == null && !qt100101Plan.automaticRecoveryReady
-                        && qt100101Plan.recoveryReadiness.contains("RegStr"),
-                "QT100101 automatic recovery stays blocked until dynamic RegStr is recovered");
-
-'''
-          p.write_text(s.replace(anchor, block + anchor, 1), encoding='utf-8', newline='\n')
-
-          Path('VERSION.txt').write_text('1.2.8\n', encoding='utf-8', newline='\n')
-
-          p = Path('README.md')
-          s = p.read_text(encoding='utf-8').replace('当前稳定版本：**v1.2.7**', '当前稳定版本：**v1.2.8**', 1)
-          p.write_text(s, encoding='utf-8', newline='\n')
-
-          p = Path('README.txt')
-          s = p.read_text(encoding='utf-8').replace('LicenseRecover v1.2.7', 'LicenseRecover v1.2.8', 1)
-          p.write_text(s, encoding='utf-8', newline='\n')
-
-          p = Path('CHANGELOG.md')
-          s = p.read_text(encoding='utf-8')
-          marker = '## [1.2.7] - 2026-09-07\n'
-          if marker not in s:
-              raise RuntimeError('CHANGELOG marker not found')
-          entry = '''## [1.2.8] - 2026-09-07\n\n### Fixed\n\n- 根据 QT100101 实际 Java 样本确认：应用启动与本地注册均使用具体 `QT100101` 作为 RegisterMain 产品 ID，不再错误回退为 `QT1001`。\n- QT100101 在 `config.xml` 没有静态 `regInfo` 时继续保持 RegStr 未确认，不猜测 `QT100101`，也不使用 44 项通用列表。\n\n### Changed\n\n- 批量/单应用将 QT100101 显示为 `Java / QT1001系列 / classes-config`，授权族与运行校验ID均为 `QT100101`。\n- QT100101 仍由 v1.2.7 的执行资格保护层阻止推荐自动写入，直到能从有效现有授权中可靠恢复动态 RegStr。\n\n### Tests\n\n- 新增 QT100101 `systemConfig.yml + WEB-INF/classes/config.xml` fixture，验证启动产品ID、本地注册产品ID、动态 RegStr 与自动恢复阻止。\n\n'''
-          p.write_text(s.replace(marker, entry + marker, 1), encoding='utf-8', newline='\n')
-
-          Path('release-notes/v1.2.8.md').write_text('''# LicenseRecover v1.2.8\n\n本版本根据实际 QT100101 Java 平台样本补齐授权产品 ID 识别，同时保持 v1.2.7 的安全执行资格保护。\n\n## QT100101\n\n实机样本确认：\n\n- `systemConfig.yml` 的 VersionID 为 `QT100101`；\n- `WEB-INF/classes/config.xml` 的 SoftVersionID 为 `QT100101`；\n- 应用启动授权流程通过 SystemInfo.registerId 构造 `RegisterMain(QT100101, ...)`；\n- 本地注册页同样复用该 RegisterMain 实例执行 newRegistry / doRegistry；\n- 配置中没有静态 `regInfo`，RegStr 由有效授权的 `getRegInfo().getRegStr()` 动态获得。\n\n因此 v1.2.8 显示：\n\n- 类型/授权代际：`Java / QT1001系列 / classes-config`\n- SoftVersionID：`QT100101`\n- 授权族：`QT100101`\n- 运行校验ID：`QT100101`\n- RegStr：`未静态声明`\n- 状态：`待确认`\n\n## 安全策略\n\n- 不把 `QT1001` 当作 QT100101 的运行校验ID。\n- 不把 `QT100101` 猜成 RegStr。\n- 不回退到 44 项通用 RegStr。\n- 推荐一键恢复与批量执行继续自动跳过 QT100101，直到未来能够从有效现有授权中可靠恢复原 RegStr。\n- 方式三保持独立高级操作。\n''', encoding='utf-8', newline='\n')
-
-          # Remove this one-shot workflow from the resulting branch tree.
-          Path('.github/workflows/apply-qt100101-v1.2.8.yml').unlink()
-          PY
-      - name: Commit patch
-        shell: bash
+      - name: Apply patch
+        run: python3 scripts/apply-qt100101-v1.2.8.py
+      - name: Commit result
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
