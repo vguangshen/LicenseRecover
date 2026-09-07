@@ -1,3 +1,11 @@
+## v1.2.12 — 修复旧版 ITMCReg 两参数 RegisterMain 路径传参
+
+- 根据 DS2406 真实 `ITMCReg-1.0.2.jar` 核对：其 `RegisterMain(String, String)` 第二参数是 `ConfigPath`。
+- 修复旧 fallback 把加密 `json` 当成配置路径的问题；这会让 `checkReInfo()` 看不到刚写入的本地授权并错误跌落到 HASP。
+- 3 参数新版仍按 `(product, json, configPath)` 调用，2 参数旧版改为 `(product, configPath)`。
+- 新增双代构造器回归测试，避免以后再次把二参语义写反。
+- 保留 v1.2.11 的失败回滚保护：原生校验最终未通过时恢复写入前配置。
+
 ## v1.2.11 — DS2406 真实授权族与失败回滚修复
 
 - 依据 DS2406 生产包业务代码，将启动/本地注册授权产品号从通用 `QT1001` 修正为 `DS24`。

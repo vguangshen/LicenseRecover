@@ -15,11 +15,46 @@ public final class RefactorSmokeTest {
         System.out.println("PASS: " + message);
     }
 
+    public static final class LegacyRegisterMain2 {
+        final String product;
+        final String configPath;
+        public LegacyRegisterMain2(String product, String configPath) {
+            this.product = product;
+            this.configPath = configPath;
+        }
+    }
+
+    public static final class ModernRegisterMain3 {
+        final String product;
+        final String json;
+        final String configPath;
+        public ModernRegisterMain3(String product, String json, String configPath) {
+            this.product = product;
+            this.json = json;
+            this.configPath = configPath;
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         Path base = Files.createTempDirectory("licenserecover-smoke");
 
         check("fwq".equals(LicenseRecover.LOCAL_AUTH_USER_ID),
                 "local authorization UserID fixed to fwq");
+
+        LegacyRegisterMain2 legacyCtor = (LegacyRegisterMain2)
+                LicenseRecover.instantiateRegisterMainCompatible(
+                        LegacyRegisterMain2.class, "DS24", "encrypted-json", "D:/app/WEB-INF/lib/");
+        check("DS24".equals(legacyCtor.product)
+                        && "D:/app/WEB-INF/lib/".equals(legacyCtor.configPath),
+                "legacy 2-arg RegisterMain receives configPath as second argument");
+
+        ModernRegisterMain3 modernCtor = (ModernRegisterMain3)
+                LicenseRecover.instantiateRegisterMainCompatible(
+                        ModernRegisterMain3.class, "QT30103", "encrypted-json", "D:/app/");
+        check("QT30103".equals(modernCtor.product)
+                        && "encrypted-json".equals(modernCtor.json)
+                        && "D:/app/".equals(modernCtor.configPath),
+                "modern 3-arg RegisterMain keeps json and configPath arguments");
 
         Path javaRoot = base.resolve("javaApp");
         Path javaLib = javaRoot.resolve("WEB-INF/lib");
