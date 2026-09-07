@@ -40,6 +40,11 @@ if not defined JAVA (
   exit /b 1
 )
 
+rem 新版源码核心编译进 Overlay。命令行入口也必须优先加载它，避免 GUI 已使用
+rem 动态目录注册映射，而 run.bat 仍落回旧 LicenseRecover.jar 的固定 QT1001/QT04 规则。
+set "CORECP=%~dp0LicenseRecover.jar"
+if exist "%~dp0LicenseRecoverOverlay.jar" set "CORECP=%~dp0LicenseRecoverOverlay.jar;%CORECP%"
+
 echo.
 echo   ============================================
 echo    ITMC 离线授权恢复工具
@@ -48,11 +53,11 @@ if defined DOTNET (
   echo   应用类型: .NET 版   应用目录: %APP%
   echo   方式一: 防止软件自动联网校验（只修改授权配置文件，不修改 DLL）
   echo.
-  "%JAVA%" -Dfile.encoding=UTF-8 -jar "%~dp0LicenseRecover.jar" "%APP%"
+  "%JAVA%" -Dfile.encoding=UTF-8 -cp "%CORECP%" LicenseRecover "%APP%"
 ) else (
   echo   应用类型: Java 版   应用根目录: %APP%
   echo.
-  "%JAVA%" -Dfile.encoding=UTF-8 -cp "%APP%\WEB-INF\lib\*;%~dp0LicenseRecover.jar" LicenseRecover "%APP%"
+  "%JAVA%" -Dfile.encoding=UTF-8 -cp "%APP%\WEB-INF\lib\*;%CORECP%" LicenseRecover "%APP%"
 )
 echo.
 echo   请查看上方 RESULT 行。若为 OK，重启应用服务使配置生效。
