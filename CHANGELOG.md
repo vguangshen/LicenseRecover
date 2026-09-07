@@ -2,6 +2,19 @@
 
 All notable user-visible and engineering changes are tracked here from the first stable release onward.
 
+## [1.2.4] - 2026-09-07
+
+### Fixed
+
+- 修复 GitHub Release 下载节点连接较慢时 8 秒即报 `connect timed out` 的问题；连接超时提高到 30 秒、读取超时提高到 60 秒。
+- 更新包下载增加 4 次自动重试，并在下载节点支持 HTTP Range 时从已下载位置继续。
+- 原生 `LicenseRecoverGUI.exe` 启动 Java 时启用 Windows 系统代理发现，避免浏览器走系统代理而 Java 更新器直连失败。
+
+### Changed
+
+- 下载进度总大小改为使用 GitHub Release API 返回的资产 `size`，不再依赖 CDN 的 `Content-Length`，因此进度条可从 0% 到 100% 显示真实下载字节进度。
+- 下载完成后额外校验实际文件长度，再继续执行既有 SHA-256 校验。
+
 ## [1.2.2] - 2026-09-07
 
 ### Added

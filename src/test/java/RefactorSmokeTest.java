@@ -231,6 +231,14 @@ public final class RefactorSmokeTest {
         check(checksum.equals(LicenseRecoverModernGUIGitHubUpdateService.parseChecksum(
                 sums, "LicenseRecover-update.zip")),
                 "GitHub updater parses slim update checksum");
+        String releaseJson = "{\"assets\":[{\"name\":\"LicenseRecover-update.zip\",\"size\":4416823},"
+                + "{\"name\":\"LicenseRecover-latest.zip\",\"size\":53207200}]}";
+        check(LicenseRecoverModernGUIGitHubUpdateService.parseAssetSize(
+                        releaseJson, "LicenseRecover-update.zip") == 4416823L,
+                "GitHub updater reads release asset size for real progress");
+        check(LicenseRecoverModernGUIGitHubUpdateService.parseContentRangeTotal(
+                        "bytes 1024-2047/4416823") == 4416823L,
+                "GitHub updater parses resumable download total");
 
         Path updateInstall = base.resolve("update-install");
         Files.createDirectories(updateInstall);

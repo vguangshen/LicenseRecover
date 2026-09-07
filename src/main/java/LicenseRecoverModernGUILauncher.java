@@ -190,10 +190,12 @@ final class LicenseRecoverModernGUIUpdateInfo {
     final String zipUrl;
     final String updateZipUrl;
     final String checksumUrl;
+    final long zipSize;
+    final long updateZipSize;
 
     LicenseRecoverModernGUIUpdateInfo(String currentVersion, String latestVersion, String tagName,
                                       String releasePageUrl, String zipUrl, String updateZipUrl,
-                                      String checksumUrl) {
+                                      String checksumUrl, long zipSize, long updateZipSize) {
         this.currentVersion = currentVersion;
         this.latestVersion = latestVersion;
         this.tagName = tagName;
@@ -201,6 +203,8 @@ final class LicenseRecoverModernGUIUpdateInfo {
         this.zipUrl = zipUrl;
         this.updateZipUrl = updateZipUrl;
         this.checksumUrl = checksumUrl;
+        this.zipSize = zipSize;
+        this.updateZipSize = updateZipSize;
     }
 
     boolean isUpdateAvailable() {
@@ -241,9 +245,10 @@ final class LicenseRecoverModernGUIUpdateProgressDialog implements LicenseRecove
             JLabel status = new JLabel("正在获取更新信息...");
             JLabel detail = new JLabel(" ");
             JProgressBar bar = new JProgressBar(0, 100);
-            bar.setIndeterminate(true);
+            bar.setIndeterminate(false);
+            bar.setValue(0);
             bar.setStringPainted(true);
-            bar.setString("准备下载");
+            bar.setString("0%");
 
             JPanel panel = new JPanel();
             panel.setBorder(BorderFactory.createEmptyBorder(16, 18, 16, 18));
@@ -316,8 +321,10 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
     private static final String API_LATEST =
             "https://api.github.com/repos/" + REPOSITORY + "/releases/latest";
     private static final Pattern SEMVER = Pattern.compile("^\\d+\\.\\d+\\.\\d+$");
-    private static final int CONNECT_TIMEOUT_MS = 8000;
-    private static final int READ_TIMEOUT_MS = 30000;
+    private static final int CONNECT_TIMEOUT_MS = 30000;
+    private static final int READ_TIMEOUT_MS = 60000;
+    private static final int DOWNLOAD_RETRIES = 4;
+    private static final long RETRY_BACKOFF_MS = 1500L;
     private static final LicenseRecoverModernGUIUpdateProgress NO_PROGRESS =
             new LicenseRecoverModernGUIUpdateProgress() {
                 public void status(String text) { }
@@ -337,10 +344,12 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
         if (!SEMVER.matcher(latest).matches())
             throw new IOException("不支持的 GitHub Release 标签: " + tag);
         String base = "https://github.com/" + REPOSITORY + "/releases/download/" + tag + "/";
+        long portableSize = parseAssetSize(json, "LicenseRecover-latest.zip");
+        long updateSize = parseAssetSize(json, "LicenseRecover-update.zip");
         return new LicenseRecoverModernGUIUpdateInfo(current, latest, tag, page,
                 base + "LicenseRecover-latest.zip",
                 base + "LicenseRecover-update.zip",
-                base + "SHA256SUMS.txt");
+                base + "SHA256SUMS.txt", portableSize, updateSize);
     }
 
     static String readCurrentVersion(File toolDir) {
@@ -397,19 +406,27 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
 
         String fileName = "LicenseRecover-update.zip";
         String downloadUrl = info.updateZipUrl;
+        long expectedSize = info.updateZipSize;
         String expected = parseChecksum(sums, fileName);
         if (expected == null) {
             fileName = "LicenseRecover-latest.zip";
             downloadUrl = info.zipUrl;
+            expectedSize = info.zipSize;
             expected = parseChecksum(sums, fileName);
         }
         if (expected == null) throw new IOException("校验文件中未找到可用的 LicenseRecover 更新包。");
 
         File dir = Files.createTempDirectory("LicenseRecover-update-").toFile();
         File zip = new File(dir, fileName);
-        indicator.status("正在下载 " + fileName + "...");
+        indicator.status("正在连接 GitHub 下载节点...");
+        indicator.bytes(0L, expectedSize);
         sink.accept("[更新] 下载 " + fileName + "...\n");
-        download(downloadUrl, zip, indicator);
+        download(downloadUrl, zip, expectedSize, indicator, sink);
+        if (expectedSize > 0L && zip.length() != expectedSize) {
+            long actualSize = zip.length();
+            zip.delete();
+            throw new IOException("更新包下载不完整：" + actualSize + " / " + expectedSize + " 字节。");
+        }
 
         indicator.status("下载完成，正在校验 SHA-256...");
         String actual = sha256(zip);
@@ -476,26 +493,80 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
         } finally { c.disconnect(); }
     }
 
-    private static void download(String url, File target,
-                                 LicenseRecoverModernGUIUpdateProgress progress) throws IOException {
-        HttpURLConnection c = connection(url);
-        long total = c.getContentLengthLong();
-        progress.bytes(0L, total);
-        long downloaded = 0L;
-        try (InputStream in = c.getInputStream();
-             OutputStream out = new BufferedOutputStream(new FileOutputStream(target))) {
-            byte[] buffer = new byte[65536];
-            int n;
-            while ((n = in.read(buffer)) >= 0) {
-                if (n == 0) continue;
-                out.write(buffer, 0, n);
-                downloaded += n;
+    private static void download(String url, File target, long expectedTotal,
+                                 LicenseRecoverModernGUIUpdateProgress progress,
+                                 Consumer<String> log) throws IOException {
+        long downloaded = target.isFile() ? target.length() : 0L;
+        if (expectedTotal > 0L && downloaded > expectedTotal) {
+            if (!target.delete() && target.exists()) throw new IOException("无法重置异常的更新临时文件。");
+            downloaded = 0L;
+        }
+        progress.bytes(downloaded, expectedTotal);
+        IOException last = null;
+
+        for (int attempt = 1; attempt <= DOWNLOAD_RETRIES; attempt++) {
+            if (expectedTotal > 0L && downloaded == expectedTotal) return;
+            HttpURLConnection c = null;
+            try {
+                progress.status(attempt == 1
+                        ? "正在连接 GitHub 下载节点..."
+                        : "正在重试下载 (" + attempt + "/" + DOWNLOAD_RETRIES + ")...");
+                c = connection(url, downloaded > 0L ? downloaded : -1L);
+                int code = c.getResponseCode();
+                boolean append = downloaded > 0L && code == HttpURLConnection.HTTP_PARTIAL;
+                if (downloaded > 0L && !append) {
+                    if (!target.delete() && target.exists()) throw new IOException("无法重置部分下载文件。");
+                    downloaded = 0L;
+                }
+
+                long responseLength = c.getContentLengthLong();
+                long total = expectedTotal;
+                if (total <= 0L) {
+                    total = parseContentRangeTotal(c.getHeaderField("Content-Range"));
+                    if (total <= 0L && responseLength >= 0L) total = downloaded + responseLength;
+                }
+                progress.status("正在下载 " + target.getName() + "...");
                 progress.bytes(downloaded, total);
+
+                try (InputStream in = new BufferedInputStream(c.getInputStream());
+                     OutputStream out = new BufferedOutputStream(new FileOutputStream(target, append))) {
+                    byte[] buffer = new byte[65536];
+                    int n;
+                    while ((n = in.read(buffer)) >= 0) {
+                        if (n == 0) continue;
+                        out.write(buffer, 0, n);
+                        downloaded += n;
+                        progress.bytes(downloaded, total);
+                    }
+                }
+
+                if (total > 0L && downloaded != total)
+                    throw new EOFException("下载连接提前结束：" + downloaded + " / " + total + " 字节。");
+                return;
+            } catch (IOException ex) {
+                last = ex;
+                log.accept("[更新] 下载第 " + attempt + " 次连接失败: " + ex.getMessage() + "\n");
+                if (attempt >= DOWNLOAD_RETRIES) break;
+                progress.status("网络中断，稍后自动重试...");
+                try { Thread.sleep(RETRY_BACKOFF_MS * attempt); }
+                catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("更新下载被中断。", interrupted);
+                }
+            } finally {
+                if (c != null) c.disconnect();
             }
-        } finally { c.disconnect(); }
+        }
+        String reason = last == null || last.getMessage() == null ? "未知网络错误" : last.getMessage();
+        throw new IOException("连接 GitHub 下载节点失败，已自动重试 " + DOWNLOAD_RETRIES
+                + " 次。最后错误: " + reason, last);
     }
 
     private static HttpURLConnection connection(String url) throws IOException {
+        return connection(url, -1L);
+    }
+
+    private static HttpURLConnection connection(String url, long rangeStart) throws IOException {
         URL u = new URL(url);
         if (!"https".equalsIgnoreCase(u.getProtocol())) throw new IOException("拒绝非 HTTPS 更新地址。");
         HttpURLConnection c = (HttpURLConnection) u.openConnection();
@@ -504,12 +575,36 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
         c.setReadTimeout(READ_TIMEOUT_MS);
         c.setRequestProperty("User-Agent", "LicenseRecover-Updater");
         c.setRequestProperty("Accept", "application/vnd.github+json, application/octet-stream;q=0.9, */*;q=0.8");
+        c.setRequestProperty("Accept-Encoding", "identity");
+        if (rangeStart >= 0L) c.setRequestProperty("Range", "bytes=" + rangeStart + "-");
         int code = c.getResponseCode();
         if (code < 200 || code >= 300) {
             c.disconnect();
             throw new IOException("GitHub 请求失败，HTTP " + code + "。仓库需为公开状态。");
         }
+        if (!"https".equalsIgnoreCase(c.getURL().getProtocol())) {
+            c.disconnect();
+            throw new IOException("更新下载被重定向到非 HTTPS 地址，已拒绝。");
+        }
         return c;
+    }
+
+    static long parseAssetSize(String json, String fileName) {
+        if (json == null || fileName == null || fileName.trim().isEmpty()) return -1L;
+        Matcher m = Pattern.compile("(?s)\\"name\\"\\s*:\\s*\\""
+                + Pattern.quote(fileName) + "\\".{0,8192}?\\"size\\"\\s*:\\s*(\\d+)")
+                .matcher(json);
+        if (!m.find()) return -1L;
+        try { return Long.parseLong(m.group(1)); }
+        catch (NumberFormatException ex) { return -1L; }
+    }
+
+    static long parseContentRangeTotal(String value) {
+        if (value == null) return -1L;
+        Matcher m = Pattern.compile("/(\\d+)\\s*$").matcher(value.trim());
+        if (!m.find()) return -1L;
+        try { return Long.parseLong(m.group(1)); }
+        catch (NumberFormatException ex) { return -1L; }
     }
 
     private static String jsonString(String json, String key) {
