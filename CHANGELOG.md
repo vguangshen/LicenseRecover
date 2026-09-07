@@ -2,6 +2,19 @@
 
 All notable user-visible and engineering changes are tracked here from the first stable release onward.
 
+## [1.2.6] - 2026-09-07
+
+### Fixed
+
+- 根据 GM00401 实际安装样本补齐 .NET `GM004` 产品族识别；此前 detector 只覆盖 itmcIEC / YX 家族，所以只能显示 SoftVersionID。
+- 只有目标 ITMC.Web.dll 同时出现具体 GM00401 与家族 GM004 时才确认 ProName=GM004。
+- GM004 家族 RegStr 从 DLL 内同族具体产品项提取；当前样本为 GM00401。
+- 不采用样本 Web.config 中与 GM00401 冲突的遗留 productName=YX0301。
+
+### Tests
+
+- 新增 GM004 / GM00401 UTF-16 程序集字符串回归 fixture。
+
 ## [1.2.5] - 2026-09-07
 
 ### Fixed

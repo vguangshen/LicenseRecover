@@ -292,14 +292,27 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     static String detectProduct(File webDll,String version) {
         Set<String> s=extractUtf16Ascii(webDll);
         if(s.contains("itmcIEC"))return "itmcIEC";
+        // GM00401: require evidence from the target assembly itself.
+        if(version!=null && version.matches("GM\\d{5}")) {
+            String family=version.substring(0,5);
+            if(s.contains(version) && s.contains(family)) return family;
+        }
         if(version!=null && version.matches("YX\\d{6}"))return version.substring(0,6);
         for(String x:s)if(x.matches("YX\\d{4}"))return x;
+        TreeSet<String> gmFamilies=new TreeSet<String>();
+        for(String x:s)if(x.matches("GM\\d{5}")) {
+            String family=x.substring(0,5);
+            if(s.contains(family)) gmFamilies.add(family);
+        }
+        if(gmFamilies.size()==1)return gmFamilies.first();
         TreeSet<String> derived=new TreeSet<String>(); for(String x:s)if(x.matches("YX\\d{6}"))derived.add(x.substring(0,6));
         return derived.size()==1?derived.first():null;
     }
     static String detectProductList(File webDll,String product) {
         Set<String>s=extractUtf16Ascii(webDll);TreeSet<String> out=new TreeSet<String>();
-        if("itmcIEC".equals(product)){for(String x:s)if(x.matches("DS\\d{4}"))out.add(x);} else if(product!=null&&product.matches("YX\\d{4}")){for(String x:s)if(x.matches(Pattern.quote(product)+"\\d{2}"))out.add(x);}
+        if("itmcIEC".equals(product)){for(String x:s)if(x.matches("DS\\d{4}"))out.add(x);}
+        else if(product!=null&&product.matches("YX\\d{4}")){for(String x:s)if(x.matches(Pattern.quote(product)+"\\d{2}"))out.add(x);}
+        else if(product!=null&&product.matches("GM\\d{3}")){for(String x:s)if(x.matches(Pattern.quote(product)+"\\d{2}"))out.add(x);}
         StringBuilder b=new StringBuilder();for(String x:out){if(b.length()>0)b.append(',');b.append(x);}return b.toString();
     }
     static Set<String> extractUtf16Ascii(File f) {

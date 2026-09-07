@@ -189,6 +189,15 @@ public final class RefactorSmokeTest {
                                 dsFixture.toFile(), "itmcIEC")),
                 "one-click derives DS01xx local product list");
 
+        Path gmFixture = base.resolve("GM004-Web.dll");
+        writeUtf16Fixture(gmFixture, "GM004", "GM00401", "SoftVersionID", "ProName", "RegStr");
+        check("GM004".equals(LicenseRecoverModernGUIAutoRecovery.detectProduct(
+                        gmFixture.toFile(), "GM00401")),
+                "one-click confirms GM004 family from concrete DLL evidence");
+        check("GM00401".equals(LicenseRecoverModernGUIAutoRecovery.detectProductList(
+                        gmFixture.toFile(), "GM004")),
+                "one-click derives GM00401 local product list");
+
         String knownPlain = "123456{\"UserID\":\"fwq\"}654321";
         String knownCipher = "9ED04E8D57009B0173A79367751FB10CF6348ACA295E0F1D56826AC5E8CC163D";
         check(knownCipher.equals(LicenseRecoverModernGUIAutoRecovery.desEncryptHex(
