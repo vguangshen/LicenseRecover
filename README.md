@@ -2,7 +2,7 @@
 
 ITMC 云实训平台离线授权恢复工具，支持 Java 与 .NET 应用。项目面向原授权服务不可用后的本地恢复场景，保留 Java 8 / Windows 7 / Windows Server 2008 兼容边界。
 
-当前稳定版本：**v1.2.4**
+当前稳定版本：**v1.2.5**
 
 ## 下载
 
@@ -73,6 +73,8 @@ CI 构建正式 portable ZIP 时会下载该固定 runtime、校验 SHA-256，�
 支持包含 `WEB-INF` / `WEB-INF/lib` 的 ITMC Java 应用，能够识别标准布局和已知的嵌套 `WEB-INF/WEB-INF` 布局，并覆盖当前已验证的 YT、XMT、QT30xxx、DS28xx 等产品代际。
 
 从 v1.2.2 起，单个应用的一键恢复区会直接显示 **授权代际、SoftVersionID 对应的 ProName、实际 RegStr、将写入的 config.xml 位置、授权组件以及 RegisterMain 原生校验结果**。批量页使用同一套识别模型，扫描后会逐项展开这些信息，并让批量“一键恢复授权”走与单个应用相同的恢复/校验链路。
+
+v1.2.5 根据实际 DS50109 / YX030506 样本，把 classes-config 平台拆成 **授权族、运行校验ID、RegStr** 三层：DS501xx 的本地注册族为 `DS501`、运行校验使用具体 SoftVersionID；YX0305xx 的本地注册族为 `YX0305`、运行校验同样使用具体 SoftVersionID，并保留 classes/config.xml 明确声明的 RegStr。尚无真实样本证据的 classes-config 产品显示为“通用 / classes-config”，不再笼统称为“新式”或把兼容回退伪装成已确认代际。
 
 v1.2.3 修复了批量扫描在第一个 Java 项目处因 GUI classpath 耦合而提前终止的问题，并为每个子目录增加异常隔离；单个异常项目只会显示“检测异常”，不会阻断后续应用。根据 DS2802 实际样本，DS28xx 代际会使用 `ProName=DS28`，在未提供显式 `regInfo` 时把当前 `SoftVersionID`（例如 `DS2802`）作为有效 `RegStr` 产品项。
 

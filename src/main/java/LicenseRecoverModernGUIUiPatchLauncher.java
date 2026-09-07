@@ -65,7 +65,8 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         help.setForeground(new Color(0x57606a));
 
         final JLabel generationValue = new JLabel("—");
-        final JLabel productValue = new JLabel("—");
+        final JLabel familyValue = new JLabel("—");
+        final JLabel runtimeValue = new JLabel("—");
         final JTextArea regStrValue = detailArea();
         final JTextArea targetValue = detailArea();
         final JLabel jarValue = new JLabel("—");
@@ -73,11 +74,12 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         JPanel details = new JPanel(new GridBagLayout());
         details.setBorder(BorderFactory.createTitledBorder("授权识别详情"));
         addDetailRow(details, 0, "授权代际", generationValue);
-        addDetailRow(details, 1, "ProName", productValue);
-        addDetailRow(details, 2, "RegStr", regStrValue);
-        addDetailRow(details, 3, "配置目标", targetValue);
-        addDetailRow(details, 4, "授权组件", jarValue);
-        addDetailRow(details, 5, "原生校验", verifyValue);
+        addDetailRow(details, 1, "授权族", familyValue);
+        addDetailRow(details, 2, "运行校验ID", runtimeValue);
+        addDetailRow(details, 3, "RegStr", regStrValue);
+        addDetailRow(details, 4, "配置目标", targetValue);
+        addDetailRow(details, 5, "授权组件", jarValue);
+        addDetailRow(details, 6, "原生校验", verifyValue);
 
         JPanel overview = new JPanel(new BorderLayout(0, 6));
         overview.add(help, BorderLayout.NORTH);
@@ -87,15 +89,15 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         final JButton recover = new JButton("一键恢复授权");
         recover.setFont(recover.getFont().deriveFont(Font.BOLD, 15f));
         recover.setPreferredSize(new Dimension(220, 42));
-        recover.setToolTipText("Java 会展示授权代际 / ProName / RegStr / config 目标，并在写入后执行 RegisterMain 原生校验");
+        recover.setToolTipText("Java 会展示授权代际 / 授权族 / 运行校验ID / RegStr / config 目标，并在写入后执行 RegisterMain 原生校验");
         recover.addActionListener(e -> runOneClick(frame, recover,
-                generationValue, productValue, regStrValue, targetValue, jarValue, verifyValue));
+                generationValue, familyValue, runtimeValue, regStrValue, targetValue, jarValue, verifyValue));
         JPanel buttonRow = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 2));
         buttonRow.add(recover);
         primary.add(buttonRow, BorderLayout.CENTER);
 
         final JTextField planRoot = findTextFieldInTitledPanel(frame.getContentPane(), "应用目录");
-        final Runnable refresh = () -> refreshPlan(frame, generationValue, productValue,
+        final Runnable refresh = () -> refreshPlan(frame, generationValue, familyValue, runtimeValue,
                 regStrValue, targetValue, jarValue, verifyValue);
         if (planRoot != null) {
             planRoot.getDocument().addDocumentListener(new DocumentListener() {
@@ -150,11 +152,11 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         return area;
     }
 
-    private static void refreshPlan(JFrame frame, JLabel generation, JLabel product,
+    private static void refreshPlan(JFrame frame, JLabel generation, JLabel family, JLabel runtime,
                                     JTextArea regStr, JTextArea targets, JLabel jar, JLabel verify) {
         JTextField appRoot = findTextFieldInTitledPanel(frame.getContentPane(), "应用目录");
         if (appRoot == null || appRoot.getText().trim().isEmpty()) {
-            generation.setText("—"); product.setText("—"); regStr.setText("—"); targets.setText("—");
+            generation.setText("—"); family.setText("—"); runtime.setText("—"); regStr.setText("—"); targets.setText("—");
             jar.setText("—"); verify.setText("待选择应用");
             return;
         }
@@ -163,21 +165,23 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         if (detection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.JAVA) {
             LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(selected);
             generation.setText(plan.generation);
-            product.setText(value(plan.productName));
+            family.setText(value(plan.authorizationFamily));
+            runtime.setText(value(plan.runtimeProductId));
             regStr.setText(value(plan.regStr)); regStr.setCaretPosition(0);
             targets.setText(plan.configTargets); targets.setCaretPosition(0);
             jar.setText(plan.registrationJarSummary());
             verify.setText("待执行: " + plan.verificationPlan);
         } else if (detection.isDetected()) {
             generation.setText(detection.kind.toString());
-            product.setText(value(detection.productName));
+            family.setText(value(detection.productName));
+            runtime.setText(value(detection.productName));
             regStr.setText(".NET 由对应适配器自动识别");
             targets.setText("config.xml / 授权 sidecar（按检测结果）");
             jar.setText("不适用");
             verify.setText(detection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
                     ? "待执行: 写回解密校验" : "Legacy: 仅兼容路径");
         } else {
-            generation.setText("未识别"); product.setText("—"); regStr.setText("—"); targets.setText("—");
+            generation.setText("未识别"); family.setText("—"); runtime.setText("—"); regStr.setText("—"); targets.setText("—");
             jar.setText("—"); verify.setText("未识别到支持的授权结构");
         }
     }
@@ -187,7 +191,7 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
     }
 
     private static void runOneClick(final JFrame frame, final JButton button,
-                                    final JLabel generationValue, final JLabel productValue,
+                                    final JLabel generationValue, final JLabel familyValue, final JLabel runtimeValue,
                                     final JTextArea regStrValue, final JTextArea targetValue,
                                     final JLabel jarValue, final JLabel verifyValue) {
         final JTextField appRoot = findTextFieldInTitledPanel(frame.getContentPane(), "应用目录");
@@ -205,7 +209,7 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         final boolean doBackup = backup == null || backup.isSelected();
         final boolean doBlock = blockNet == null || blockNet.isSelected();
         final boolean preview = dryRun != null && dryRun.isSelected();
-        refreshPlan(frame, generationValue, productValue, regStrValue, targetValue, jarValue, verifyValue);
+        refreshPlan(frame, generationValue, familyValue, runtimeValue, regStrValue, targetValue, jarValue, verifyValue);
         verifyValue.setText(preview ? "预览执行中..." : "执行并校验中...");
         button.setEnabled(false);
         append(logArea, "\n===== 一键恢复授权 =====\n");

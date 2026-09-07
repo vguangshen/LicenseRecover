@@ -93,6 +93,48 @@ public final class RefactorSmokeTest {
         check(xmtPlan.generation.contains("XMT") && xmtPlan.regStrSummary().startsWith("8 项"),
                 "Java GUI plan exposes XMT generation and compact RegStr summary");
 
+        Path ds501Root = base.resolve("java-DS50109");
+        Path ds501Lib = ds501Root.resolve("WEB-INF/lib");
+        Path ds501Classes = ds501Root.resolve("WEB-INF/classes");
+        Files.createDirectories(ds501Lib);
+        Files.createDirectories(ds501Classes);
+        Files.write(ds501Lib.resolve("ITMCReg.jar"), new byte[]{1});
+        Files.write(ds501Classes.resolve("config.xml"), Arrays.asList(
+                "<ROOT><reg><regType>3</regType></reg><SystemSoft><SoftVersionID>DS50109</SoftVersionID></SystemSoft></ROOT>"), StandardCharsets.UTF_8);
+        check("DS50109".equals(LicenseRecover.productMainFor("DS50109")),
+                "DS501 direct rebuild uses concrete runtime check id");
+        check("DS501".equals(LicenseRecover.localRegisterProductFor("DS50109", false)),
+                "DS501 local-registration page uses DS501 family");
+        check("DS50109".equals(LicenseRecover.resolveJavaRegStr(ds501Root.toString(), "DS50109")),
+                "DS501 fallback RegStr contains concrete SoftVersionID");
+        LicenseRecoverModernGUIJavaPlan ds501Plan = LicenseRecoverModernGUIJavaPlan.inspect(ds501Root.toFile());
+        check(ds501Plan.generation.contains("DS501") && "DS501".equals(ds501Plan.authorizationFamily),
+                "Java GUI plan names DS501 family instead of generic classes-config");
+        check("DS50109".equals(ds501Plan.runtimeProductId) && "DS50109".equals(ds501Plan.regStr),
+                "Java GUI plan separates DS501 family from runtime id and RegStr");
+
+        Path yx305Root = base.resolve("java-YX030506");
+        Path yx305Lib = yx305Root.resolve("WEB-INF/lib");
+        Path yx305Classes = yx305Root.resolve("WEB-INF/classes");
+        Files.createDirectories(yx305Lib);
+        Files.createDirectories(yx305Classes);
+        Files.write(yx305Lib.resolve("ITMCReg.jar"), new byte[]{1});
+        Files.write(yx305Root.resolve("systemConfig.yml"), Arrays.asList("global.system.VersionID=YX030506"), StandardCharsets.UTF_8);
+        Files.write(yx305Classes.resolve("config.xml"), Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>YX030506</SoftVersionID><regInfo>QT100101,QT100102</regInfo></SystemSoft></ROOT>"), StandardCharsets.UTF_8);
+        check("YX030506".equals(LicenseRecover.productMainFor("YX030506")),
+                "YX0305 direct rebuild uses concrete runtime check id");
+        check("YX0305".equals(LicenseRecover.localRegisterProductFor("YX030506", false)),
+                "YX0305 local-registration page uses YX0305 family");
+        check("QT100101,QT100102".equals(LicenseRecover.resolveJavaRegStr(yx305Root.toString(), "YX030506")),
+                "YX030506 preserves declared classes-config regInfo");
+        LicenseRecoverModernGUIJavaPlan yx305Plan = LicenseRecoverModernGUIJavaPlan.inspect(yx305Root.toFile());
+        check(yx305Plan.generation.contains("YX0305") && "YX0305".equals(yx305Plan.authorizationFamily),
+                "Java GUI plan names YX0305 family instead of generic classes-config");
+        check("YX030506".equals(yx305Plan.runtimeProductId)
+                        && "QT100101,QT100102".equals(yx305Plan.regStr),
+                "Java GUI plan separates YX0305 family, runtime id and feature RegStr");
+
         Path nestedRoot = base.resolve("nestedApp");
         Path nestedLib = nestedRoot.resolve("WEB-INF/WEB-INF/lib");
         Files.createDirectories(nestedLib);

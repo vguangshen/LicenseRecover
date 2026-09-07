@@ -2,6 +2,19 @@
 
 All notable user-visible and engineering changes are tracked here from the first stable release onward.
 
+## [1.2.5] - 2026-09-07
+
+### Fixed
+
+- 根据实际 DS50109 样本，将本地注册族 `DS501` 与运行校验ID `DS50109` 分离；直接授权重建使用运行期具体ID，RegStr 未显式配置时使用具体 SoftVersionID。
+- 根据实际 YX030506 样本，将本地注册族 `YX0305` 与运行校验ID `YX030506` 分离；保留 classes-config 中显式 `QT100101,QT100102` RegStr。
+- 修复上述 classes-config 平台此前回退为 `QT1001` ProName/通用 RegStr 的误导性识别。
+
+### Changed
+
+- “新式 / classes-config”改为明确的 `DS501 / classes-config`、`YX0305 / classes-config`；尚未有样本证据的 classes-config 平台显示为“通用 / classes-config”。
+- 单应用授权详情和批量表增加“授权族”和“运行校验ID”两个独立字段。
+
 ## [1.2.4] - 2026-09-07
 
 ### Fixed
