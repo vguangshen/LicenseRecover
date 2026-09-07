@@ -1,4 +1,4 @@
-LicenseRecover v1.2.5
+LicenseRecover v1.2.6
 =====================
 
 ITMC 云实训平台离线授权恢复工具
@@ -55,6 +55,13 @@ v1.2.5 Java classes-config 授权族识别
 - DS501xx：授权族 DS501，运行校验ID 为具体 SoftVersionID，缺少 regInfo 时 RegStr 使用具体 SoftVersionID；
 - YX0305xx：授权族 YX0305，运行校验ID 为具体 SoftVersionID，RegStr 使用 classes/config.xml 显式 regInfo；
 - 单应用与批量表均分别展示“授权族”和“运行校验ID”。
+
+v1.2.6 GM00401 .NET 识别
+-------------------------
+- 实际 config.xml 确认 SoftVersionID=GM00401；
+- ITMC.Web.dll 同时包含 GM00401 与 GM004 时确认授权族 GM004；
+- RegStr 从 DLL 同族具体项提取，本样本为 GM00401；
+- 忽略 Web.config 中与实际产品冲突的历史 productName=YX0301。
 
 软件自动更新
 ------------

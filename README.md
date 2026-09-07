@@ -2,7 +2,7 @@
 
 ITMC 云实训平台离线授权恢复工具，支持 Java 与 .NET 应用。项目面向原授权服务不可用后的本地恢复场景，保留 Java 8 / Windows 7 / Windows Server 2008 兼容边界。
 
-当前稳定版本：**v1.2.5**
+当前稳定版本：**v1.2.6**
 
 ## 下载
 
@@ -80,7 +80,7 @@ v1.2.3 修复了批量扫描在第一个 Java 项目处因 GUI classpath 耦合�
 
 ### .NET 应用
 
-支持包含 `ITMC.Web.dll` 与 `ITMC.Regedit.dll` / `itmcRegedit.dll` 等组件的 ASP.NET / .NET 应用。DS01xx、YX0301/YX0302/YX0303 等已验证家族会按检测结果自动选择兼容路径。
+支持包含 `ITMC.Web.dll` 与 `ITMC.Regedit.dll` / `itmcRegedit.dll` 等组件的 ASP.NET / .NET 应用。DS01xx、YX0301/YX0302/YX0303 等已验证家族会按检测结果自动选择兼容路径。 v1.2.6 根据 GM00401 实际样本新增 GM004 家族：config.xml 为 GM00401，且 ITMC.Web.dll 同时包含 GM00401 与 GM004 时确认 ProName=GM004，并提取 RegStr=GM00401；样本 Web.config 中遗留的 productName=YX0301 不参与授权产品识别。
 
 ## 三种恢复方式
 
