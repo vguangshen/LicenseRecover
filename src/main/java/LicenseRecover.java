@@ -669,6 +669,7 @@ public class LicenseRecover {
         String classes = normalizeCsv(readJavaConfigElement(
                 new File(root, "WEB-INF" + File.separator + "classes" + File.separator + "config.xml"), "regInfo"));
         if (classes != null) return classes;
+        if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("DS28\\d{2}")) return softId.trim();
         if ("YT00129".equalsIgnoreCase(softId)) return "QT0420";
         return ALL_NUMS;
     }
@@ -689,6 +690,7 @@ public class LicenseRecover {
 
     // 与 Global.registerProductBeans 的首个命中规则保持一致
     static String productMainFor(String softId) {
+        if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("DS28\\d{2}")) return "DS28";
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("XMT01")) return "XMT01";
         if (softId == null) return "QT1001";
         switch (softId) {

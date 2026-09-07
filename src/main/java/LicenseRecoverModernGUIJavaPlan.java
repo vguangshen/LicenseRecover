@@ -87,7 +87,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
             generation = soft != null && soft.toUpperCase(Locale.ROOT).startsWith("XMT01")
                     ? "XMT / classes-config" : "新式 / classes-config";
         } else if (dataConfig.isFile()) {
-            generation = "YT/兼容根配置 / data-config";
+            generation = soft != null && soft.toUpperCase(Locale.ROOT).matches("DS28\\d{2}")
+                    ? "DS28 / data-config" : "YT/兼容根配置 / data-config";
         } else if (relative(root, lib).toLowerCase(Locale.ROOT)
                 .contains("web-inf" + File.separator + "web-inf")) {
             generation = "经典 Java / nested WEB-INF";
@@ -174,11 +175,13 @@ public final class LicenseRecoverModernGUIJavaPlan {
         String classes = normalizeCsv(readElement(new File(root, "WEB-INF" + File.separator
                 + "classes" + File.separator + "config.xml"), "regInfo"));
         if (classes != null) return classes;
+        if (softId != null && softId.toUpperCase(Locale.ROOT).matches("DS28\\d{2}")) return softId.trim();
         if ("YT00129".equalsIgnoreCase(softId)) return "QT0420";
         return FALLBACK_ALL_NUMS;
     }
 
     private static String productMainFor(String softId) {
+        if (softId != null && softId.toUpperCase(Locale.ROOT).matches("DS28\\d{2}")) return "DS28";
         if (softId != null && softId.toUpperCase(Locale.ROOT).startsWith("XMT01")) return "XMT01";
         if (softId == null) return "QT1001";
         String id = softId.toUpperCase(Locale.ROOT);
