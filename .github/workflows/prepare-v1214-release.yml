@@ -1,0 +1,32 @@
+name: Prepare v1.2.14 release
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'scripts/prepare-v1214-release.py'
+      - '.github/workflows/prepare-v1214-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: python3 scripts/prepare-v1214-release.py
+      - run: |
+          git diff --check
+          grep -Fx '1.2.14' VERSION.txt
+          grep -F '当前稳定版本：**v1.2.14**' README.md
+          grep -F '没有恢复任何默认注册代号或 RegStr 兜底' release-notes/v1.2.14.md
+      - shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add VERSION.txt README.md release-notes/v1.2.14.md
+          git commit -m 'release: prepare LicenseRecover v1.2.14'
+          git push origin HEAD:main
