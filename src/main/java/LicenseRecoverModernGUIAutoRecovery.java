@@ -112,53 +112,181 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     }
 
     private static Result recoverDotNet(Detection d, boolean backup, boolean blockNet, boolean dryRun, Consumer<String> log) throws Exception {
-        if (!isWindows()) return Result.fail(".NET machine identity acquisition runs only on Windows.",d);
-        if (blank(d.productName)) return Result.fail("Could not determine the target ProName safely; no file was changed.",d);
-        File cfg=findDotNetConfig(d);
-        if (cfg==null) return Result.fail("No config.xml was found for the selected .NET application.",d);
-        String original=readUtf8(cfg);
-        File regDll=new File(d.runtimeDir,"ITMC.Regedit.dll");
-        boolean softShortcut=containsAscii(regDll,"WebSerSoftNo") && containsAscii(regDll,"GetCpuid");
-        String machine=getRegNo(original,softShortcut,log);
-        if (machine==null || machine.length()!=16) return Result.fail("Vendor machine-ID algorithm did not return a 16-character RegID.",d);
+        if (!isWindows()) return Result.fail(".NET native registration runs only on Windows.", d);
+        File helper = findDotNetNativeHelper();
+        if (helper == null) return Result.fail("LicenseRecover.NET.exe was not found; native IIS registration cannot run.", d);
 
-        String regStr=detectProductList(new File(d.runtimeDir,"ITMC.Web.dll"),d.productName);
-        if (blank(regStr)) regStr=d.versionId!=null?d.versionId:d.productName;
-        String time=new SimpleDateFormat("yyyy-MM-dd HH-mm-ss").format(new Date());
-        String request=desEncryptHex(randomDigits(4)+machine+randomDigits(4)+time+randomDigits(4),"itmcsoft");
-        String authPlain="00"+time+"00"+machine+"00"+"2099-12-31"+"00"+"1"+"00"+"-001"+"00"+"-1"+"00"+regStr;
-        String auth=desEncryptHex(authPlain,"itmc"+d.productName);
-        String json=buildRegInfoJson(machine,d.productName,regStr);
-        String regName=desEncryptHex(randomDigits(6)+json+randomDigits(6),"*ITMC"+d.productName+"OK*");
-        String updated=updateLocalLicenseXml(original,regName,blockNet);
-        validateXml(updated);
+        String product = d.productName;
+        String regStr = blank(product) ? null : detectProductList(new File(d.runtimeDir, "ITMC.Web.dll"), product);
+        if (blank(regStr)) regStr = d.versionId;
 
-        log.accept("[one-click] .NET ProName="+d.productName+" RegID="+machine+" UserID="+USER_ID+"\n");
-        log.accept("[one-click] products="+regStr+"\n");
-        if (dryRun) {
-            log.accept("[dry-run] would write "+cfg.getAbsolutePath()+" and verify regName round-trip.\n");
-            if (blockNet) blockSidecars(d,backup,true,log);
-            return new Result(true,"Preview completed; no file was changed.",d,machine,request,auth);
-        }
+        List<String> generate = new ArrayList<String>();
+        generate.add(helper.getAbsolutePath());
+        generate.add("gencode");
+        generate.add(d.runtimeDir.getAbsolutePath());
+        if (!blank(product)) { generate.add("--product"); generate.add(product); }
+        if (!blank(regStr)) { generate.add("--regstr"); generate.add(regStr); }
+        // gencode is read-only; it asks the target registration assembly for the
+        // local request code and builds the matching offline code.
+        NativeProcessResult generated = runNativeCapture(generate, d.appRoot, log);
+        if (generated.exitCode != 0)
+            return Result.fail("Target-native .NET request-code generation failed; no file was changed.", d);
 
-        File bak=null;
-        if (backup) {
-            bak=uniqueBackup(cfg); Files.copy(cfg.toPath(),bak.toPath(),StandardCopyOption.REPLACE_EXISTING,StandardCopyOption.COPY_ATTRIBUTES);
-            log.accept("[backup] "+bak.getAbsolutePath()+"\n");
-        }
+        String request = findLabeledHex(generated.output, "注册申请号", "申请号");
+        String auth = findLabeledHex(generated.output, "离线授权码", "授权码");
+        if (blank(request) || blank(auth))
+            return Result.fail("Native helper did not return both request code and authorization code; no file was changed.", d);
+
+        String machine = null;
         try {
-            Files.write(cfg.toPath(),updated.getBytes(StandardCharsets.UTF_8));
-            verifyPersisted(cfg,d.productName,machine);
-            if (blockNet) blockSidecars(d,backup,false,log);
-            log.accept("[verify] persisted regName decrypts and UserID/RegID/ProName match.\n");
-            return new Result(true,".NET local authorization was rebuilt and verified. Restart the IIS application pool/site to reload it.",d,machine,request,auth);
+            String plain = desDecryptHex(request, "itmcsoft");
+            if (plain != null && plain.length() >= 20) machine = plain.substring(4, 20);
+        } catch (Throwable ignore) { }
+
+        log.accept("[one-click] .NET native registration flow: gencode -> DoRegistry -> CheckReInfo\n");
+        log.accept("[one-click] ProName=" + valueOrPending(product) + " products=" + valueOrPending(regStr)
+                + " RegID=" + valueOrPending(machine) + "\n");
+        if (dryRun) {
+            log.accept("[dry-run] native request/auth codes generated; DoRegistry was not called and no file was changed.\n");
+            return new Result(true, "Preview completed with target-native request-code generation; no file was changed.",
+                    d, machine, request, auth);
+        }
+
+        LinkedHashMap<File, byte[]> originals = snapshotDotNetRegistrationFiles(d);
+        if (backup) backupDotNetRegistrationFiles(originals, log);
+        try {
+            List<String> apply = new ArrayList<String>();
+            apply.add(helper.getAbsolutePath());
+            apply.add("doreg");
+            apply.add(d.runtimeDir.getAbsolutePath());
+            apply.add("--seq"); apply.add(request);
+            apply.add("--code"); apply.add(auth);
+            if (!blank(product)) { apply.add("--product"); apply.add(product); }
+            // Verify the untouched native local-registration result first; cloud blocking is a separate final step.
+            apply.add("--no-block-net");
+            if (!backup) apply.add("--no-backup");
+            NativeProcessResult applied = runNativeCapture(apply, d.appRoot, log);
+            if (applied.exitCode != 0) throw new IOException("target RegeditMain.DoRegistry() rejected the generated code");
+
+            List<String> verify = new ArrayList<String>();
+            verify.add(helper.getAbsolutePath());
+            verify.add("verify");
+            verify.add(d.runtimeDir.getAbsolutePath());
+            if (!blank(product)) { verify.add("--product"); verify.add(product); }
+            NativeProcessResult checked = runNativeCapture(verify, d.appRoot, log);
+            if (checked.exitCode != 0) throw new IOException("target RegeditMain.CheckReInfo() did not confirm the native write-back");
+
+            if (blockNet) {
+                blockPrimaryDotNetConfigs(d, log);
+                blockSidecars(d, backup, false, log);
+            }
+            log.accept("[verify] target-native DoRegistry + CheckReInfo passed; authorization cloud blocking applied afterwards.\n");
+            return new Result(true,
+                    ".NET local authorization was applied by the target registration assembly and native verification passed. Restart the IIS app pool/site.",
+                    d, machine, request, auth);
         } catch (Throwable ex) {
-            try { Files.write(cfg.toPath(),original.getBytes(StandardCharsets.UTF_8)); log.accept("[rollback] restored original config.xml.\n"); }
-            catch (Throwable r) { ex.addSuppressed(r); }
-            if (ex instanceof Exception) throw (Exception)ex;
+            restoreDotNetRegistrationFiles(originals, log);
+            if (ex instanceof Exception) throw (Exception) ex;
             throw new Exception(ex);
         }
     }
+
+    static final class NativeProcessResult {
+        final int exitCode;
+        final String output;
+        NativeProcessResult(int exitCode, String output) { this.exitCode=exitCode; this.output=output==null?"":output; }
+    }
+
+    static NativeProcessResult runNativeCapture(List<String> cmd, File workDir, Consumer<String> log) throws Exception {
+        ProcessBuilder pb = new ProcessBuilder(cmd).redirectErrorStream(true);
+        if (workDir != null && workDir.isDirectory()) pb.directory(workDir);
+        Process p = pb.start();
+        BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
+        StringBuilder all = new StringBuilder();
+        try {
+            String line;
+            while ((line = r.readLine()) != null) {
+                all.append(line).append('\n');
+                if (log != null) log.accept(line + "\n");
+            }
+        } finally { try { r.close(); } catch (IOException ignore) { } }
+        return new NativeProcessResult(p.waitFor(), all.toString());
+    }
+
+    static String findLabeledHex(String output, String... labels) {
+        if (output == null) return null;
+        for (String label : labels) {
+            Matcher m = Pattern.compile("(?im)" + Pattern.quote(label) + "\\s*[:：]\\s*([0-9a-f]+)").matcher(output);
+            if (m.find()) return m.group(1).trim();
+        }
+        return null;
+    }
+
+    private static File findDotNetNativeHelper() {
+        File dir = toolDir();
+        File nested = new File(dir, "LicenseRecover.NET" + File.separator + "LicenseRecover.NET.exe");
+        if (nested.isFile()) return nested;
+        File flat = new File(dir, "LicenseRecover.NET.exe");
+        return flat.isFile() ? flat : null;
+    }
+
+    private static LinkedHashMap<File, byte[]> snapshotDotNetRegistrationFiles(Detection d) throws IOException {
+        LinkedHashMap<File, byte[]> out = new LinkedHashMap<File, byte[]>();
+        File[] candidates = new File[]{
+                new File(d.appRoot, "config.xml"), new File(d.runtimeDir, "config.xml"),
+                new File(d.appRoot, "Register.xml"), new File(d.runtimeDir, "Register.xml")
+        };
+        HashSet<String> seen = new HashSet<String>();
+        for (File f : candidates) {
+            String key;
+            try { key = f.getCanonicalPath().toLowerCase(Locale.ROOT); }
+            catch (IOException ex) { key = f.getAbsolutePath().toLowerCase(Locale.ROOT); }
+            if (!seen.add(key)) continue;
+            out.put(f, f.isFile() ? Files.readAllBytes(f.toPath()) : null);
+        }
+        return out;
+    }
+
+    private static void backupDotNetRegistrationFiles(LinkedHashMap<File, byte[]> originals, Consumer<String> log) throws IOException {
+        for (Map.Entry<File, byte[]> e : originals.entrySet()) {
+            if (e.getValue() == null) continue;
+            File f = e.getKey();
+            File bak = uniqueBackup(f);
+            Files.write(bak.toPath(), e.getValue());
+            if (log != null) log.accept("[backup] " + bak.getAbsolutePath() + "\n");
+        }
+    }
+
+    private static void restoreDotNetRegistrationFiles(LinkedHashMap<File, byte[]> originals, Consumer<String> log) {
+        for (Map.Entry<File, byte[]> e : originals.entrySet()) {
+            try {
+                if (e.getValue() == null) Files.deleteIfExists(e.getKey().toPath());
+                else Files.write(e.getKey().toPath(), e.getValue());
+                if (log != null) log.accept("[rollback] restored " + e.getKey().getAbsolutePath() + "\n");
+            } catch (Throwable r) {
+                if (log != null) log.accept("[rollback-warning] " + e.getKey().getAbsolutePath() + ": " + safe(r) + "\n");
+            }
+        }
+    }
+
+    private static void blockPrimaryDotNetConfigs(Detection d, Consumer<String> log) throws Exception {
+        File[] files = new File[]{ new File(d.appRoot, "config.xml"), new File(d.runtimeDir, "config.xml") };
+        HashSet<String> seen = new HashSet<String>();
+        for (File f : files) {
+            if (!f.isFile()) continue;
+            String key = f.getCanonicalPath().toLowerCase(Locale.ROOT);
+            if (!seen.add(key)) continue;
+            String original = readUtf8(f);
+            String updated = putElement(original, "Service", BLOCK_ENDPOINT);
+            validateXml(updated);
+            if (!original.equals(updated)) {
+                Files.write(f.toPath(), updated.getBytes(StandardCharsets.UTF_8));
+                if (log != null) log.accept("[block-net] " + f.getAbsolutePath() + "\n");
+            }
+        }
+    }
+
+    private static String valueOrPending(String value) { return blank(value) ? "<auto>" : value; }
 
     private static void verifyPersisted(File cfg,String product,String machine) throws Exception {
         String xml=readUtf8(cfg), enc=firstElement(xml,"regName");
@@ -300,7 +428,13 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             String family=version.substring(0,5);
             if(s.contains(version) && s.contains(family)) return family;
         }
-        if(version!=null && version.matches("YX\\d{6}"))return version.substring(0,6);
+        if(version!=null && version.matches("YX\\d{6}")) {
+            String derived=version.substring(0,6);
+            // Do not trust folder/version prefix alone. YX030107 is a real YX0302-family
+            // sample; its protected ITMC.Web code sets ProName=YX0302. Require the
+            // derived family to exist in this target DLL, otherwise use assembly evidence.
+            if(s.contains(derived))return derived;
+        }
         for(String x:s)if(x.matches("YX\\d{4}"))return x;
         TreeSet<String> gmFamilies=new TreeSet<String>();
         for(String x:s)if(x.matches("GM\\d{5}")) {

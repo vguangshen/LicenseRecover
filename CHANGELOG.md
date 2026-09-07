@@ -16,6 +16,13 @@
 
 # Changelog
 
+## v1.2.13
+
+- Fixed YT00138 to use the production `YT001` RegisterMain family and concrete `YT00138` RegStr instead of the generic QT1001 fallback that could crash real Tomcat startup.
+- Reworked modern IIS/.NET one-click recovery to use target-native `gencode -> DoRegistry -> CheckReInfo` and only block the authorization cloud after native verification succeeds.
+- Made YX .NET ProName detection require assembly evidence so YX030107 correctly resolves to the YX0302 family.
+- Added rollback and regression coverage for the new YT00138 and .NET native paths.
+
 All notable user-visible and engineering changes are tracked here from the first stable release onward.
 
 ## [1.2.10] - 2026-09-07

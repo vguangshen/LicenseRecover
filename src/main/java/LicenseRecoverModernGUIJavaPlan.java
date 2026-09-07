@@ -110,7 +110,9 @@ public final class LicenseRecoverModernGUIJavaPlan {
         } else if (dataConfig.isFile()) {
             generation = "DS2406".equals(upper)
                     ? "DS24 / data-config"
-                    : (upper.matches("DS28\\d{2}") ? "DS28 / data-config" : "YT/兼容根配置 / data-config");
+                    : ("YT00138".equals(upper)
+                        ? "YT001 / data-config"
+                        : (upper.matches("DS28\\d{2}") ? "DS28 / data-config" : "YT/兼容根配置 / data-config"));
         } else if (relative(root, lib).toLowerCase(Locale.ROOT)
                 .contains("web-inf" + File.separator + "web-inf")) {
             generation = "经典 Java / nested WEB-INF";
@@ -235,6 +237,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
         }
 
         if ("DS2406".equalsIgnoreCase(softId)) return "DS2406";
+        if ("YT00138".equalsIgnoreCase(softId)) return "YT00138";
         if (softId != null && softId.toUpperCase(Locale.ROOT).startsWith("DS501")) return softId.trim();
         if (softId != null && softId.toUpperCase(Locale.ROOT).matches("DS28\\d{2}")) return softId.trim();
         if ("YT00129".equalsIgnoreCase(softId)) return "QT0420";
@@ -266,6 +269,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
         String id = softId.toUpperCase(Locale.ROOT);
         if ("QT100101".equals(id)) return "QT100101";
         if ("DS2406".equals(id)) return "DS24";
+        if ("YT00138".equals(id)) return "YT001";
         if (id.startsWith("DS501")) return "DS501";
         if (id.startsWith("YX0305")) return "YX0305";
         if (id.startsWith("XMT01")) return "XMT01";
@@ -285,6 +289,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
         // while application startup checks the concrete SoftVersionID.
         if ("QT100101".equals(id)) return "QT100101";
         if ("DS2406".equals(id)) return "DS24";
+        if ("YT00138".equals(id)) return "YT001";
         if (id.startsWith("DS501") || id.startsWith("YX0305")) return softId.trim();
         if (id.matches("DS28\\d{2}")) return "DS28";
         if (id.startsWith("XMT01")) return "XMT01";
