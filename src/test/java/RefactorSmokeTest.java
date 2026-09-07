@@ -56,6 +56,30 @@ public final class RefactorSmokeTest {
         check("QT0420".equals(yt129Plan.regStr) && yt129Plan.rootConfigStyle,
                 "Java GUI plan exposes YT00129 RegStr and root config target");
 
+        Path ds2406Root = base.resolve("java-DS2406");
+        Path ds2406Lib = ds2406Root.resolve("WEB-INF/lib");
+        Files.createDirectories(ds2406Lib);
+        Files.createDirectories(ds2406Root.resolve("data"));
+        Files.write(ds2406Lib.resolve("ITMCReg-1.0.2.jar"), new byte[]{1});
+        Files.write(ds2406Root.resolve("systemConfig.yml"), Arrays.asList(
+                "global.system.VersionID=DS2406",
+                "global.system.VersionName=跨境电子商务数据分析与应用系统"), StandardCharsets.UTF_8);
+        Files.write(ds2406Root.resolve("data/config.xml"), Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>DS2406</SoftVersionID></SystemSoft></ROOT>"), StandardCharsets.UTF_8);
+        check("DS24".equals(LicenseRecover.productMainFor("DS2406")),
+                "DS2406 startup RegisterMain uses DS24 family");
+        check("DS24".equals(LicenseRecover.localRegisterProductFor("DS2406", false)),
+                "DS2406 local-registration page uses DS24 family");
+        check("DS2406".equals(LicenseRecover.resolveJavaRegStr(ds2406Root.toString(), "DS2406")),
+                "DS2406 RegStr contains the concrete VersionID required by the application gate");
+        LicenseRecoverModernGUIJavaPlan ds2406Plan = LicenseRecoverModernGUIJavaPlan.inspect(ds2406Root.toFile());
+        check(ds2406Plan.generation.contains("DS24")
+                        && "DS24".equals(ds2406Plan.authorizationFamily)
+                        && "DS24".equals(ds2406Plan.runtimeProductId),
+                "Java GUI plan models DS2406 as DS24 authorization family");
+        check("DS2406".equals(ds2406Plan.regStr) && ds2406Plan.automaticRecoveryReady,
+                "DS2406 GUI plan uses sample-verified RegStr and is ready");
+
         Path qt30103Root = base.resolve("java-QT30103");
         Path qt30103Lib = qt30103Root.resolve("WEB-INF/lib");
         Files.createDirectories(qt30103Lib);

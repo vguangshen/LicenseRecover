@@ -1,3 +1,11 @@
+## v1.2.11 — DS2406 真实授权族与失败回滚修复
+
+- 依据 DS2406 生产包业务代码，将启动/本地注册授权产品号从通用 `QT1001` 修正为 `DS24`。
+- DS2406 `RegStr` 使用业务启动门实际要求的具体 `VersionID=DS2406`，不再写入 44 项通用列表。
+- Java 原生校验捕获 `LinkageError/NoClassDefFoundError`，避免缺可选 HASP 依赖时子进程直接崩溃。
+- 原生校验最终未通过时，默认自动恢复本次写入前的 lib 与 webapp 根 `config.xml` 备份。
+- 新增 DS2406 回归测试，覆盖 GUI 识别、运行 ProName、本地注册族与 RegStr。
+
 # Changelog
 
 All notable user-visible and engineering changes are tracked here from the first stable release onward.

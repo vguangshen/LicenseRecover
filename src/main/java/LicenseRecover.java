@@ -360,6 +360,7 @@ public class LicenseRecover {
 
         // 4. 备份原 config.xml
         File libBak = null;
+        File rootBak = null;
         if (backupCfg && cfg.exists()) {
             String stamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
             libBak = new File(libDir, "config.xml." + stamp + ".bak");
@@ -371,10 +372,10 @@ public class LicenseRecover {
             File cfgRoot = new File(appRoot, "config.xml");
             if (cfgRoot.exists()) {
                 String stamp = new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
-                File bak = new File(appRoot, "config.xml." + stamp + ".bak");
-                try { Files.copy(cfgRoot.toPath(), bak.toPath(), StandardCopyOption.REPLACE_EXISTING); }
-                catch (Exception e) { System.out.println("[警告] 备份失败: " + e.getMessage()); }
-                System.out.println("已备份原配置(webapp根): " + bak.getName());
+                rootBak = new File(appRoot, "config.xml." + stamp + ".bak");
+                try { Files.copy(cfgRoot.toPath(), rootBak.toPath(), StandardCopyOption.REPLACE_EXISTING); }
+                catch (Exception e) { System.out.println("[警告] 备份失败: " + e.getMessage()); rootBak = null; }
+                if (rootBak != null) System.out.println("已备份原配置(webapp根): " + rootBak.getName());
             }
         }
 
@@ -424,16 +425,31 @@ public class LicenseRecover {
                 }
                 System.out.println("checkReInfo()(" + cd + ") : " + unregistered + "  (false=注册有效)");
                 if (!unregistered) anyOk = true;
-            } catch (Exception e) {
-                // 单个目录校验异常不阻断另一个目录（新架构有 libDir + appRoot 两处）
-                System.err.println("自校验异常(" + cd + "): " + e.getMessage() + "（继续尝试其它目录）");
+            } catch (Throwable e) {
+                // LinkageError/NoClassDefFoundError 也属于校验器不可用，不能让整个子 JVM 直接崩掉。
+                // 但也绝不能把它当作授权成功；若所有目录都未通过，下面会回滚本次写入。
+                String detail = e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage());
+                System.err.println("自校验异常(" + cd + "): " + detail + "（继续尝试其它目录）");
             }
         }
         if (anyOk) {
             System.out.println("RESULT: OK  —— 离线授权已生效，重启应用即可正常使用，联网校验不再触发。");
             return 0;
         }
-        System.out.println("RESULT: FAILED —— 授权未生效，请把输出发给我排查。");
+        if (backupCfg) {
+            if (libBak != null && libBak.exists()) {
+                try { Files.copy(libBak.toPath(), cfg.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    System.out.println("[回滚] 原生校验未通过，已恢复 " + cfg.getAbsolutePath()); }
+                catch (Exception e) { System.out.println("[警告] 回滚 lib config.xml 失败: " + e.getMessage()); }
+            }
+            if (rootBak != null && rootBak.exists()) {
+                File rootCfg = new File(appRoot, "config.xml");
+                try { Files.copy(rootBak.toPath(), rootCfg.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    System.out.println("[回滚] 原生校验未通过，已恢复 " + rootCfg.getAbsolutePath()); }
+                catch (Exception e) { System.out.println("[警告] 回滚 webapp 根 config.xml 失败: " + e.getMessage()); }
+            }
+        }
+        System.out.println("RESULT: FAILED —— 授权未生效；若启用了备份，本次写入已自动回滚。");
         return 1;
     }
 
@@ -559,6 +575,7 @@ public class LicenseRecover {
         String id = softId.toUpperCase(java.util.Locale.ROOT);
         if (id.matches("QT401\\d{2}")) return "QT401";
         if ("QT100101".equals(id)) return "QT100101";
+        if ("DS2406".equals(id)) return "DS24";
         if (id.startsWith("DS501")) return "DS501";
         if (id.startsWith("YX0305")) return "YX0305";
         if ("DS2601".equals(id)) return "DS26";
@@ -712,6 +729,7 @@ public class LicenseRecover {
             if ("QT100101".equalsIgnoreCase(concrete)) return "QT100101";
         }
 
+        if ("DS2406".equalsIgnoreCase(softId)) return "DS2406";
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("DS501")) return softId.trim();
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("DS28\\d{2}")) return softId.trim();
         if ("YT00129".equalsIgnoreCase(softId)) return "QT0420";
@@ -738,6 +756,7 @@ public class LicenseRecover {
     static String productMainFor(String softId) {
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("QT401\\d{2}")) return "QT401";
         if (softId != null && "QT100101".equalsIgnoreCase(softId.trim())) return "QT100101";
+        if (softId != null && "DS2406".equalsIgnoreCase(softId.trim())) return "DS24";
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("DS501")) return softId.trim();
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("YX0305")) return softId.trim();
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("DS28\\d{2}")) return "DS28";
