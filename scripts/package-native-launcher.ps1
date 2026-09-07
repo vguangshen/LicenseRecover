@@ -38,12 +38,30 @@ function Repack-WithLauncher([string]$Archive, [string]$Label) {
     try {
         Expand-Archive -LiteralPath $Archive -DestinationPath $temp -Force
         Copy-Item -LiteralPath $launcher -Destination (Join-Path $temp 'LicenseRecoverGUI.exe') -Force
-        if (-not (Test-Path -LiteralPath (Join-Path $temp 'LicenseRecoverGUI-legacy.exe'))) {
-            throw "$Label archive lost LicenseRecoverGUI-legacy.exe compatibility fallback."
+
+        $legacyExe = Join-Path $temp 'LicenseRecoverGUI-legacy.exe'
+        if (Test-Path -LiteralPath $legacyExe) {
+            Remove-Item -LiteralPath $legacyExe -Force
         }
-        if (-not (Test-Path -LiteralPath (Join-Path $temp 'run_gui.bat'))) {
-            throw "$Label archive is missing run_gui.bat fallback launcher."
+
+        $rootBatFiles = @(Get-ChildItem -LiteralPath $temp -Filter '*.bat' -File)
+        if ($Label -eq 'portable') {
+            foreach ($bat in $rootBatFiles) {
+                Remove-Item -LiteralPath $bat.FullName -Force
+            }
+        } elseif ($Label -eq 'update') {
+            foreach ($bat in $rootBatFiles) {
+                if ($bat.Name -ne 'run_gui.bat') {
+                    Remove-Item -LiteralPath $bat.FullName -Force
+                }
+            }
+            if (-not (Test-Path -LiteralPath (Join-Path $temp 'run_gui.bat'))) {
+                throw 'Update archive must keep run_gui.bat as a transition trampoline for pre-v1.2.1 updaters.'
+            }
+        } else {
+            throw "Unknown archive label: $Label"
         }
+
         Remove-Item -LiteralPath $Archive -Force
         Compress-Archive -Path (Join-Path $temp '*') -DestinationPath $Archive -CompressionLevel Optimal -Force
     } finally {
@@ -103,7 +121,7 @@ foreach ($required in @(
 }
 Write-Host "Verified native launcher: $launcher ($exeLength bytes)"
 
-Write-Host 'Injecting native launcher into verified release archives...'
+Write-Host 'Injecting native launcher and consolidating user entry points...'
 Repack-WithLauncher $updateZip 'update'
 Repack-WithLauncher $portableZip 'portable'
 
@@ -115,9 +133,29 @@ foreach ($dir in @($portableCheck, $updateCheck)) {
     if (-not (Test-Path -LiteralPath (Join-Path $dir 'LicenseRecoverGUI.exe'))) {
         throw "Repacked archive is missing LicenseRecoverGUI.exe: $dir"
     }
-    if (-not (Test-Path -LiteralPath (Join-Path $dir 'LicenseRecoverGUI-legacy.exe'))) {
-        throw "Repacked archive is missing LicenseRecoverGUI-legacy.exe: $dir"
+    if (Test-Path -LiteralPath (Join-Path $dir 'LicenseRecoverGUI-legacy.exe')) {
+        throw "Repacked archive still contains LicenseRecoverGUI-legacy.exe: $dir"
     }
+    $rootExes = @(Get-ChildItem -LiteralPath $dir -Filter '*.exe' -File)
+    if ($rootExes.Count -ne 1 -or $rootExes[0].Name -ne 'LicenseRecoverGUI.exe') {
+        throw "Archive must expose exactly one root EXE entry point: $dir"
+    }
+}
+
+$portableBats = @(Get-ChildItem -LiteralPath $portableCheck -Filter '*.bat' -File)
+if ($portableBats.Count -ne 0) {
+    throw 'Portable archive must not expose BAT launchers; LicenseRecoverGUI.exe is the only user entry point.'
+}
+$updateBats = @(Get-ChildItem -LiteralPath $updateCheck -Filter '*.bat' -File)
+if ($updateBats.Count -ne 1 -or $updateBats[0].Name -ne 'run_gui.bat') {
+    throw 'Slim update archive must contain only run_gui.bat as the pre-v1.2.1 transition trampoline.'
+}
+$compatLauncherText = Get-Content -LiteralPath (Join-Path $updateCheck 'run_gui.bat') -Raw
+if ($compatLauncherText.IndexOf('LicenseRecoverGUI.exe', [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+    throw 'Compatibility run_gui.bat must relaunch LicenseRecoverGUI.exe.'
+}
+if ($compatLauncherText.IndexOf('&&', [StringComparison]::Ordinal) -ge 0) {
+    throw 'Compatibility run_gui.bat must not use chained && syntax; older update restarts must be cmd-safe.'
 }
 if (-not (Test-Path -LiteralPath (Join-Path $portableCheck 'jre/bin/javaw.exe'))) {
     throw 'Portable archive lost the embedded Java runtime.'
@@ -132,6 +170,6 @@ Set-Content -LiteralPath $checksumFile -Encoding ASCII -Value @(
     ($portableSha + '  LicenseRecover-latest.zip'),
     ($updateSha + '  LicenseRecover-update.zip')
 )
-Write-Host "Native launcher packaged into both archives."
+Write-Host 'Native launcher packaged. Portable exposes one EXE only; update keeps one compatibility BAT for old updaters.'
 Write-Host "Portable SHA-256: $portableSha"
 Write-Host "Update   SHA-256: $updateSha"

@@ -1,4 +1,5 @@
 import javax.swing.*;
+import java.awt.*;
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -6,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.MessageDigest;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -14,16 +16,29 @@ import java.util.zip.ZipInputStream;
 
 /**
  * Default GUI launcher with a GitHub Releases based self-update check.
- * All updater classes intentionally share the LicenseRecoverModernGUI prefix so
- * the existing deterministic overlay build includes them without changing the
- * legacy runtime JARs.
+ * The updater keeps Java 8 compatibility and uses a verified slim package when available.
  */
 public final class LicenseRecoverModernGUILauncher {
-    private LicenseRecoverModernGUILauncher() {}
+    private static final AtomicBoolean UPDATE_RUNNING = new AtomicBoolean(false);
+    private static final String[] OBSOLETE_ENTRYPOINTS = {
+            "LicenseRecoverGUI-legacy.exe",
+            "run.bat",
+            "run_gui.bat",
+            "run_gui_modern.bat",
+            "run_gui_legacy.bat",
+            "run_removenet.bat",
+            "run_removenet_safe.bat",
+            "run_removenet_legacy.bat"
+    };
+
+    private LicenseRecoverModernGUILauncher() { }
 
     public static void main(String[] args) {
         final boolean updateOnly = contains(args, "--update-only");
-        if (!updateOnly) LicenseRecoverModernGUI.main(args);
+        if (!updateOnly) {
+            LicenseRecoverModernGUI.main(args);
+            scheduleObsoleteEntrypointCleanup(toolDir());
+        }
 
         Thread checker = new Thread(() -> {
             if (!updateOnly) {
@@ -37,7 +52,14 @@ public final class LicenseRecoverModernGUILauncher {
     }
 
     private static void checkForUpdates(boolean manual) {
+        if (!UPDATE_RUNNING.compareAndSet(false, true)) {
+            if (manual) showMessage("已有更新检查或下载任务正在进行。",
+                    "检查更新", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
         File toolDir = toolDir();
+        LicenseRecoverModernGUIUpdateProgressDialog progressDialog = null;
         try {
             LicenseRecoverModernGUIUpdateInfo info =
                     LicenseRecoverModernGUIGitHubUpdateService.checkLatest(toolDir);
@@ -51,19 +73,21 @@ public final class LicenseRecoverModernGUILauncher {
                     "发现新版本 v" + info.latestVersion + "\n"
                             + "当前版本: v" + info.currentVersion + "\n\n"
                             + "是否从 GitHub 下载并自动安装？\n"
-                            + "会优先使用轻量更新包；下载后校验 SHA-256，校验通过才会覆盖当前文件。",
+                            + "下载过程会显示实时进度，完成后校验 SHA-256，校验通过才会覆盖当前文件。",
                     "发现新版本");
             if (choice != JOptionPane.OK_OPTION) return;
 
-            showMessage("开始从 GitHub 下载 v" + info.latestVersion
-                    + "。下载完成并校验后会再次提示。", "软件更新",
-                    JOptionPane.INFORMATION_MESSAGE);
+            progressDialog = LicenseRecoverModernGUIUpdateProgressDialog.open(info.latestVersion);
             File zip = LicenseRecoverModernGUIGitHubUpdateService.downloadVerified(
-                    info, s -> System.out.print(s));
+                    info, s -> System.out.print(s), progressDialog);
+            if (progressDialog != null) {
+                progressDialog.close();
+                progressDialog = null;
+            }
 
             int install = showConfirm(
                     "v" + info.latestVersion + " 已下载并通过 SHA-256 校验。\n\n"
-                            + "点击“确定”后软件将退出，自动覆盖更新并重新启动。",
+                            + "点击“确定”后软件将退出，自动覆盖更新并直接重新启动 LicenseRecoverGUI.exe。",
                     "准备安装更新");
             if (install != JOptionPane.OK_OPTION) return;
 
@@ -77,6 +101,9 @@ public final class LicenseRecoverModernGUILauncher {
             } else {
                 System.err.println("[更新] 自动检查失败: " + safeMessage(ex));
             }
+        } finally {
+            if (progressDialog != null) progressDialog.close();
+            UPDATE_RUNNING.set(false);
         }
     }
 
@@ -123,6 +150,36 @@ public final class LicenseRecoverModernGUILauncher {
         if (text == null || text.trim().isEmpty()) text = String.valueOf(ex);
         return text.length() > 1200 ? text.substring(0, 1200) + "..." : text;
     }
+
+    private static void scheduleObsoleteEntrypointCleanup(final File dir) {
+        Thread cleanup = new Thread(() -> {
+            try { Thread.sleep(2500L); }
+            catch (InterruptedException ex) { Thread.currentThread().interrupt(); return; }
+            cleanupObsoleteEntrypoints(dir);
+        }, "LicenseRecover-Entrypoint-Cleanup");
+        cleanup.setDaemon(true);
+        cleanup.start();
+    }
+
+    static void cleanupObsoleteEntrypoints(File dir) {
+        if (dir == null || !dir.isDirectory()) return;
+        for (String name : OBSOLETE_ENTRYPOINTS) {
+            File file = new File(dir, name);
+            if (!file.exists()) continue;
+            boolean removed = false;
+            for (int i = 0; i < 8 && !removed; i++) {
+                removed = file.delete();
+                if (!removed) {
+                    try { Thread.sleep(300L); }
+                    catch (InterruptedException ex) { Thread.currentThread().interrupt(); break; }
+                }
+            }
+            if (!removed && file.exists()) {
+                file.deleteOnExit();
+                System.err.println("[更新] 旧入口稍后删除: " + file.getName());
+            }
+        }
+    }
 }
 
 final class LicenseRecoverModernGUIUpdateInfo {
@@ -152,6 +209,108 @@ final class LicenseRecoverModernGUIUpdateInfo {
     }
 }
 
+interface LicenseRecoverModernGUIUpdateProgress {
+    void status(String text);
+    void bytes(long downloaded, long total);
+}
+
+final class LicenseRecoverModernGUIUpdateProgressDialog implements LicenseRecoverModernGUIUpdateProgress {
+    private final JDialog dialog;
+    private final JLabel statusLabel;
+    private final JLabel detailLabel;
+    private final JProgressBar progressBar;
+
+    private LicenseRecoverModernGUIUpdateProgressDialog(JDialog dialog, JLabel statusLabel,
+                                                         JLabel detailLabel, JProgressBar progressBar) {
+        this.dialog = dialog;
+        this.statusLabel = statusLabel;
+        this.detailLabel = detailLabel;
+        this.progressBar = progressBar;
+    }
+
+    static LicenseRecoverModernGUIUpdateProgressDialog open(final String version) {
+        if (GraphicsEnvironment.isHeadless()) return null;
+        final LicenseRecoverModernGUIUpdateProgressDialog[] ref = new LicenseRecoverModernGUIUpdateProgressDialog[1];
+        Runnable create = () -> {
+            JDialog dialog = new JDialog((Frame) null, "软件更新", false);
+            dialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+            dialog.setResizable(false);
+
+            JLabel title = new JLabel("正在下载 LicenseRecover v" + version);
+            title.setFont(title.getFont().deriveFont(Font.BOLD, 14f));
+            JLabel status = new JLabel("正在获取更新信息...");
+            JLabel detail = new JLabel(" ");
+            JProgressBar bar = new JProgressBar(0, 100);
+            bar.setIndeterminate(true);
+            bar.setStringPainted(true);
+            bar.setString("准备下载");
+
+            JPanel panel = new JPanel();
+            panel.setBorder(BorderFactory.createEmptyBorder(16, 18, 16, 18));
+            panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+            title.setAlignmentX(Component.LEFT_ALIGNMENT);
+            status.setAlignmentX(Component.LEFT_ALIGNMENT);
+            detail.setAlignmentX(Component.LEFT_ALIGNMENT);
+            bar.setAlignmentX(Component.LEFT_ALIGNMENT);
+            bar.setMaximumSize(new Dimension(420, 24));
+            panel.add(title);
+            panel.add(Box.createVerticalStrut(12));
+            panel.add(status);
+            panel.add(Box.createVerticalStrut(8));
+            panel.add(bar);
+            panel.add(Box.createVerticalStrut(6));
+            panel.add(detail);
+
+            dialog.setContentPane(panel);
+            dialog.pack();
+            dialog.setSize(Math.max(dialog.getWidth(), 470), dialog.getHeight());
+            dialog.setLocationRelativeTo(null);
+            ref[0] = new LicenseRecoverModernGUIUpdateProgressDialog(dialog, status, detail, bar);
+            dialog.setVisible(true);
+        };
+        try {
+            if (SwingUtilities.isEventDispatchThread()) create.run();
+            else SwingUtilities.invokeAndWait(create);
+        } catch (Exception ex) {
+            System.err.println("[更新] 无法创建下载进度窗口: " + ex.getMessage());
+            return null;
+        }
+        return ref[0];
+    }
+
+    public void status(final String text) {
+        SwingUtilities.invokeLater(() -> statusLabel.setText(text == null ? "" : text));
+    }
+
+    public void bytes(final long downloaded, final long total) {
+        SwingUtilities.invokeLater(() -> {
+            if (total > 0) {
+                int percent = (int) Math.max(0, Math.min(100,
+                        Math.round((downloaded * 100.0) / total)));
+                progressBar.setIndeterminate(false);
+                progressBar.setValue(percent);
+                progressBar.setString(percent + "%");
+                detailLabel.setText(formatBytes(downloaded) + " / " + formatBytes(total));
+            } else {
+                progressBar.setIndeterminate(true);
+                progressBar.setString("下载中");
+                detailLabel.setText(formatBytes(downloaded));
+            }
+        });
+    }
+
+    void close() {
+        SwingUtilities.invokeLater(() -> dialog.dispose());
+    }
+
+    private static String formatBytes(long bytes) {
+        if (bytes < 1024L) return bytes + " B";
+        double kb = bytes / 1024.0;
+        if (kb < 1024.0) return String.format(Locale.ROOT, "%.1f KB", kb);
+        return String.format(Locale.ROOT, "%.1f MB", kb / 1024.0);
+    }
+}
+
 final class LicenseRecoverModernGUIGitHubUpdateService {
     static final String REPOSITORY = "vguangshen/LicenseRecover";
     private static final String API_LATEST =
@@ -159,8 +318,13 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
     private static final Pattern SEMVER = Pattern.compile("^\\d+\\.\\d+\\.\\d+$");
     private static final int CONNECT_TIMEOUT_MS = 8000;
     private static final int READ_TIMEOUT_MS = 30000;
+    private static final LicenseRecoverModernGUIUpdateProgress NO_PROGRESS =
+            new LicenseRecoverModernGUIUpdateProgress() {
+                public void status(String text) { }
+                public void bytes(long downloaded, long total) { }
+            };
 
-    private LicenseRecoverModernGUIGitHubUpdateService() {}
+    private LicenseRecoverModernGUIGitHubUpdateService() { }
 
     static LicenseRecoverModernGUIUpdateInfo checkLatest(File toolDir) throws IOException {
         String current = readCurrentVersion(toolDir);
@@ -218,7 +382,16 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
 
     static File downloadVerified(LicenseRecoverModernGUIUpdateInfo info,
                                  Consumer<String> log) throws IOException {
+        return downloadVerified(info, log, null);
+    }
+
+    static File downloadVerified(LicenseRecoverModernGUIUpdateInfo info,
+                                 Consumer<String> log,
+                                 LicenseRecoverModernGUIUpdateProgress progress) throws IOException {
         Consumer<String> sink = log == null ? s -> { } : log;
+        LicenseRecoverModernGUIUpdateProgress indicator = progress == null ? NO_PROGRESS : progress;
+
+        indicator.status("正在获取 SHA-256 校验信息...");
         sink.accept("[更新] 下载 SHA256SUMS.txt...\n");
         String sums = getText(info.checksumUrl);
 
@@ -230,18 +403,23 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
             downloadUrl = info.zipUrl;
             expected = parseChecksum(sums, fileName);
         }
-        if (expected == null) throw new IOException("校验文件中未找到可用的 LicenseRecover 更新包。 ");
+        if (expected == null) throw new IOException("校验文件中未找到可用的 LicenseRecover 更新包。");
 
         File dir = Files.createTempDirectory("LicenseRecover-update-").toFile();
         File zip = new File(dir, fileName);
+        indicator.status("正在下载 " + fileName + "...");
         sink.accept("[更新] 下载 " + fileName + "...\n");
-        download(downloadUrl, zip);
+        download(downloadUrl, zip, indicator);
+
+        indicator.status("下载完成，正在校验 SHA-256...");
         String actual = sha256(zip);
         sink.accept("[更新] SHA-256: " + actual + "\n");
         if (!expected.equalsIgnoreCase(actual)) {
             zip.delete();
-            throw new SecurityException("下载包 SHA-256 与 GitHub 校验文件不一致。 ");
+            throw new SecurityException("下载包 SHA-256 与 GitHub 校验文件不一致。");
         }
+        indicator.bytes(zip.length(), zip.length());
+        indicator.status("SHA-256 校验通过");
         sink.accept("[更新] SHA-256 校验通过。\n");
         return zip;
     }
@@ -259,19 +437,19 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
     }
 
     static void launchInstaller(File zip, File installDir, String javaExe) throws IOException {
-        if (zip == null || !zip.isFile()) throw new IOException("已校验更新包不存在。 ");
-        if (installDir == null || !installDir.isDirectory()) throw new IOException("安装目录无效。 ");
+        if (zip == null || !zip.isFile()) throw new IOException("已校验更新包不存在。");
+        if (installDir == null || !installDir.isDirectory()) throw new IOException("安装目录无效。");
         if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win"))
-            throw new IOException("自动覆盖更新当前仅支持 Windows。 ");
+            throw new IOException("自动覆盖更新当前仅支持 Windows。");
 
         File helperDir = Files.createTempDirectory("LicenseRecover-installer-").toFile();
         File helperClass = new File(helperDir, "LicenseRecoverModernGUIUpdateInstaller.class");
         copyResource("/LicenseRecoverModernGUIUpdateInstaller.class", helperClass);
-        File launcher = new File(installDir, "run_gui.bat");
+        File restartTarget = new File(installDir, "LicenseRecoverGUI.exe");
         File helperLog = new File(helperDir, "installer.log");
         ProcessBuilder pb = new ProcessBuilder(javaExe, "-Dfile.encoding=UTF-8", "-cp",
                 helperDir.getAbsolutePath(), "LicenseRecoverModernGUIUpdateInstaller",
-                zip.getAbsolutePath(), installDir.getAbsolutePath(), launcher.getAbsolutePath());
+                zip.getAbsolutePath(), installDir.getAbsolutePath(), restartTarget.getAbsolutePath());
         pb.directory(installDir);
         pb.redirectErrorStream(true);
         pb.redirectOutput(ProcessBuilder.Redirect.appendTo(helperLog));
@@ -298,19 +476,28 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
         } finally { c.disconnect(); }
     }
 
-    private static void download(String url, File target) throws IOException {
+    private static void download(String url, File target,
+                                 LicenseRecoverModernGUIUpdateProgress progress) throws IOException {
         HttpURLConnection c = connection(url);
+        long total = c.getContentLengthLong();
+        progress.bytes(0L, total);
+        long downloaded = 0L;
         try (InputStream in = c.getInputStream();
              OutputStream out = new BufferedOutputStream(new FileOutputStream(target))) {
             byte[] buffer = new byte[65536];
             int n;
-            while ((n = in.read(buffer)) >= 0) out.write(buffer, 0, n);
+            while ((n = in.read(buffer)) >= 0) {
+                if (n == 0) continue;
+                out.write(buffer, 0, n);
+                downloaded += n;
+                progress.bytes(downloaded, total);
+            }
         } finally { c.disconnect(); }
     }
 
     private static HttpURLConnection connection(String url) throws IOException {
         URL u = new URL(url);
-        if (!"https".equalsIgnoreCase(u.getProtocol())) throw new IOException("拒绝非 HTTPS 更新地址。 ");
+        if (!"https".equalsIgnoreCase(u.getProtocol())) throw new IOException("拒绝非 HTTPS 更新地址。");
         HttpURLConnection c = (HttpURLConnection) u.openConnection();
         c.setInstanceFollowRedirects(true);
         c.setConnectTimeout(CONNECT_TIMEOUT_MS);
@@ -320,7 +507,7 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
         int code = c.getResponseCode();
         if (code < 200 || code >= 300) {
             c.disconnect();
-            throw new IOException("GitHub 请求失败，HTTP " + code + "。仓库需为公开状态。 ");
+            throw new IOException("GitHub 请求失败，HTTP " + code + "。仓库需为公开状态。");
         }
         return c;
     }
@@ -352,21 +539,22 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
 /** Separate helper copied to a temp classpath before replacing the running overlay JAR. */
 final class LicenseRecoverModernGUIUpdateInstaller {
     private static final int COPY_RETRIES = 30;
-    private LicenseRecoverModernGUIUpdateInstaller() {}
+    private LicenseRecoverModernGUIUpdateInstaller() { }
 
     public static void main(String[] args) {
         if (args.length < 3) System.exit(2);
         File zip = new File(args[0]);
         File installDir = new File(args[1]);
-        File launcher = new File(args[2]);
+        File restartTarget = new File(args[2]);
         File result = new File(installDir, "update-result.txt");
         try {
             Thread.sleep(1500L);
             applyUpdate(zip, installDir);
+            if (!restartTarget.isFile())
+                throw new IOException("更新完成但缺少 LicenseRecoverGUI.exe。");
             write(result, "UPDATE_OK " + new Date() + System.lineSeparator());
             zip.delete();
-            if (launcher.isFile()) new ProcessBuilder("cmd.exe", "/c", "start", "",
-                    launcher.getAbsolutePath()).directory(installDir).start();
+            new ProcessBuilder(restartTarget.getAbsolutePath()).directory(installDir).start();
         } catch (Throwable ex) {
             try { write(result, "UPDATE_FAILED " + new Date() + System.lineSeparator()
                     + ex + System.lineSeparator()); } catch (Exception ignore) { }
@@ -376,16 +564,16 @@ final class LicenseRecoverModernGUIUpdateInstaller {
     }
 
     static void applyUpdate(File zip, File installDir) throws IOException {
-        if (zip == null || !zip.isFile()) throw new IOException("更新 ZIP 不存在。 ");
-        if (installDir == null || !installDir.isDirectory()) throw new IOException("安装目录不存在。 ");
+        if (zip == null || !zip.isFile()) throw new IOException("更新 ZIP 不存在。");
+        if (installDir == null || !installDir.isDirectory()) throw new IOException("安装目录不存在。");
         File work = Files.createTempDirectory("LicenseRecover-apply-").toFile();
         File staging = new File(work, "staging");
         File backup = new File(work, "backup");
-        if (!staging.mkdirs() || !backup.mkdirs()) throw new IOException("无法创建更新临时目录。 ");
+        if (!staging.mkdirs() || !backup.mkdirs()) throw new IOException("无法创建更新临时目录。");
         try {
             unzipSafe(zip, staging);
             if (!new File(staging, "VERSION.txt").isFile())
-                throw new IOException("更新包缺少 VERSION.txt。 ");
+                throw new IOException("更新包缺少 VERSION.txt。");
             backupExisting(staging, installDir, backup, "");
             try { copyTree(staging, installDir); }
             catch (IOException failed) {
@@ -393,6 +581,7 @@ final class LicenseRecoverModernGUIUpdateInstaller {
                 catch (IOException restore) { failed.addSuppressed(restore); }
                 throw failed;
             }
+            cleanupObsoleteEntrypoints(installDir);
         } finally { deleteTree(work); }
     }
 
@@ -433,7 +622,7 @@ final class LicenseRecoverModernGUIUpdateInstaller {
                 if (current.isFile()) {
                     File target = new File(backupRoot, rel);
                     File parent = target.getParentFile();
-                    if (!parent.isDirectory() && !parent.mkdirs()) throw new IOException("无法创建备份目录。 ");
+                    if (!parent.isDirectory() && !parent.mkdirs()) throw new IOException("无法创建备份目录。");
                     Files.copy(current.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING,
                             StandardCopyOption.COPY_ATTRIBUTES);
                 }
@@ -464,6 +653,28 @@ final class LicenseRecoverModernGUIUpdateInstaller {
             }
         }
         throw new IOException("多次重试后仍无法替换文件: " + target, last);
+    }
+
+    private static void cleanupObsoleteEntrypoints(File dir) {
+        String[] names = {
+                "LicenseRecoverGUI-legacy.exe",
+                "run.bat",
+                "run_gui.bat",
+                "run_gui_modern.bat",
+                "run_gui_legacy.bat",
+                "run_removenet.bat",
+                "run_removenet_safe.bat",
+                "run_removenet_legacy.bat"
+        };
+        for (String name : names) {
+            File file = new File(dir, name);
+            if (!file.exists()) continue;
+            for (int i = 0; i < 8 && file.exists(); i++) {
+                if (file.delete()) break;
+                try { Thread.sleep(300L); }
+                catch (InterruptedException ex) { Thread.currentThread().interrupt(); break; }
+            }
+        }
     }
 
     private static void write(File file, String text) throws IOException {
