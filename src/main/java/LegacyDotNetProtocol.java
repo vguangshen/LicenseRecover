@@ -25,9 +25,7 @@ import javax.crypto.spec.SecretKeySpec;
 public final class LegacyDotNetProtocol {
     public static final String REQUEST_KEY = "itmcsoft";
     public static final String LOCAL_KEY = "*b2bOK*";
-    public static final String PRODUCT_NAME = "itmcIEC";
     public static final String CODE_KEY_PREFIX = "itmc";
-    public static final String CODE_KEY = CODE_KEY_PREFIX + PRODUCT_NAME;
 
     /** DS0101、DS0102 等 DS01xx 系列使用旧版 itmcIEC 协议；不要把新版 YX03xx 混入。 */
     private static final Pattern LEGACY_VERSION = Pattern.compile("(?i)^DS01\\d{2}$");
@@ -51,6 +49,19 @@ public final class LegacyDotNetProtocol {
     }
 
     /** 从 .NET 应用根目录或 bin 目录的 config.xml 读取 SystemSoft/SoftVersionID。 */
+    /** Resolve legacy ProName from the selected application's own ITMC.Web.dll. */
+    public static String readProductName(File binOrRoot) {
+        if (binOrRoot == null) return null;
+        File dir = binOrRoot.getAbsoluteFile();
+        if (!dir.isDirectory()) dir = dir.getParentFile();
+        if (dir == null) return null;
+        File bin = "bin".equalsIgnoreCase(dir.getName()) ? dir : new File(dir, "bin");
+        File web = new File(bin, "ITMC.Web.dll");
+        if (!web.isFile() && new File(dir, "ITMC.Web.dll").isFile()) web = new File(dir, "ITMC.Web.dll");
+        String version = readSoftVersion(binOrRoot);
+        return LicenseRecoverModernGUIAutoRecovery.detectProduct(web, version);
+    }
+
     public static String readSoftVersion(File binOrRoot) {
         if (binOrRoot == null) return null;
         File dir = binOrRoot.getAbsoluteFile();
@@ -123,7 +134,7 @@ public final class LegacyDotNetProtocol {
      * ``DS0101``）。两者不能混用，否则注册页虽然会提示成功，后续
      * funpublic.CheckReg 仍会把本地注册判定为无效。
      */
-    public static CodeResult generateAuthorizationCode(String sequence, String softVersionId) throws Exception {
+    public static CodeResult generateAuthorizationCode(String sequence, String softVersionId, String productName) throws Exception {
         SequenceInfo request = decodeSequence(sequence);
         String versionId = normalizeVersionId(softVersionId);
         String endDate = "2099-12-31";
@@ -137,8 +148,8 @@ public final class LegacyDotNetProtocol {
                 + "00" + "-001"
                 + "00" + "-1"
                 + "00" + versionId;
-        String code = encrypt(codeKeyForProduct(PRODUCT_NAME), plaintext);
-        AuthorizationInfo parsed = decodeAuthorizationCode(code);
+        String code = encrypt(codeKeyForProduct(productName), plaintext);
+        AuthorizationInfo parsed = decodeAuthorizationCode(code, productName);
         if (!request.regId.equals(parsed.regId)
                 || !request.requestTime.equals(parsed.requestTime)
                 || !versionId.equals(parsed.product)) {
@@ -159,8 +170,8 @@ public final class LegacyDotNetProtocol {
     }
 
     /** 解码并检查旧协议授权码的固定字段，便于生成后做本地格式校验。 */
-    public static AuthorizationInfo decodeAuthorizationCode(String code) throws Exception {
-        String plain = decrypt(codeKeyForProduct(PRODUCT_NAME), code);
+    public static AuthorizationInfo decodeAuthorizationCode(String code, String productName) throws Exception {
+        String plain = decrypt(codeKeyForProduct(productName), code);
         if (plain.length() < 66) {
             throw new IllegalArgumentException("旧协议授权码明文长度不足");
         }

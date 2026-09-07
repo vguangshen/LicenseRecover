@@ -121,15 +121,18 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (helper == null) return Result.fail("LicenseRecover.NET.exe was not found; native IIS registration cannot run.", d);
 
         String product = d.productName;
-        String regStr = blank(product) ? null : detectProductList(new File(d.runtimeDir, "ITMC.Web.dll"), product);
-        if (blank(regStr)) regStr = d.versionId;
+        if (blank(product))
+            return Result.fail("Target ITMC.Web.dll did not prove a ProName; default product fallback is disabled.", d);
+        String regStr = detectProductList(new File(d.runtimeDir, "ITMC.Web.dll"), product);
+        if (blank(regStr))
+            return Result.fail("Target ITMC.Web.dll did not prove RegStr products; VersionID/default-list fallback is disabled.", d);
 
         List<String> generate = new ArrayList<String>();
         generate.add(helper.getAbsolutePath());
         generate.add("gencode");
         generate.add(d.runtimeDir.getAbsolutePath());
-        if (!blank(product)) { generate.add("--product"); generate.add(product); }
-        if (!blank(regStr)) { generate.add("--regstr"); generate.add(regStr); }
+        generate.add("--product"); generate.add(product);
+        generate.add("--regstr"); generate.add(regStr);
         // gencode is read-only; it asks the target registration assembly for the
         // local request code and builds the matching offline code.
         NativeProcessResult generated = runNativeCapture(generate, d.appRoot, log);
@@ -165,7 +168,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             apply.add(d.runtimeDir.getAbsolutePath());
             apply.add("--seq"); apply.add(request);
             apply.add("--code"); apply.add(auth);
-            if (!blank(product)) { apply.add("--product"); apply.add(product); }
+            apply.add("--product"); apply.add(product);
             // Verify the untouched native local-registration result first; cloud blocking is a separate final step.
             apply.add("--no-block-net");
             if (!backup) apply.add("--no-backup");
@@ -176,7 +179,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             verify.add(helper.getAbsolutePath());
             verify.add("verify");
             verify.add(d.runtimeDir.getAbsolutePath());
-            if (!blank(product)) { verify.add("--product"); verify.add(product); }
+            verify.add("--product"); verify.add(product);
             NativeProcessResult checked = runNativeCapture(verify, d.appRoot, log);
             if (checked.exitCode != 0) throw new IOException("target RegeditMain.CheckReInfo() did not confirm the native write-back");
 

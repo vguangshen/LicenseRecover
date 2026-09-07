@@ -133,20 +133,40 @@ public final class LicenseRecoverModernGUIJavaPlan {
         boolean packed = jar != null && isVirboxPackedJar(jar);
         String products = directoryMapping != null ? directoryMapping.productMainNum
                 : resolveRegStr(root, soft, runtimeProduct, lib);
+
+        // Automatic write-back is allowed only when the selected application's own
+        // directory proves both the registration identity and authorization items.
+        // Legacy compatibility tables may still populate preview labels, but they
+        // are never sufficient to make a target executable.
+        String dataSoft = readElement(dataConfig, "SoftVersionID");
+        String dataRegInfo = normalizeCsv(readElement(dataConfig, "regInfo"));
+        String classesRegInfo = normalizeCsv(readElement(classesConfig, "regInfo"));
+        String recoveredLocalRegStr = blank(runtimeProduct)
+                ? null : ExistingLocalRegStrProbe.recover(root, lib, runtimeProduct);
+        boolean directoryIdentity = directoryMapping != null
+                || (newStyle && !blank(soft) && !blank(dataSoft)
+                    && soft.trim().equalsIgnoreCase(dataSoft.trim()) && dataRegInfo != null)
+                || !blank(confirmedClassesFamily);
+        boolean directoryRegStr = directoryMapping != null
+                || dataRegInfo != null || classesRegInfo != null || recoveredLocalRegStr != null;
+
         boolean ready = true;
-        String readiness = "可安全自动恢复";
-        if (requiresDirectoryMapping && directoryMapping == null) {
+        String readiness = "可安全自动恢复（注册ID/RegStr均来自目标目录）";
+        if (blank(soft)) {
             ready = false;
-            readiness = "目标软件目录未解析出注册ID映射";
-        } else if (blank(family) || "未确认".equals(family)) {
+            readiness = "目标软件目录未找到 SoftVersionID";
+        } else if (requiresDirectoryMapping && directoryMapping == null) {
             ready = false;
-            readiness = "授权族未确认";
-        } else if (blank(runtimeProduct)) {
+            readiness = "目标软件自带注册分派类，但未解析出注册ID映射";
+        } else if (!directoryIdentity) {
             ready = false;
-            readiness = "运行校验ID未确认";
-        } else if (blank(products)) {
+            readiness = "注册ID仅能由旧兼容规则推测，缺少目标目录证据";
+        } else if (blank(family) || "未确认".equals(family) || blank(runtimeProduct)) {
             ready = false;
-            readiness = "RegStr 未静态声明；需从现有授权动态恢复";
+            readiness = "目标软件目录未确认授权族/运行注册ID";
+        } else if (!directoryRegStr || blank(products)) {
+            ready = false;
+            readiness = "目标软件目录未声明或恢复出 RegStr，禁止使用默认授权项";
         }
         String libConfig = relative(root, new File(lib, "config.xml"));
         String targets = libConfig;

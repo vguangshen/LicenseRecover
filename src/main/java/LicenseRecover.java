@@ -265,44 +265,27 @@ public class LicenseRecover {
     static int recoverJavaSingle(String appArg, String productOverride, boolean dryRun) {
         String libDir = locateLibDir(appArg);
         String appRoot = new File(libDir).getParentFile().getParentFile().getAbsolutePath();
-        String productMain = (productOverride != null && !productOverride.trim().isEmpty())
-                ? productOverride.trim() : "QT1001";
-        boolean newStyle = isNewStyleApp(appRoot);
         boolean rootConfigStyle = usesRootConfigApp(appRoot);
-
-        // 自动识别产品号：经典平台优先从目标软件自己的 Global/RegisterUtil 读取，禁止猜测。
-        String softId = readSoftId(appRoot);
-        LegacyJavaRegistrationMetadata.Mapping directoryMapping =
-                LegacyJavaRegistrationMetadata.inspect(new File(appRoot), softId);
-        boolean requiresDirectoryMapping =
-                LegacyJavaRegistrationMetadata.requiresDirectoryMapping(new File(appRoot), softId);
-        if ((productOverride == null || productOverride.trim().isEmpty())
-                && requiresDirectoryMapping && directoryMapping == null) {
-            System.err.println("自动恢复已阻止：目标软件目录未解析出注册ID映射，不会使用固定 QT1001/QT04 兜底。");
+        LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(new File(appRoot));
+        if (!plan.detected || !plan.automaticRecoveryReady) {
+            System.err.println("自动恢复已阻止：" + (plan.detected ? plan.recoveryReadiness : "未识别 Java 注册结构"));
+            System.err.println("注册ID、运行校验ID与 RegStr 必须从目标软件目录确认，不再使用 QT1001/QT04/YT001 等默认兜底。");
             System.out.println("RESULT: FAILED");
             return 2;
         }
-        if (productOverride == null || productOverride.trim().isEmpty()) {
-            if (softId != null && !softId.trim().isEmpty()) {
-                if (directoryMapping != null) {
-                    productMain = directoryMapping.productMain;
-                    System.out.println("[识别] 目标软件目录 VersionID = " + softId
-                            + "  -> 运行注册ID " + productMain
-                            + "  授权项 " + directoryMapping.productMainNum
-                            + "  来源=" + directoryMapping.source);
-                } else if (newStyle) {
-                    // 新架构 QT3xxx：加密密钥直接用原始产品号（应用按 PRODUCT_ALL_NUM 逐个尝试匹配 config.xml）
-                    productMain = softId.trim();
-                    System.out.println("[识别] 新架构(data/config.xml 存在)，产品号 = " + productMain);
-                } else {
-                    String mapped = productMainFor(softId);
-                    System.out.println("[识别] systemConfig.yml VersionID = " + softId + "  -> 产品主编号 " + mapped);
-                    productMain = mapped;
-                }
-            } else {
-                System.out.println("[识别] 未找到产品号配置文件，使用默认产品主编号 " + productMain);
-            }
+        String softId = plan.softVersionId;
+        String productMain = plan.runtimeProductId;
+        if (productOverride != null && !productOverride.trim().isEmpty()
+                && !productOverride.trim().equalsIgnoreCase(productMain)) {
+            System.err.println("自动恢复已阻止：-p 指定值 " + productOverride.trim()
+                    + " 与目标目录解析出的运行注册ID " + productMain + " 不一致。");
+            System.out.println("RESULT: FAILED");
+            return 2;
         }
+        System.out.println("[识别] 目录证据 -> VersionID=" + softId
+                + "  AuthorizationFamily=" + plan.authorizationFamily
+                + "  RuntimeProductID=" + productMain
+                + "  RegStr=" + plan.regStr);
 
         System.out.println("======================================================");
         System.out.println(" ITMC 离线授权恢复工具");
@@ -329,7 +312,7 @@ public class LicenseRecover {
         info.setClassNum(-1);          // -1 = 不限班级数
         info.setNet(false);            // 不要求联网
         info.setCountDay(0);
-        String resolvedRegStr = resolveJavaRegStr(appRoot, softId);
+        String resolvedRegStr = plan.regStr;
         if (resolvedRegStr == null || resolvedRegStr.trim().isEmpty()) {
             System.err.println("自动恢复已阻止：当前 classes-config 应用没有静态 regInfo，RegStr 未确认。");
             System.err.println("不会使用 44 项通用列表猜测授权项，也不会修改任何配置文件。");
@@ -513,8 +496,12 @@ public class LicenseRecover {
 
     // ================= 方式二: 生成离线授权码 (走应用"本地注册"界面) =================
 
-    /** 生成 (申请号, 授权码, 主板号, 申请时间)。seq 为空则在本机自动生成申请号。 */
-    static String[] genRegisterCode(String seq, String registerProductID) throws Exception {
+    /** 生成 (申请号, 授权码, 主板号, 申请时间)。产品族与 RegStr 必须来自目标目录。 */
+    static String[] genRegisterCode(String seq, String registerProductID, String regStr) throws Exception {
+        if (registerProductID == null || registerProductID.trim().isEmpty())
+            throw new IllegalArgumentException("注册产品族未从目标目录确认");
+        if (regStr == null || regStr.trim().isEmpty())
+            throw new IllegalArgumentException("RegStr 未从目标目录确认");
         GetRegisterCode rc = new GetRegisterCode();
         if (seq == null || seq.trim().isEmpty()) {
             DesUtil d = new DesUtil();
@@ -530,55 +517,55 @@ public class LicenseRecover {
         String end = "2099-12-31";
         // 授权码明文固定格式: [0:2]固定 [2:21]申请时间 [23:39]主板号 [41:51]截止 [53:54]联网标志
         //   [56:60]连接数(-001=-1不限) [62:64]班级数(-1不限) [66:]产品串
-        String plain = "00" + time19 + "00" + sn + "00" + end + "00" + "1" + "00" + "-001" + "00" + "-1" + "00" + ALL_NUMS;
+        String plain = "00" + time19 + "00" + sn + "00" + end + "00" + "1" + "00" + "-001" + "00" + "-1" + "00" + regStr.trim();
         String code = rc.encrypt("itmc" + registerProductID, plain);
         return new String[]{seq, code, sn, time19};
     }
 
     static int genCodeMode(String[] args) throws Exception {
         String seq = null;
-        String registerPid = "YT001";
         String appArg = null;
-        boolean pGiven = false;
+        String productOverride = null;
         for (int i = 0; i < args.length; i++) {
             if ("--gencode".equals(args[i])) continue;
             if ("--seq".equals(args[i]) && i + 1 < args.length) {
                 seq = args[++i];
             } else if ("-p".equals(args[i]) && i + 1 < args.length) {
-                registerPid = args[++i];
-                pGiven = true;
+                productOverride = args[++i];
             } else if (appArg == null) {
                 appArg = args[i];
             }
         }
-        // -p 指定优先；否则按应用识别。新架构直接用原始产品号，经典仍用 YT001/DS26。
-        if (appArg != null && !pGiven) {
-            String softId = readSoftId(appArg);
-            if (softId != null && !softId.trim().isEmpty()) {
-                boolean dataStyle = isNewStyleApp(appArg);
-                LegacyJavaRegistrationMetadata.Mapping directoryMapping =
-                        LegacyJavaRegistrationMetadata.inspect(new File(appArg), softId);
-                if (directoryMapping != null) {
-                    registerPid = directoryMapping.productMain;
-                    System.out.println("[识别] VersionID = " + softId + "  -> 本地注册产品族 "
-                            + registerPid + "（来源=" + directoryMapping.source + "）");
-                } else if (LegacyJavaRegistrationMetadata.requiresDirectoryMapping(new File(appArg), softId)) {
-                    System.err.println("[错误] 目标软件目录未解析出注册ID映射，已阻止生成授权码。");
-                    System.out.println("RESULT: FAILED");
-                    return 2;
-                } else {
-                    registerPid = localRegisterProductFor(softId, dataStyle);
-                    System.out.println("[识别] VersionID = " + softId + "  -> 本地注册产品族 " + registerPid);
-                }
-            }
+        if (appArg == null || appArg.trim().isEmpty()) {
+            System.err.println("[错误] --gencode 必须提供目标应用目录；不再使用默认 YT001/QT1001 产品号。");
+            System.out.println("RESULT: FAILED");
+            return 2;
         }
+        LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(new File(appArg));
+        if (!plan.detected || !plan.automaticRecoveryReady) {
+            System.err.println("[错误] 目标软件目录未确认注册ID/RegStr："
+                    + (plan.detected ? plan.recoveryReadiness : "未识别 Java 注册结构"));
+            System.out.println("RESULT: FAILED");
+            return 2;
+        }
+        String registerPid = plan.authorizationFamily;
+        String regStr = plan.regStr;
+        if (productOverride != null && !productOverride.trim().isEmpty()
+                && !productOverride.trim().equalsIgnoreCase(registerPid)) {
+            System.err.println("[错误] -p 指定值与目标目录解析出的本地注册产品族不一致："
+                    + productOverride.trim() + " != " + registerPid);
+            System.out.println("RESULT: FAILED");
+            return 2;
+        }
+        System.out.println("[识别] 目录证据 -> VersionID=" + plan.softVersionId
+                + "  本地注册产品族=" + registerPid + "  RegStr=" + regStr);
         System.out.println("======================================================");
         System.out.println(" 生成离线授权码 (应用注册界面 -> 本地注册)");
         System.out.println("======================================================");
         System.out.println("注册码产品号       : " + registerPid);
         try {
             boolean hasSeq = seq != null && !seq.trim().isEmpty();
-            String[] r = genRegisterCode(seq, registerPid);
+            String[] r = genRegisterCode(seq, registerPid, regStr);
             String genSeq = r[0], code = r[1], sn = r[2], time19 = r[3];
             String localSn = DesUtil.getMotherboardSN();
             if (hasSeq) {
@@ -736,52 +723,9 @@ public class LicenseRecover {
     }
 
     static String resolveJavaRegStr(String appRoot, String softId) {
-        File root = new File(appRoot == null ? "." : appRoot);
-        String data = normalizeCsv(readJavaConfigElement(
-                new File(root, "data" + File.separator + "config.xml"), "regInfo"));
-        if (data != null) return data;
-        String classes = normalizeCsv(readJavaConfigElement(
-                new File(root, "WEB-INF" + File.separator + "classes" + File.separator + "config.xml"), "regInfo"));
-        if (classes != null) return classes;
-
-        LegacyJavaRegistrationMetadata.Mapping directoryMapping =
-                LegacyJavaRegistrationMetadata.inspect(root, softId);
-        if (directoryMapping != null) return directoryMapping.productMainNum;
-        if (LegacyJavaRegistrationMetadata.requiresDirectoryMapping(root, softId)) return null;
-
-        String runtimeProduct = productMainFor(softId);
-        String libPath = locateLibDir(appRoot == null ? root.getAbsolutePath() : appRoot);
-        if (libPath != null) {
-            String recovered = ExistingLocalRegStrProbe.recover(root, new File(libPath), runtimeProduct);
-            if (recovered != null) return recovered;
-        }
-
-        // QT40101 production sample: application startup sets hasRegister and
-        // authorizeFlag true before it inspects RegStr; no ClassPid match is required
-        // for startup. The concrete VersionID is therefore a deterministic minimum
-        // non-empty RegStr for this exact product.
-        if ("QT40101".equalsIgnoreCase(softId)) {
-            String family = readJavaConfigElement(new File(root, "WEB-INF" + File.separator
-                    + "classes" + File.separator + "config1.xml"), "SoftVersionID");
-            if ("QT401".equalsIgnoreCase(family)) return "QT40101";
-        }
-
-        // Actual QT100101 business code checks RegStr.contains(RegisterContant.versionID),
-        // and VersionID is QT100101 in the supplied production sample. This is therefore
-        // a verified minimum authorization item, not the old 44-item fallback.
-        if ("QT100101".equalsIgnoreCase(softId)) {
-            String concrete = readJavaConfigElement(new File(root, "WEB-INF" + File.separator
-                    + "classes" + File.separator + "config.xml"), "SoftVersionID");
-            if ("QT100101".equalsIgnoreCase(concrete)) return "QT100101";
-        }
-
-        if ("DS2406".equalsIgnoreCase(softId)) return "DS2406";
-        if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("DS501")) return softId.trim();
-        if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("DS28\\d{2}")) return softId.trim();
-        if ("YT00129".equalsIgnoreCase(softId)) return "QT0420";
-        if (new File(root, "WEB-INF" + File.separator + "classes" + File.separator + "config.xml").isFile())
-            return null;
-        return ALL_NUMS;
+        if (appRoot == null) return null;
+        LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(new File(appRoot));
+        return plan.detected && plan.automaticRecoveryReady ? plan.regStr : null;
     }
 
     static boolean usesRootConfigApp(String appRoot) {
@@ -1219,12 +1163,42 @@ public class LicenseRecover {
             return;
         }
 
+        String directoryProduct = null;
+        String directoryRegStr = null;
+        if ("gencode".equals(mode)) {
+            LicenseRecoverModernGUIAutoRecovery.Detection nd =
+                    LicenseRecoverModernGUIAutoRecovery.detect(dotNetAppRoot(binDir));
+            directoryProduct = nd.productName;
+            if (directoryProduct == null || directoryProduct.trim().isEmpty()) {
+                System.err.println("[错误] 目标 ITMC.Web.dll 未解析出 ProName，禁止使用 helper 默认产品号。");
+                System.out.println("RESULT: FAILED");
+                System.exit(2);
+                return;
+            }
+            directoryRegStr = LicenseRecoverModernGUIAutoRecovery.detectProductList(
+                    new File(binDir, "ITMC.Web.dll"), directoryProduct);
+            if (directoryRegStr == null || directoryRegStr.trim().isEmpty()) {
+                System.err.println("[错误] 目标 ITMC.Web.dll 未解析出 RegStr 产品项，禁止使用版本号/默认列表兜底。");
+                System.out.println("RESULT: FAILED");
+                System.exit(2);
+                return;
+            }
+            String override = getArg(args, "-p");
+            if (override != null && !override.trim().equalsIgnoreCase(directoryProduct)) {
+                System.err.println("[错误] -p 指定值与目标 DLL 解析出的 ProName 不一致："
+                        + override.trim() + " != " + directoryProduct);
+                System.out.println("RESULT: FAILED");
+                System.exit(2);
+                return;
+            }
+        }
+
         java.util.List<String> cmd = new java.util.ArrayList<>();
         cmd.add(helper.getAbsolutePath());
         cmd.add(mode);
         cmd.add(binDir);
-        String product = getArg(args, "-p");
-        if (product != null) { cmd.add("--product"); cmd.add(product); }
+        if (directoryProduct != null) { cmd.add("--product"); cmd.add(directoryProduct); }
+        if (directoryRegStr != null) { cmd.add("--regstr"); cmd.add(directoryRegStr); }
         if (seq != null) { cmd.add("--seq"); cmd.add(seq); }
         if (hasArg(args, "--dry-run")) cmd.add("--dry-run");
         if (hasArg(args, "--no-block-net")) cmd.add("--no-block-net");
@@ -1241,8 +1215,14 @@ public class LicenseRecover {
     static int legacyDotNetCodeMode(String[] args, String binDir) {
         String seq = getArg(args, "--seq");
         String version = LegacyDotNetProtocol.readSoftVersion(new File(binDir));
-        System.out.println("检测到 .NET 旧协议应用（版本: " + (version == null ? "DS01xx" : version)
-                + "，产品标识: " + LegacyDotNetProtocol.PRODUCT_NAME + "）");
+        String productName = LegacyDotNetProtocol.readProductName(new File(binDir));
+        if (productName == null || productName.trim().isEmpty()) {
+            System.err.println("[错误] 目标 ITMC.Web.dll 未解析出旧协议 ProName，禁止使用固定 itmcIEC 兜底。");
+            System.out.println("RESULT: FAILED");
+            return 2;
+        }
+        System.out.println("检测到 .NET 旧协议应用（版本: " + (version == null ? "未知" : version)
+                + "，产品标识(来自目标 DLL): " + productName + "）");
         if (seq == null || seq.trim().isEmpty()) {
             System.err.println("[提示] DS01xx 旧协议必须先在应用「本地注册」页获取申请号，再用 --seq 生成离线授权码。");
             System.out.println("RESULT: FAILED");
@@ -1250,7 +1230,7 @@ public class LicenseRecover {
         }
         try {
             LegacyDotNetProtocol.CodeResult result =
-                    LegacyDotNetProtocol.generateAuthorizationCode(seq.trim(), version);
+                    LegacyDotNetProtocol.generateAuthorizationCode(seq.trim(), version, productName);
             System.out.println("旧协议申请号      : " + result.request.ciphertext);
             System.out.println("申请主机码        : " + result.request.regId);
             System.out.println("申请时间          : " + result.request.requestTime);

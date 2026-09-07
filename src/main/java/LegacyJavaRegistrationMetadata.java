@@ -77,14 +77,19 @@ public final class LegacyJavaRegistrationMetadata {
                 "RegisterUtil.class fallback");
     }
 
-    /** Legacy YT platforms with their own RegisterUtil must never use a hard-coded fallback. */
+    /**
+     * A target that ships its own registration dispatch classes must be resolved from
+     * those files. Automatic recovery is fail-closed if they cannot be inspected;
+     * callers must never fall back to a built-in family table.
+     */
     public static boolean requiresDirectoryMapping(File root, String softId) {
-        if (root == null || blank(softId)) return false;
-        String id = softId.trim().toUpperCase(Locale.ROOT);
-        if (!id.startsWith("YT001")) return false;
-        return new File(root, "WEB-INF" + File.separator + "classes"
-                + File.separator + "com" + File.separator + "common" + File.separator
-                + "utils" + File.separator + "RegisterUtil.class").isFile();
+        if (root == null) return false;
+        File classes = new File(root, "WEB-INF" + File.separator + "classes");
+        File registerUtil = new File(classes, "com" + File.separator + "common"
+                + File.separator + "utils" + File.separator + "RegisterUtil.class");
+        File global = new File(classes, "com" + File.separator + "common"
+                + File.separator + "global" + File.separator + "Global.class");
+        return registerUtil.isFile() || global.isFile();
     }
 
     static String selectFallbackPrefix(Collection<String> targetStrings, String softId) {

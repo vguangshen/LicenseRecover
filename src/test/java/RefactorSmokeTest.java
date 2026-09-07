@@ -115,8 +115,9 @@ public final class RefactorSmokeTest {
                         && "DS24".equals(ds2406Plan.authorizationFamily)
                         && "DS24".equals(ds2406Plan.runtimeProductId),
                 "Java GUI plan models DS2406 as DS24 authorization family");
-        check("DS2406".equals(ds2406Plan.regStr) && ds2406Plan.automaticRecoveryReady,
-                "DS2406 GUI plan uses sample-verified RegStr and is ready");
+        check(!ds2406Plan.automaticRecoveryReady
+                        && ds2406Plan.recoveryReadiness.contains("目录"),
+                "DS2406 stays blocked when fixture lacks directory registration-id evidence");
 
         Path qt30103Root = base.resolve("java-QT30103");
         Path qt30103Lib = qt30103Root.resolve("WEB-INF/lib");
@@ -132,6 +133,11 @@ public final class RefactorSmokeTest {
                 "Java GUI plan keeps QT30xxx SoftVersionID as ProName");
         check(qtPlan.generation.contains("QT30xxx") && qtPlan.configTargets.contains("webapp根"),
                 "Java GUI plan reports QT30xxx generation and dual config targets");
+        check(qtPlan.automaticRecoveryReady
+                        && qtPlan.recoveryReadiness.contains("目标目录"),
+                "QT30xxx automatic recovery is allowed only from direct data/config.xml evidence");
+        check(!LicenseRecoverModernGUIJavaPlan.inspect(yt129Root.toFile()).automaticRecoveryReady,
+                "legacy YT fixture without class-level mapping is fail-closed");
 
         Path xmtRoot = base.resolve("java-XMT0107");
         Path xmtLib = xmtRoot.resolve("WEB-INF/lib");
@@ -253,9 +259,9 @@ public final class RefactorSmokeTest {
                         && "QT100101".equals(qt100101Plan.authorizationFamily)
                         && "QT100101".equals(qt100101Plan.runtimeProductId),
                 "Java GUI plan confirms QT100101 family and runtime id");
-        check("QT100101".equals(qt100101Plan.regStr) && qt100101Plan.automaticRecoveryReady
-                        && qt100101Plan.recoveryReadiness.contains("可安全"),
-                "QT100101 automatic recovery is ready with the sample-verified RegStr");
+        check(!qt100101Plan.automaticRecoveryReady
+                        && qt100101Plan.recoveryReadiness.contains("RegStr"),
+                "QT100101 stays blocked until RegStr is declared/recovered from target directory");
 
         check(!ExistingLocalRegStrProbe.isSafeLocalConfig(qt100101Classes.resolve("config.xml").toFile()),
                 "regType=3 is never eligible for local RegStr probing");
@@ -325,6 +331,11 @@ public final class RefactorSmokeTest {
                         LicenseRecoverModernGUIAutoRecovery.detectProductList(
                                 productFixture.toFile(), "YX0303")),
                 "one-click derives YX0303 local product list");
+        Path noRegStrFixture = base.resolve("YX0303-no-products-Web.dll");
+        writeUtf16Fixture(noRegStrFixture, "YX0303", "SoftVersionID", "ProName");
+        check(LicenseRecoverModernGUIAutoRecovery.detectProductList(
+                        noRegStrFixture.toFile(), "YX0303").isEmpty(),
+                ".NET directory parser returns empty instead of inventing RegStr");
 
         Path yx302CrossFixture = base.resolve("YX030107-Web.dll");
         writeUtf16Fixture(yx302CrossFixture, "YX030107", "YX0302", "YX030201", "YX030204", "YX030219");
