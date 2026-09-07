@@ -197,10 +197,16 @@ $coreSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecover
 $planSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUIJavaPlan.java') -Raw
 $autoSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUIAutoRecovery.java') -Raw
 $legacyNetSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LegacyDotNetProtocol.java') -Raw
+$legacyGuiSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverGUI.java') -Raw
 if ($coreSource.Contains('genRegisterCode(seq, registerPid)')) { throw 'Java gencode can still omit directory-derived RegStr.' }
 if ($coreSource.Contains('+ ALL_NUMS')) { throw 'Java authorization generation still uses catch-all RegStr.' }
 if ($autoSource.Contains('if (blank(regStr)) regStr = d.versionId')) { throw '.NET one-click still falls back to VersionID for RegStr.' }
 if ($legacyNetSource.Contains('PRODUCT_NAME = "itmcIEC"')) { throw 'Legacy .NET protocol still has a fixed executable product name.' }
+if ($legacyGuiSource.Contains('LegacyDotNetProtocol.PRODUCT_NAME')) { throw 'Legacy GUI still uses a fixed .NET product identity.' }
+if ($legacyGuiSource.Contains('+ ALL_NUMS')) { throw 'Legacy GUI still uses a catch-all Java RegStr.' }
+if ($legacyGuiSource.Contains('productMain.isEmpty()) productMain =')) { throw 'Legacy GUI still assigns a default product identity.' }
+if (-not $legacyGuiSource.Contains('plan.authorizationFamily, plan.regStr')) { throw 'Legacy GUI Java gencode is not using directory-derived family + RegStr.' }
+if (-not $legacyGuiSource.Contains('目标 ITMC.Web.dll 未解析出 ProName')) { throw 'Legacy GUI .NET fail-closed product guard is missing.' }
 if (-not $coreSource.Contains('LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect')) { throw 'Java core is not using the fail-closed directory plan.' }
 if (-not $autoSource.Contains('VersionID/default-list fallback is disabled')) { throw '.NET fail-closed guard is missing.' }
 
