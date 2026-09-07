@@ -2,7 +2,7 @@
 
 ITMC 云实训平台离线授权恢复工具，支持 Java 与 .NET 应用。项目面向原授权服务不可用后的本地恢复场景，保留 Java 8 / Windows 7 / Windows Server 2008 兼容边界。
 
-当前稳定版本：**v1.2.6**
+当前稳定版本：**v1.2.7**
 
 ## 下载
 
@@ -89,6 +89,14 @@ v1.2.3 修复了批量扫描在第一个 Java 项目处因 GUI classpath 耦合�
 - **方式三**：修改授权校验相关字节码 / DLL。默认路径会先建立 `prepatch` 备份并校验后继续。
 
 方式三属于高风险操作，建议先扫描识别并确认目标文件；.NET 应用执行前应停止可能占用 DLL 的 IIS 应用池或相关进程。
+
+## v1.2.7 QT40101 与执行资格保护
+
+- 根据 QT40101 实际 `systemConfig.yml`、`WEB-INF/classes/config.xml`、`config1.xml` 与业务代码证据，将其识别为 `SoftVersionID=QT40101`、授权族/运行校验ID=`QT401`。
+- QT40101 的配置没有静态 `regInfo`；应用启动后通过 `RegisterMain("QT401").getRegInfo().getRegStr()` 读取授权项，因此本工具不会再显示或写入旧的 44 项通用 fallback。
+- Java `classes-config` 在授权族或 RegStr 未确认时标记为“待确认”，一键恢复和批量推荐操作都会在写文件前自动阻止/跳过。
+- 同样保留 .NET Modern 的产品号安全门：产品号未确认时不会执行自动写回。
+- 方式三是独立高级操作，不依赖本地授权重建所需的 RegStr，因此不受上述推荐操作资格判断影响。
 
 ## 安全保护
 

@@ -554,12 +554,16 @@ public final class LicenseRecoverModernGUI {
                 if (info.type == AppInfo.Type.JAVA) {
                     target = BatchTarget.javaTarget(child.getName(), info.appRoot, info.libDir);
                     LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(info.appRoot);
+                    String verifyText = !plan.detected ? "待识别"
+                            : (plan.automaticRecoveryReady ? "待执行: RegisterMain"
+                            : "未执行: " + plan.recoveryReadiness);
+                    String statusText = !plan.detected ? "待识别"
+                            : (plan.automaticRecoveryReady ? "待处理" : "待确认");
                     batchModel.addRow(new Object[]{child.getName(),
                             plan.detected ? "Java / " + plan.generation : "Java",
                             valueOrDash(plan.softVersionId), valueOrDash(plan.authorizationFamily),
                             valueOrDash(plan.runtimeProductId), plan.regStrSummary(), plan.configTargets,
-                            plan.detected ? "待执行: RegisterMain" : "待识别", "待处理",
-                            info.appRoot.getAbsolutePath()});
+                            verifyText, statusText, info.appRoot.getAbsolutePath()});
                     detected++;
                 } else if (info.type == AppInfo.Type.DOTNET) {
                     target = BatchTarget.dotNetTarget(child.getName(), info.binDir);
@@ -627,6 +631,19 @@ public final class LicenseRecoverModernGUI {
                         updateBatchProgress(done, "跳过 " + target.name);
                         continue;
                     }
+                    if (!usePatch) {
+                        final String blockReason = recommendedBatchBlockReason(target);
+                        if (blockReason != null) {
+                            SwingUtilities.invokeLater(() -> {
+                                batchModel.setValueAt("未执行: " + blockReason, currentRow, BATCH_COL_VERIFY);
+                                batchModel.setValueAt("跳过: 待确认", currentRow, BATCH_COL_STATUS);
+                            });
+                            appendLog("[batch] " + target.name + " 自动跳过：" + blockReason + "\n");
+                            done++;
+                            updateBatchProgress(done, "跳过 " + target.name);
+                            continue;
+                        }
+                    }
                     SwingUtilities.invokeLater(() -> {
                         batchModel.setValueAt("处理中", currentRow, BATCH_COL_STATUS);
                         batchModel.setValueAt(usePatch ? "方式三" : "执行中", currentRow, BATCH_COL_VERIFY);
@@ -659,6 +676,21 @@ public final class LicenseRecoverModernGUI {
             }
         };
         batchWorker.execute();
+    }
+
+    private String recommendedBatchBlockReason(BatchTarget target) {
+        if (target == null || target.type == BatchTarget.Type.NONE) return "未识别";
+        if (target.type == BatchTarget.Type.JAVA) {
+            LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(target.appRoot);
+            return plan.detected && plan.automaticRecoveryReady ? null
+                    : (plan.detected ? plan.recoveryReadiness : "Java 授权计划未识别");
+        }
+        LicenseRecoverModernGUIAutoRecovery.Detection d =
+                LicenseRecoverModernGUIAutoRecovery.detect(target.binDir);
+        if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
+                && (d.productName == null || d.productName.trim().isEmpty()))
+            return ".NET 授权产品号未确认";
+        return null;
     }
 
     private OperationResult runBatchRecommended(BatchTarget target, boolean backup, boolean blockNet, boolean preview) {

@@ -170,7 +170,9 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
             regStr.setText(value(plan.regStr)); regStr.setCaretPosition(0);
             targets.setText(plan.configTargets); targets.setCaretPosition(0);
             jar.setText(plan.registrationJarSummary());
-            verify.setText("待执行: " + plan.verificationPlan);
+            verify.setText(plan.automaticRecoveryReady
+                    ? "待执行: " + plan.verificationPlan
+                    : "禁止自动写入: " + plan.recoveryReadiness);
         } else if (detection.isDetected()) {
             generation.setText(detection.kind.toString());
             family.setText(value(detection.productName));

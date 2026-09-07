@@ -48,12 +48,17 @@ public final class LicenseRecoverModernGUIJavaPlan {
     public final String verificationPlan;
     public final boolean rootConfigStyle;
     public final boolean packedRegistrationJar;
+    /** True only when all identifiers needed for automatic write-back are confirmed. */
+    public final boolean automaticRecoveryReady;
+    /** Human-readable explanation shown by single-app and batch UI. */
+    public final String recoveryReadiness;
 
     private LicenseRecoverModernGUIJavaPlan(boolean detected, File appRoot, File libDir, File regJar,
                                             String softVersionId, String generation, String authorizationFamily,
                                             String runtimeProductId, String regStr, String configTargets,
                                             String verificationPlan, boolean rootConfigStyle,
-                                            boolean packedRegistrationJar) {
+                                            boolean packedRegistrationJar, boolean automaticRecoveryReady,
+                                            String recoveryReadiness) {
         this.detected = detected;
         this.appRoot = appRoot;
         this.libDir = libDir;
@@ -68,6 +73,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
         this.verificationPlan = verificationPlan;
         this.rootConfigStyle = rootConfigStyle;
         this.packedRegistrationJar = packedRegistrationJar;
+        this.automaticRecoveryReady = automaticRecoveryReady;
+        this.recoveryReadiness = recoveryReadiness;
     }
 
     public static LicenseRecoverModernGUIJavaPlan inspect(File selected) {
@@ -89,11 +96,13 @@ public final class LicenseRecoverModernGUIJavaPlan {
         boolean rootConfig = dataConfig.isFile() || classesConfig.isFile();
 
         String upper = soft == null ? "" : soft.toUpperCase(Locale.ROOT);
+        String confirmedClassesFamily = confirmedClassesAuthorizationFamily(root, soft);
         String generation;
         if (newStyle) {
             generation = "QT30xxx / data-config";
         } else if (classesConfig.isFile()) {
-            if (upper.startsWith("XMT01")) generation = "XMT / classes-config";
+            if ("QT401".equals(confirmedClassesFamily)) generation = "QT401 / classes-config";
+            else if (upper.startsWith("XMT01")) generation = "XMT / classes-config";
             else if (upper.startsWith("DS501")) generation = "DS501 / classes-config";
             else if (upper.startsWith("YX0305")) generation = "YX0305 / classes-config";
             else generation = "通用 / classes-config";
@@ -107,9 +116,23 @@ public final class LicenseRecoverModernGUIJavaPlan {
             generation = "经典 Java / WEB-INF/lib";
         }
 
-        String family = authorizationFamilyFor(soft, newStyle, classesConfig.isFile());
-        String runtimeProduct = newStyle && !blank(soft) ? soft.trim() : runtimeProductFor(soft);
+        String family = !blank(confirmedClassesFamily)
+                ? confirmedClassesFamily : authorizationFamilyFor(soft, newStyle, classesConfig.isFile());
+        String runtimeProduct = !blank(confirmedClassesFamily)
+                ? confirmedClassesFamily : (newStyle && !blank(soft) ? soft.trim() : runtimeProductFor(soft));
         String products = resolveRegStr(root, soft);
+        boolean ready = true;
+        String readiness = "可安全自动恢复";
+        if (blank(family) || "未确认".equals(family)) {
+            ready = false;
+            readiness = "授权族未确认";
+        } else if (blank(runtimeProduct)) {
+            ready = false;
+            readiness = "运行校验ID未确认";
+        } else if (blank(products)) {
+            ready = false;
+            readiness = "RegStr 未静态声明；需从现有授权动态恢复";
+        }
         File jar = findRegJar(lib);
         boolean packed = jar != null && isVirboxPackedJar(jar);
 
@@ -121,11 +144,12 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 : "RegisterMain.checkReInfo(): lib";
 
         return new LicenseRecoverModernGUIJavaPlan(true, root, lib, jar,
-                soft, generation, family, runtimeProduct, products, targets, verify, rootConfig, packed);
+                soft, generation, family, runtimeProduct, products, targets, verify, rootConfig, packed,
+                ready, readiness);
     }
 
     public String regStrSummary() {
-        if (blank(regStr)) return "未识别";
+        if (blank(regStr)) return "未静态声明";
         String[] parts = regStr.split(",");
         if (parts.length <= 4) return regStr;
         StringBuilder out = new StringBuilder();
@@ -154,6 +178,9 @@ public final class LicenseRecoverModernGUIJavaPlan {
         out.append("[java-plan] config targets=").append(configTargets).append('\n');
         out.append("[java-plan] registration jar=").append(registrationJarSummary()).append('\n');
         out.append("[java-plan] verify=").append(verificationPlan).append('\n');
+        out.append("[java-plan] automatic recovery=")
+                .append(automaticRecoveryReady ? "READY" : "BLOCKED")
+                .append(" (").append(recoveryReadiness).append(")\n");
         return out.toString();
     }
 
@@ -191,7 +218,21 @@ public final class LicenseRecoverModernGUIJavaPlan {
         if (softId != null && softId.toUpperCase(Locale.ROOT).startsWith("DS501")) return softId.trim();
         if (softId != null && softId.toUpperCase(Locale.ROOT).matches("DS28\\d{2}")) return softId.trim();
         if ("YT00129".equalsIgnoreCase(softId)) return "QT0420";
+        if (new File(root, "WEB-INF" + File.separator + "classes" + File.separator + "config.xml").isFile())
+            return null;
         return FALLBACK_ALL_NUMS;
+    }
+
+    static String confirmedClassesAuthorizationFamily(File root, String softId) {
+        if (root == null || blank(softId)) return null;
+        String id = softId.toUpperCase(Locale.ROOT);
+        if (id.matches("QT401\\d{2}")) {
+            File config1 = new File(root, "WEB-INF" + File.separator + "classes"
+                    + File.separator + "config1.xml");
+            String family = readElement(config1, "SoftVersionID");
+            if ("QT401".equalsIgnoreCase(family)) return "QT401";
+        }
+        return null;
     }
 
     static String authorizationFamilyFor(String softId, boolean newStyle, boolean classesStyle) {
@@ -296,7 +337,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
 
     private static LicenseRecoverModernGUIJavaPlan unknown() {
         return new LicenseRecoverModernGUIJavaPlan(false, null, null, null,
-                null, "未识别", null, null, null, "—", "—", false, false);
+                null, "未识别", null, null, null, "—", "—", false, false,
+                false, "未识别");
     }
 
     private static String relative(File root, File child) {

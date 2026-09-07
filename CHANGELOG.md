@@ -2,6 +2,26 @@
 
 All notable user-visible and engineering changes are tracked here from the first stable release onward.
 
+## [1.2.7] - 2026-09-07
+
+### Fixed
+
+- 根据 QT40101 实际样本确认 `QT40101 → QT401` 授权族/运行校验ID，不再显示 `QT1001`。
+- QT40101 及其它没有显式 `regInfo` 的未确认 classes-config 项目不再继承 44 项通用 RegStr fallback。
+- 核心 Java CLI 在 RegStr 未确认时会在任何写入前失败，避免绕过 GUI 后误写。
+
+### Changed
+
+- Java 授权计划新增自动恢复执行资格与原因；单应用界面直接显示“禁止自动写入”原因。
+- 批量扫描将信息不足的项目标为“待确认”；推荐批量一键恢复会自动跳过这些项目。
+- .NET Modern 产品号未确认时也纳入推荐批量执行保护。
+- 方式三保持独立高级操作，不受 RegStr 执行资格判断影响。
+
+### Tests
+
+- 新增 QT40101 `systemConfig.yml + config.xml + config1.xml` fixture，验证 `QT401` 识别、动态 RegStr 和自动恢复阻止。
+- 新增未知 classes-config fixture，验证不会再得到 44 项 fallback。
+
 ## [1.2.6] - 2026-09-07
 
 ### Fixed
