@@ -17,6 +17,7 @@ required_source = [
     "LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect",
     "注册ID、运行校验ID与 RegStr 必须从目标软件目录确认",
     "genRegisterCode(seq, registerPid, regStr)",
+    "probeTargetRegStr",
 ]
 for marker in required_source:
     if marker not in source:
@@ -26,7 +27,8 @@ required_plan = [
     "directoryIdentity",
     "directoryRegStr",
     "注册ID/RegStr均来自目标目录",
-    "缺少目标目录证据",
+    "缺少目标目录二进制/配置证据",
+    "hasDirectoryBinaryToken",
 ]
 for marker in required_plan:
     if marker not in plan:
@@ -43,6 +45,7 @@ for forbidden in [
 for marker in [
     "legacy YT fixture without class-level mapping is fail-closed",
     "QT30xxx automatic recovery is allowed only from direct data/config.xml evidence",
+    "XMT family becomes executable only after exact token appears in target bytecode",
 ]:
     if marker not in test:
         raise RuntimeError("Strict Java smoke-test marker missing: %s" % marker)
