@@ -496,7 +496,7 @@ public class LicenseRecover {
 
     static String normalizeTargetRegStr(String raw) {
         if (raw == null) return null;
-        LinkedHashSet<String> values = new LinkedHashSet<String>();
+        java.util.LinkedHashSet<String> values = new java.util.LinkedHashSet<String>();
         for (String part : raw.split(",")) {
             String x = part == null ? "" : part.trim();
             if (!x.isEmpty()) values.add(x);
