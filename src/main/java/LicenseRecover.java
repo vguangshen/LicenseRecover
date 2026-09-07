@@ -454,20 +454,33 @@ public class LicenseRecover {
     }
 
     /**
-     * 构造应用自身的 RegisterMain。优先 3 参构造器(显式指定 config 路径，新架构 webapp 根需要)；
-     * 部分版本只有 2 参构造器(路径取 getComfigPath()=jar 所在 WEB-INF/lib)，反射回退。
+     * 构造应用自身的 RegisterMain。
+     *
+     * 新版 ITMCReg 使用 3 参 (product, json, configPath)；DS2406 的真实
+     * ITMCReg-1.0.2.jar 只有 2 参 (product, configPath)。v1.2.11 以前的
+     * fallback 错把 json 当成第二参传入，导致 checkReInfo() 实际没有读取
+     * 刚写好的 config.xml，随后跌落到 HASP 检查并报 Aladdin/Hasp 缺失。
      */
     static RegisterMain newRegisterMain(String product, String json, String path) {
         try {
-            return new RegisterMain(product, json, path);
-        } catch (NoSuchMethodError e) {
-            try {
-                Class<?> rm = Class.forName("itmc.regedit.RegisterMain");
-                java.lang.reflect.Constructor<?> c = rm.getConstructor(String.class, String.class);
-                return (RegisterMain) c.newInstance(product, json);
-            } catch (Exception e2) {
-                throw new RuntimeException("RegisterMain 构造器不兼容（需 3 参或 2 参）: " + e2, e2);
-            }
+            Class<?> rm = Class.forName("itmc.regedit.RegisterMain");
+            return (RegisterMain) instantiateRegisterMainCompatible(rm, product, json, path);
+        } catch (Exception e) {
+            throw new RuntimeException("RegisterMain 构造器不兼容（需 3 参或 2 参）: " + e, e);
+        }
+    }
+
+    /** 包级可见，供回归测试验证不同 ITMCReg 构造器代际的参数语义。 */
+    static Object instantiateRegisterMainCompatible(Class<?> rm, String product, String json, String path)
+            throws Exception {
+        try {
+            java.lang.reflect.Constructor<?> c = rm.getConstructor(
+                    String.class, String.class, String.class);
+            return c.newInstance(product, json, path);
+        } catch (NoSuchMethodException noThreeArg) {
+            java.lang.reflect.Constructor<?> c = rm.getConstructor(String.class, String.class);
+            // 真实 ITMCReg-1.0.2 的第二参是 ConfigPath，不是 json。
+            return c.newInstance(product, path);
         }
     }
 
