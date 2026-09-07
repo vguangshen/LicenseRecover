@@ -1,13 +1,36 @@
+import java.io.DataInputStream;
 import java.io.File;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Read-only Java authorization plan used by both the single-app and batch GUI.
- * It intentionally reuses the same detection/mapping helpers as the real CLI
- * so what the UI previews is the same ProName/RegStr/config layout that will be
- * used when recovery actually runs.
+ *
+ * Important: this class must remain independent from LicenseRecover.class because
+ * the GUI process intentionally does not load the selected application's ITMCReg
+ * classes into its own classpath. The actual recovery still runs in a child JVM
+ * with the application's WEB-INF/lib classpath (and the existing Virbox unpack
+ * compatibility path). Keeping the preview file-only prevents the first Java
+ * target in a batch from failing with NoClassDefFoundError before execution.
  */
 public final class LicenseRecoverModernGUIJavaPlan {
+    private static final Pattern XML_ELEMENT_TEMPLATE = Pattern.compile("a");
+
+    // Must stay byte-for-byte equivalent in meaning to LicenseRecover.ALL_NUMS.
+    private static final String FALLBACK_ALL_NUMS =
+            "QT100103,QT100107,QT100105,QT100109,QT100112,QT100108,"
+          + "QT0436,QT0421,QT0420,QT0437,QT0424,QT0438,QT0435,QT0445,QT0441,ZGZF11,"
+          + "PT0212,PT0208,PT0210,QT0454,PT0202,QT0456,PT0301,QT0447,PT0303,"
+          + "YT00124,YT00125,YT00142,YT00143,YT00123,YT00147,YT00148,YT00149,YT00150,"
+          + "YT00128,YT00127,YT00129,YT00139,YT00132,YT00141,BKSM4,YT00126,YT00154,YT001";
+
     public final boolean detected;
     public final File appRoot;
     public final File libDir;
@@ -49,13 +72,13 @@ public final class LicenseRecoverModernGUIJavaPlan {
 
         File root = detection.appRoot.getAbsoluteFile();
         File lib = detection.runtimeDir.getAbsoluteFile();
-        String soft = LicenseRecover.readSoftId(root.getAbsolutePath());
+        String soft = readSoftId(root);
         if (blank(soft)) soft = detection.versionId;
 
-        boolean newStyle = LicenseRecover.isNewStyleApp(root.getAbsolutePath());
-        boolean rootConfig = LicenseRecover.usesRootConfigApp(root.getAbsolutePath());
         File dataConfig = new File(root, "data" + File.separator + "config.xml");
         File classesConfig = new File(root, "WEB-INF" + File.separator + "classes" + File.separator + "config.xml");
+        boolean newStyle = !blank(readElement(dataConfig, "regInfo"));
+        boolean rootConfig = dataConfig.isFile() || classesConfig.isFile();
 
         String generation;
         if (newStyle) {
@@ -64,22 +87,19 @@ public final class LicenseRecoverModernGUIJavaPlan {
             generation = soft != null && soft.toUpperCase(Locale.ROOT).startsWith("XMT01")
                     ? "XMT / classes-config" : "新式 / classes-config";
         } else if (dataConfig.isFile()) {
-            generation = "YT/兼容根配置 / data-config";
-        } else if (relative(root, lib).toLowerCase(Locale.ROOT).contains("web-inf" + File.separator + "web-inf")) {
+            generation = soft != null && soft.toUpperCase(Locale.ROOT).matches("DS28\\d{2}")
+                    ? "DS28 / data-config" : "YT/兼容根配置 / data-config";
+        } else if (relative(root, lib).toLowerCase(Locale.ROOT)
+                .contains("web-inf" + File.separator + "web-inf")) {
             generation = "经典 Java / nested WEB-INF";
         } else {
             generation = "经典 Java / WEB-INF/lib";
         }
 
-        String product = newStyle && !blank(soft)
-                ? soft.trim() : LicenseRecover.productMainFor(soft);
-        String products = LicenseRecover.resolveJavaRegStr(root.getAbsolutePath(), soft);
-        File jar = LicenseRecover.findItmcRegJar(lib);
-        boolean packed = false;
-        if (jar != null) {
-            try { packed = NetRemover.jarIsPacked(jar); }
-            catch (Throwable ignore) { packed = false; }
-        }
+        String product = newStyle && !blank(soft) ? soft.trim() : productMainFor(soft);
+        String products = resolveRegStr(root, soft);
+        File jar = findRegJar(lib);
+        boolean packed = jar != null && isVirboxPackedJar(jar);
 
         String libConfig = relative(root, new File(lib, "config.xml"));
         String targets = libConfig;
@@ -122,6 +142,126 @@ public final class LicenseRecoverModernGUIJavaPlan {
         out.append("[java-plan] registration jar=").append(registrationJarSummary()).append('\n');
         out.append("[java-plan] verify=").append(verificationPlan).append('\n');
         return out.toString();
+    }
+
+    private static String readSoftId(File root) {
+        if (root == null) return null;
+        try {
+            File yml = new File(root, "systemConfig.yml");
+            if (yml.isFile()) {
+                for (String raw : Files.readAllLines(yml.toPath(), StandardCharsets.UTF_8)) {
+                    String line = raw.trim();
+                    if (!line.toLowerCase(Locale.ROOT).contains("versionid")) continue;
+                    int split = line.indexOf(':');
+                    if (split < 0) split = line.indexOf('=');
+                    if (split > 0) {
+                        String value = line.substring(split + 1).trim();
+                        if (!value.isEmpty()) return value;
+                    }
+                }
+            }
+        } catch (Exception ignore) { }
+
+        String data = readElement(new File(root, "data" + File.separator + "config.xml"), "SoftVersionID");
+        if (!blank(data)) return data.trim();
+        String classes = readElement(new File(root, "WEB-INF" + File.separator + "classes"
+                + File.separator + "config.xml"), "SoftVersionID");
+        return blank(classes) ? null : classes.trim();
+    }
+
+    private static String resolveRegStr(File root, String softId) {
+        String data = normalizeCsv(readElement(new File(root, "data" + File.separator + "config.xml"), "regInfo"));
+        if (data != null) return data;
+        String classes = normalizeCsv(readElement(new File(root, "WEB-INF" + File.separator
+                + "classes" + File.separator + "config.xml"), "regInfo"));
+        if (classes != null) return classes;
+        if (softId != null && softId.toUpperCase(Locale.ROOT).matches("DS28\\d{2}")) return softId.trim();
+        if ("YT00129".equalsIgnoreCase(softId)) return "QT0420";
+        return FALLBACK_ALL_NUMS;
+    }
+
+    private static String productMainFor(String softId) {
+        if (softId != null && softId.toUpperCase(Locale.ROOT).matches("DS28\\d{2}")) return "DS28";
+        if (softId != null && softId.toUpperCase(Locale.ROOT).startsWith("XMT01")) return "XMT01";
+        if (softId == null) return "QT1001";
+        String id = softId.toUpperCase(Locale.ROOT);
+        if ("YT00128".equals(id) || "YT00127".equals(id) || "YT00129".equals(id)
+                || "YT00139".equals(id) || "YT00132".equals(id) || "YT00141".equals(id)
+                || "YT00126".equals(id) || "YT00154".equals(id) || "BKSM4".equals(id)) {
+            return "QT04";
+        }
+        return "QT1001";
+    }
+
+    private static String readElement(File file, String element) {
+        if (file == null || !file.isFile() || blank(element)) return null;
+        try {
+            String text = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            Pattern pattern = Pattern.compile("(?is)<" + Pattern.quote(element)
+                    + "\\b[^>]*>\\s*([^<]*?)\\s*</" + Pattern.quote(element) + "\\s*>");
+            Matcher matcher = pattern.matcher(text);
+            return matcher.find() ? matcher.group(1).trim() : null;
+        } catch (Exception ignore) {
+            return null;
+        }
+    }
+
+    private static String normalizeCsv(String value) {
+        if (value == null) return null;
+        LinkedHashSet<String> values = new LinkedHashSet<String>();
+        for (String part : value.split(",")) {
+            String x = part == null ? "" : part.trim();
+            if (!x.isEmpty()) values.add(x);
+        }
+        if (values.isEmpty()) return null;
+        StringBuilder out = new StringBuilder();
+        for (String x : values) {
+            if (out.length() > 0) out.append(',');
+            out.append(x);
+        }
+        return out.toString();
+    }
+
+    private static File findRegJar(File lib) {
+        if (lib == null || !lib.isDirectory()) return null;
+        File exact = new File(lib, "ITMCReg.jar");
+        if (exact.isFile()) return exact;
+        File[] files = lib.listFiles((dir, name) -> {
+            String lower = name.toLowerCase(Locale.ROOT);
+            return lower.startsWith("itmcreg") && lower.endsWith(".jar");
+        });
+        return files != null && files.length > 0 ? files[0] : null;
+    }
+
+    private static boolean isVirboxPackedJar(File jar) {
+        JarFile jf = null;
+        try {
+            jf = new JarFile(jar);
+            java.util.Enumeration<JarEntry> entries = jf.entries();
+            while (entries.hasMoreElements()) {
+                JarEntry entry = entries.nextElement();
+                if (entry.isDirectory() || !entry.getName().endsWith(".class")) continue;
+                InputStream raw = null;
+                DataInputStream in = null;
+                try {
+                    raw = jf.getInputStream(entry);
+                    in = new DataInputStream(raw);
+                    if (in.readInt() != 0xCAFEBABE) continue;
+                    int minor = in.readUnsignedShort();
+                    if (minor == 32768) return true;
+                } catch (Exception ignore) {
+                    // Keep scanning other classes. A damaged entry should not abort batch preview.
+                } finally {
+                    try { if (in != null) in.close(); else if (raw != null) raw.close(); }
+                    catch (Exception ignore) { }
+                }
+            }
+        } catch (Exception ignore) {
+            return false;
+        } finally {
+            try { if (jf != null) jf.close(); } catch (Exception ignore) { }
+        }
+        return false;
     }
 
     private static LicenseRecoverModernGUIJavaPlan unknown() {

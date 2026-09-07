@@ -545,42 +545,56 @@ public final class LicenseRecoverModernGUI {
         }
         Arrays.sort(children);
         int detected = 0;
+        int skipped = 0;
+        int errors = 0;
         for (File child : children) {
-            AppInfo info = AppDetector.detect(child);
-            BatchTarget target;
-            if (info.type == AppInfo.Type.JAVA) {
-                target = BatchTarget.javaTarget(child.getName(), info.appRoot, info.libDir);
-                LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(info.appRoot);
-                batchModel.addRow(new Object[]{child.getName(),
-                        plan.detected ? "Java / " + plan.generation : "Java",
-                        valueOrDash(plan.softVersionId), valueOrDash(plan.productName),
-                        plan.regStrSummary(), plan.configTargets,
-                        plan.detected ? "待执行: RegisterMain" : "待识别", "待处理",
-                        info.appRoot.getAbsolutePath()});
-                detected++;
-            } else if (info.type == AppInfo.Type.DOTNET) {
-                target = BatchTarget.dotNetTarget(child.getName(), info.binDir);
-                LicenseRecoverModernGUIAutoRecovery.Detection d =
-                        LicenseRecoverModernGUIAutoRecovery.detect(info.binDir);
-                String kind = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
-                        ? ".NET Modern" : ".NET Legacy";
-                String verify = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
-                        ? "待执行: 写回解密校验" : "兼容方式一: 不适用";
-                batchModel.addRow(new Object[]{child.getName(), kind,
-                        valueOrDash(d.versionId), valueOrDash(d.productName), "—", "config.xml",
-                        verify, "待处理", info.binDir.getAbsolutePath()});
-                detected++;
-            } else {
-                target = BatchTarget.skipped(child.getName());
-                batchModel.addRow(new Object[]{child.getName(), "—", "—", "—", "—", "—", "—", "跳过", child.getAbsolutePath()});
+            try {
+                AppInfo info = AppDetector.detect(child);
+                BatchTarget target;
+                if (info.type == AppInfo.Type.JAVA) {
+                    target = BatchTarget.javaTarget(child.getName(), info.appRoot, info.libDir);
+                    LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(info.appRoot);
+                    batchModel.addRow(new Object[]{child.getName(),
+                            plan.detected ? "Java / " + plan.generation : "Java",
+                            valueOrDash(plan.softVersionId), valueOrDash(plan.productName),
+                            plan.regStrSummary(), plan.configTargets,
+                            plan.detected ? "待执行: RegisterMain" : "待识别", "待处理",
+                            info.appRoot.getAbsolutePath()});
+                    detected++;
+                } else if (info.type == AppInfo.Type.DOTNET) {
+                    target = BatchTarget.dotNetTarget(child.getName(), info.binDir);
+                    LicenseRecoverModernGUIAutoRecovery.Detection d =
+                            LicenseRecoverModernGUIAutoRecovery.detect(info.binDir);
+                    String kind = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
+                            ? ".NET Modern" : ".NET Legacy";
+                    String verify = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
+                            ? "待执行: 写回解密校验" : "兼容方式一: 不适用";
+                    batchModel.addRow(new Object[]{child.getName(), kind,
+                            valueOrDash(d.versionId), valueOrDash(d.productName), "—", "config.xml",
+                            verify, "待处理", info.binDir.getAbsolutePath()});
+                    detected++;
+                } else {
+                    target = BatchTarget.skipped(child.getName());
+                    batchModel.addRow(new Object[]{child.getName(), "—", "—", "—", "—", "—", "—", "未识别", child.getAbsolutePath()});
+                    skipped++;
+                }
+                batchTargets.add(target);
+            } catch (Throwable ex) {
+                errors++;
+                batchTargets.add(BatchTarget.skipped(child.getName()));
+                String msg = ex.getMessage();
+                String reason = ex.getClass().getSimpleName() + (msg == null || msg.trim().isEmpty() ? "" : ": " + msg.trim());
+                batchModel.addRow(new Object[]{child.getName(), "检测异常", "—", "—", "—", "—", "—",
+                        reason, child.getAbsolutePath()});
+                appendLog("[批量扫描] " + child.getName() + " 检测异常: " + reason + "\n");
             }
-            batchTargets.add(target);
         }
         batchProgress.setMinimum(0);
         batchProgress.setMaximum(batchTargets.size());
         batchProgress.setValue(0);
-        batchProgress.setString("已识别 " + detected + " 个 ITMC 应用；Java 授权计划已展开");
-        setStatus("批量扫描完成", true);
+        batchProgress.setString("扫描完成：" + batchTargets.size() + " 个目录；识别 " + detected
+                + "，未识别 " + skipped + "，异常 " + errors);
+        setStatus(errors == 0 ? "批量扫描完成" : "批量扫描完成（存在检测异常）", errors == 0);
     }
 
     private void runBatch() {
