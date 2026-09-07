@@ -1,0 +1,36 @@
+name: Apply v1.2.13 source patch
+
+on:
+  push:
+    branches: [ "fix/yt00138-dotnet-native-1.2.13" ]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, '[v1.2.13-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/yt00138-dotnet-native-1.2.13
+      - name: Apply patch
+        run: python3 tools/patch_v1_2_13.py
+      - name: Sanity checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '"YT00138".equalsIgnoreCase(softId)' src/main/java/LicenseRecover.java
+          grep -q 'gencode -> DoRegistry -> CheckReInfo' src/main/java/LicenseRecoverModernGUIAutoRecovery.java
+          grep -q '^1.2.13$' VERSION.txt
+      - name: Commit patched source and remove staging files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f tools/patch_v1_2_13.py .github/workflows/apply-v1.2.13.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'v1.2.13: 修复 YT00138 并启用 .NET 原生一键注册 [v1.2.13-applied]'
+          git push origin HEAD:fix/yt00138-dotnet-native-1.2.13
