@@ -94,7 +94,8 @@ final class ExistingLocalRegStrProbe {
                     Object info = getRegInfo.invoke(main);
                     if (info == null) continue;
                     Class<?> infoType = info.getClass();
-                    String regStr = normalizeCsv(String.valueOf(infoType.getMethod("getRegStr").invoke(info)));
+                    Object regObj = infoType.getMethod("getRegStr").invoke(info);
+                    String regStr = regObj == null ? null : normalizeCsv(String.valueOf(regObj));
                     Object proObj = infoType.getMethod("getProName").invoke(info);
                     String proName = proObj == null ? null : String.valueOf(proObj).trim();
                     if (blank(regStr)) continue;
