@@ -2,24 +2,26 @@
 
 ITMC 云实训平台离线授权恢复工具，支持 Java 与 .NET 应用。项目面向原授权服务不可用后的本地恢复场景，保留 Java 8 / Windows 7 / Windows Server 2008 兼容边界。
 
-当前稳定版本：**v1.2.0**
+当前稳定版本：**v1.2.1**
 
 ## 下载
 
 - **稳定版**：GitHub Releases 中最新正式 `vX.Y.Z`。
 - **滚动版**：`rolling-latest`，对应最近一次通过完整 CI 的 `main` 构建。
-- `LicenseRecover-latest.zip`：推荐给普通用户的完整便携版，**内置 Windows x64 Java 8 JRE**。
+- `LicenseRecover-latest.zip`：推荐给普通用户的完整便携版，内置 Windows x64 Java 8 JRE。
 - `LicenseRecover-update.zip`：软件自更新使用的轻量包，不重复携带 JRE。
 - `SHA256SUMS.txt`：同时校验上述两个 ZIP。
 
 ## 快速开始
 
 1. 下载并解压 `LicenseRecover-latest.zip`。
-2. Windows 下直接双击 **`LicenseRecoverGUI.exe`**；也可以使用 `run_gui.bat` 作为脚本回退入口。
+2. Windows 下直接双击 **`LicenseRecoverGUI.exe`**。
 3. 选择应用目录并点击“检测环境”。
 4. 根据检测结果使用推荐操作。
 
-**无需另外安装 Java。** 发行包自带 `jre/`；v1.1.4 的原生 EXE 与 BAT 启动器都会优先使用 `jre\bin\javaw.exe`，仅在内置 JRE 缺失时才回退到系统 Java / `JAVA_HOME`。
+**无需另外安装 Java。** 便携版自带 `jre/`，原生 `LicenseRecoverGUI.exe` 会优先使用 `jre\bin\javaw.exe`，仅在内置 JRE 缺失时回退到系统 Java / `JAVA_HOME`。
+
+从 v1.2.1 起，完整便携包只保留一个用户可见的根目录 EXE 启动入口：`LicenseRecoverGUI.exe`。旧 `LicenseRecoverGUI-legacy.exe` 与根目录 BAT 启动器不再放入 portable ZIP。
 
 ## 内置 Java 运行时
 
@@ -39,50 +41,44 @@ CI 构建正式 portable ZIP 时会下载该固定 runtime、校验 SHA-256，�
 
 ## 软件自动更新
 
-从 v1.1.0 起，软件可以检查 GitHub 最新**正式 Release**。
+软件只跟随 GitHub 最新**正式 Release**，不会自动安装 `rolling-latest`。
 
-- 只跟随 `vX.Y.Z` 正式版，不自动安装 `rolling-latest`。
+- 优先下载 `LicenseRecover-update.zip`；旧 Release 没有轻量包时自动回退到 `LicenseRecover-latest.zip`。
 - 下载后必须通过 `SHA256SUMS.txt` 校验才会安装。
-- v1.1.1 起优先下载 `LicenseRecover-update.zip`，因此以后新增功能时通常不需要重复下载内置 JRE。
-- v1.1.2 起 GUI 底部右下角直接显示当前版本与 `检查更新` 按钮。
-- v1.1.4 起双击 `LicenseRecoverGUI.exe` 也会进入同一套带更新按钮的 Overlay GUI，不再绕过更新层。
-- 如果某个旧 Release 没有轻量更新包，则自动回退到 `LicenseRecover-latest.zip`。
-- 更新由独立临时安装器完成，成功后自动重新启动 GUI。
-- 也可使用 `run_gui.bat --update-only` 手动检查更新。
+- v1.2.1 起下载过程显示实时进度、百分比与已下载/总大小（服务器提供大小时）。
+- v1.2.1 起新 updater 安装完成后直接重新启动 `LicenseRecoverGUI.exe`，不再通过 `cmd.exe` + BAT 完成重启。
+- 为兼容 v1.1.x/v1.2.0 已安装客户端，轻量更新包暂时保留一个最小 `run_gui.bat` 过渡文件；旧 updater 用它完成最后一次 BAT 式重启后，新程序会清理旧入口。
+- 因为旧客户端在下载 v1.2.1 时仍运行旧 updater 代码，所以“第一次从旧版升级到 v1.2.1”的下载本身不会凭空出现新进度条；升级成功后，后续更新都会使用新进度 UI。
+- 更新器拒绝 ZIP 路径穿越，并在覆盖前保留回滚备份。
 
-仓库现已公开，未登录 GitHub 的客户端可以直接使用公共 Releases API 检查和下载更新。
+仓库为 Public，未登录 GitHub 的客户端也可以直接使用公共 Releases API 检查和下载更新。
 
-## 当前界面与运行入口
+## 当前界面与唯一启动入口
 
-- **`LicenseRecoverGUI.exe`**：v1.1.4 起的推荐 Windows 原生入口；启动现代 GUI、显示版本与右下角更新按钮，并使用与 `run_gui.bat` 相同的 Java 主类。
-- `run_gui.bat`：脚本回退入口；现代 GUI + 后台检查更新 + 底部右下角更新入口。
-- `run_gui_modern.bat`：显式启动现代 GUI，同样显示底部更新入口。
-- `run_gui_legacy.bat`：旧 GUI 回退入口；v1.1.2 起同样修复长授权码布局并显示更新入口。
-- `LicenseRecoverGUI-legacy.exe`：未修改的旧 EXE，仅作为兼容回退保留；它不会加载新的 Overlay UI。
-- `run.bat`：CLI 方式一 / 方式二入口。
-- `run_removenet.bat`：默认安全方式三入口。
-- `run_removenet_safe.bat`：显式安全方式三入口。
-- `run_removenet_legacy.bat`：旧方式三回退入口。
+**`LicenseRecoverGUI.exe`** 是普通用户唯一需要打开的入口。它会：
 
-新版 GUI 由 `LicenseRecoverOverlay.jar` + `LicenseRecoverGUI.jar` 组合加载。
+- 启动现代 Overlay GUI；
+- 显示当前版本和右下角“检查更新”；
+- 优先使用内置 JRE；
+- 继续加载 Java / .NET 恢复逻辑以及一键恢复功能。
 
-v1.1.2 对长注册申请号 / 离线授权码字段增加了宽度约束：超出可见区域的内容保留在输入框内部，不再撑宽整个面板或把右侧按钮顶出窗口。
+`LicenseRecover.NET/LicenseRecover.NET.exe` 属于内部 .NET 兼容辅助组件，不是用户启动入口。
 
 ## 支持范围
 
 ### Java 应用
 
-支持包含 `WEB-INF` / `WEB-INF/lib` 的 ITMC Java 应用，能够识别标准布局和已知的嵌套 `WEB-INF/WEB-INF` 布局。
+支持包含 `WEB-INF` / `WEB-INF/lib` 的 ITMC Java 应用，能够识别标准布局和已知的嵌套 `WEB-INF/WEB-INF` 布局，并覆盖当前已验证的 YT、XMT、QT30xxx 等产品代际。
 
 ### .NET 应用
 
-支持包含 `itmcRegedit.dll` / `ITMC.Web.dll` 等组件的 ASP.NET / .NET 应用。DS01xx 系列会按检测到的 `SoftVersionID` 自动选择旧协议适配。
+支持包含 `ITMC.Web.dll` 与 `ITMC.Regedit.dll` / `itmcRegedit.dll` 等组件的 ASP.NET / .NET 应用。DS01xx、YX0301/YX0302/YX0303 等已验证家族会按检测结果自动选择兼容路径。
 
 ## 三种恢复方式
 
-- **方式一**：写入或调整本地授权相关配置。Java 写入前建立 `prewrite` 备份；v1.1.3 起生成的本地 `regName` 授权对象固定写入 `UserID=fwq`，外层 `WebSerUserID` 仍保持独立兼容字段；.NET 方式一主要用于阻断失效的自动联网授权地址，不修改 DLL。
+- **方式一**：写入或调整本地授权相关配置。Java 写入前建立 `prewrite` 备份；生成的本地 `regName` 授权对象固定写入 `UserID=fwq`，外层 `WebSerUserID` 保持独立兼容字段。
 - **方式二**：根据申请号生成离线授权码，交由应用自身的本地注册页面提交。
-- **方式三**：修改授权校验相关字节码 / DLL。默认入口会先建立 `prepatch` 备份并校验后才继续。
+- **方式三**：修改授权校验相关字节码 / DLL。默认路径会先建立 `prepatch` 备份并校验后继续。
 
 方式三属于高风险操作，建议先扫描识别并确认目标文件；.NET 应用执行前应停止可能占用 DLL 的 IIS 应用池或相关进程。
 
@@ -93,35 +89,29 @@ v1.1.2 对长注册申请号 / 离线授权码字段增加了宽度约束：超�
 - 备份失败时终止高风险写入；
 - Java 方式三支持只扫描 / dry-run；
 - 子进程统一超时与结果模型；
-- modern / legacy 入口并存；
 - 自更新 ZIP 做 SHA-256 校验；
 - 更新器拒绝 ZIP 路径穿越；
-- 轻量更新包不会删除或覆盖现有内置 JRE。
+- 轻量更新包不会删除或覆盖现有内置 JRE；
+- v1.2.1 起 portable 发行包校验“根目录只有一个 EXE，且没有 BAT 启动入口”。
 
 ## 发行包主要文件
 
 ```text
-LicenseRecoverGUI.exe            # 推荐的 Windows 原生启动器
-LicenseRecoverGUI-legacy.exe     # 旧 EXE 兼容回退
+LicenseRecoverGUI.exe            # 唯一用户启动入口
 LicenseRecover.jar
 LicenseRecoverGUI.jar
 LicenseRecoverOverlay.jar
-LicenseRecover.NET/
+LicenseRecover.NET/              # 内部 .NET 兼容辅助组件
 jre/                             # Amazon Corretto 8 Windows x64 JRE
 JRE_SOURCE_NOTICE.txt
-run.bat
-run_gui.bat
-run_gui_modern.bat
-run_gui_legacy.bat
-run_removenet.bat
-run_removenet_safe.bat
-run_removenet_legacy.bat
 README.md
 README.txt
 VERSION.txt
 CHANGELOG.md
 RELEASE_NOTES.md
 ```
+
+说明：`LicenseRecover-update.zip` 为兼容旧 updater，会暂时额外携带一个最小 `run_gui.bat` 过渡文件；完整 `LicenseRecover-latest.zip` 不含任何根目录 BAT 启动器。
 
 ## 源码结构
 
@@ -133,11 +123,7 @@ scripts/         本地 / CI 共用验证与打包脚本
 release-notes/   版本化稳定 Release Notes
 ```
 
-Java 类目前继续使用 default package，以保持与既有 JAR / overlay 的 class 名兼容。
-
-v1.1.3 的构建流程会把经过 Java 8 编译与 smoke test 验证的 `LicenseRecover.class` 同步回 `LicenseRecover.jar`，避免“源码已更新但发行包仍携带旧 CLI 类”的情况。
-
-v1.1.4 的 CI 使用 MinGW-w64 从 `src/native/LicenseRecoverGUI.c` 构建 Windows x64 GUI PE，验证其入口类/JAR/JRE 引用后再注入 portable 与 slim update 两个发行 ZIP，并重新生成 SHA-256。
+Java 类继续使用 default package，以保持与既有 JAR / overlay 的 class 名兼容。
 
 ## 本地验证
 
@@ -153,9 +139,7 @@ PowerShell 7 / Linux / macOS：
 ./scripts/verify.ps1
 ```
 
-正式 CI 还会执行 `scripts/package-native-launcher.ps1`；该步骤需要 MinGW-w64 的 Windows x64 GCC/binutils 工具链。
-
-首次验证会从固定 runtime Release 获取内置 Corretto JRE；仓库公开后可匿名下载，CI 则使用 GitHub Token 获取。
+正式 CI 还会执行 `scripts/package-native-launcher.ps1`；该步骤使用 MinGW-w64 构建 Windows x64 GUI PE，并对最终 portable/update ZIP 做入口结构检查后重新生成 SHA-256。
 
 ## 版本与发布模型
 
@@ -164,6 +148,6 @@ PowerShell 7 / Linux / macOS：
 - `main` 每次完整验证成功后更新 `rolling-latest`。
 - 当对应稳定 Release 尚不存在时，验证成功的 `main` 创建固定 `vX.Y.Z` 正式 Release。
 - 正式 Release 发布 portable ZIP、轻量 update ZIP 和 `SHA256SUMS.txt`。
-- 根目录不再跟踪生成 ZIP 或 JRE；大体积运行时由固定 runtime Release 管理。
+- 根目录不跟踪生成 ZIP 或 JRE；大体积运行时由固定 runtime Release 管理。
 
 更详细的工程说明见 `DEVELOPMENT.md`。

@@ -2,6 +2,33 @@
 
 All notable user-visible and engineering changes are tracked here from the first stable release onward.
 
+## [1.2.1] - 2026-09-07
+
+### Fixed
+
+- 修复旧版在线更新完成后通过 `run_gui.bat` 重启时可能出现“文件名/路径语法不正确”“此时不应有 &&”等 CMD 解析错误。
+- v1.2.1+ 更新器安装完成后直接重新启动 `LicenseRecoverGUI.exe`，不再依赖 BAT 作为正常重启链路。
+
+### Added
+
+- 在线更新新增下载进度窗口，显示百分比与已下载/总大小，并显示 SHA-256 校验阶段。
+- 增加更新任务互斥，避免自动检查和手动检查重复启动下载。
+- 启动后自动清理旧 `LicenseRecoverGUI-legacy.exe` 与根目录 `run*.bat` 入口。
+
+### Changed
+
+- `LicenseRecover-latest.zip` 只暴露一个根目录 EXE：`LicenseRecoverGUI.exe`；portable 包不再包含根目录 BAT 启动器或 legacy EXE。
+- `LicenseRecover-update.zip` 仅保留一个最小 `run_gui.bat` 作为 pre-v1.2.1 updater 的过渡重启桥接文件。
+- CI 新增最终发行包入口结构检查：portable 根目录必须只有一个 EXE 且没有 BAT。
+
+## [1.2.0] - 2026-09-07
+
+### Changed
+
+- 将多条恢复路径整合为一键恢复架构，并扩展多代 Java/.NET 自动识别。
+- 增强 XMT0107、YT00129、QT30103、YX0303、DS01xx 等已验证产品代际的配置解析与本地授权兼容。
+- 继续使用轻量自更新包、内置 Corretto 8 便携运行时、原生 Windows x64 启动器与完整回归验证。
+
 ## [1.1.4] - 2026-09-07
 
 ### Added
