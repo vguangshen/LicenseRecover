@@ -167,6 +167,34 @@ public final class RefactorSmokeTest {
                         && qt401Plan.recoveryReadiness.contains("RegStr"),
                 "QT401 automatic recovery is blocked until dynamic RegStr can be recovered");
 
+        Path qt100101Root = base.resolve("java-QT100101");
+        Path qt100101Lib = qt100101Root.resolve("WEB-INF/lib");
+        Path qt100101Classes = qt100101Root.resolve("WEB-INF/classes");
+        Files.createDirectories(qt100101Lib);
+        Files.createDirectories(qt100101Classes);
+        Files.write(qt100101Lib.resolve("ITMCReg.jar"), new byte[]{1});
+        Files.write(qt100101Root.resolve("systemConfig.yml"), Arrays.asList(
+                "global.system.VersionID=QT100101",
+                "global.system.VersionName=互联网营销师大赛平台"), StandardCharsets.UTF_8);
+        Files.write(qt100101Classes.resolve("config.xml"), Arrays.asList(
+                "<ROOT><reg><regType>3</regType></reg><SystemSoft><SoftVersionID>QT100101</SoftVersionID></SystemSoft></ROOT>"),
+                StandardCharsets.UTF_8);
+        check("QT100101".equals(LicenseRecover.productMainFor("QT100101")),
+                "QT100101 startup RegisterMain uses concrete QT100101 id");
+        check("QT100101".equals(LicenseRecover.localRegisterProductFor("QT100101", false)),
+                "QT100101 local-registration page uses concrete QT100101 id");
+        check(LicenseRecover.resolveJavaRegStr(qt100101Root.toString(), "QT100101") == null,
+                "QT100101 keeps dynamic RegStr unresolved when config has no regInfo");
+        LicenseRecoverModernGUIJavaPlan qt100101Plan =
+                LicenseRecoverModernGUIJavaPlan.inspect(qt100101Root.toFile());
+        check(qt100101Plan.generation.contains("QT1001系列")
+                        && "QT100101".equals(qt100101Plan.authorizationFamily)
+                        && "QT100101".equals(qt100101Plan.runtimeProductId),
+                "Java GUI plan confirms QT100101 family and runtime id");
+        check(qt100101Plan.regStr == null && !qt100101Plan.automaticRecoveryReady
+                        && qt100101Plan.recoveryReadiness.contains("RegStr"),
+                "QT100101 automatic recovery stays blocked until dynamic RegStr is recovered");
+
         Path genericClassesRoot = base.resolve("java-generic-classes");
         Path genericClassesLib = genericClassesRoot.resolve("WEB-INF/lib");
         Path genericClassesCfg = genericClassesRoot.resolve("WEB-INF/classes");
