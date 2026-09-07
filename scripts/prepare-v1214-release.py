@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[1]
+
+version = ROOT / 'VERSION.txt'
+version.write_text('1.2.14\n', encoding='utf-8', newline='\n')
+
+readme = ROOT / 'README.md'
+s = readme.read_text(encoding='utf-8')
+old = '当前稳定版本：**v1.2.13**'
+new = '当前稳定版本：**v1.2.14**'
+if old not in s:
+    raise SystemExit('README stable-version anchor missing')
+s = s.replace(old, new, 1)
+readme.write_text(s, encoding='utf-8', newline='\n')
+
+notes = ROOT / 'release-notes' / 'v1.2.14.md'
+notes.write_text('''# LicenseRecover v1.2.14
+
+本版修复 v1.2.13 严格 fail-closed 策略导致部分真实 Java / .NET 应用在批量扫描中显示“未确认”的问题。**没有恢复任何默认注册代号或 RegStr 兜底。**
+
+- Java：对于 DS24、DS28、DS501、XMT、YX0305 等应用，历史规则只用于产生“候选标识”，候选值必须在当前目标软件自身的 class/JAR 二进制中实际出现后，才可作为授权族/运行校验 ID 的目录证据。
+- Java：如果产品身份已经由目标目录确认，但 XML 中没有静态 RegStr，则在任何写入前只读调用当前应用自己的 `RegisterMain.getRegInfo()` 获取 RegStr；目标组件没有返回 RegStr 时继续 fail-closed，不会使用 VersionID、44 项通用列表或固定产品项。
+- Java：QT40101 / QT100101 等已由目标配置确认身份、但 RegStr 由注册组件动态提供的应用，不再因为缺少静态 `regInfo` 被提前误判为不可恢复。
+- .NET：增强 `ITMC.Web.dll` 元数据扫描，同时解析 UTF-16LE 与 ASCII/UTF-8 字符串，并可从 CSV / key-value 字符串中提取实际产品项。
+- .NET：修复批量页面 RegStr 列此前被固定显示为 `—` 的 UI 漏接；现在显示从当前目标 `ITMC.Web.dll` 实际解析出的 RegStr。
+- .NET：产品身份或 RegStr 仍然无法从目标 DLL 确认时保持“待确认”，不会回退到 VersionID 或默认产品列表；原生 `gencode -> DoRegistry -> CheckReInfo` 闭环保持不变。
+- 新增 DS2406、XMT、DS501、YX0305、QT40101/QT100101 与 .NET ASCII/CSV 元数据回归测试，防止再次出现“过严误拦”或“默认值误识别”。
+
+> v1.2.14 的原则仍然是：**目录证据足够就识别，证据不足就阻止；绝不为了提高识别率而猜 ProductID/ProName/RegStr。**
+''', encoding='utf-8', newline='\n')
+print('Prepared v1.2.14 VERSION, README and release notes.')
