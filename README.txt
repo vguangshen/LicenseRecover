@@ -1,4 +1,4 @@
-LicenseRecover v1.2.2
+LicenseRecover v1.2.3
 =====================
 
 ITMC 云实训平台离线授权恢复工具
@@ -12,6 +12,15 @@ ITMC 云实训平台离线授权恢复工具
 
 便携版内置 Amazon Corretto 8.492.09.2 Windows x64 JRE，不需要另外安装 Java。
 从 v1.2.1 起，portable 包根目录只保留这一个 EXE 启动入口，不再提供旧 EXE 或 BAT 启动器。
+
+v1.2.3 Java / 批量扫描修复
+-------------------------
+- 修复 v1.2.2 批量扫描在第一个 Java 应用处因 GUI classpath 缺少 LicenseRecover.class 而提前终止的问题；
+- Java 授权计划预览改为纯文件/XML/JAR 元数据分析，不再要求把目标应用授权类加载进 GUI 进程；
+- 每个批量子目录独立捕获检测异常，单个异常不会阻断后续应用；
+- 扫描完成后显示目录总数、识别数、未识别数和异常数；
+- 新增 DS28xx Java 代际映射：ProName=DS28；无显式 regInfo 时使用当前 SoftVersionID（例如 DS2802）作为 RegStr；
+- 单应用与批量页面都会显示 DS28 / data-config、ProName、RegStr 和原生 RegisterMain 校验计划。
 
 v1.2.2 Java / 批量识别增强
 -------------------------
