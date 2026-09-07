@@ -23,7 +23,7 @@ if "boolean rootConfigStyle = usesRootConfigApp(appRoot);" not in source:
         "separate product style and root-config style",
     )
 
-if "info.setRegStr(resolveJavaRegStr(appRoot, softId));" not in source:
+if "resolveJavaRegStr(appRoot, softId)" not in source:
     source = replace_once(
         source,
         "        info.setRegStr(ALL_NUMS);",
