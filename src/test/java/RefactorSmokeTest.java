@@ -155,17 +155,17 @@ public final class RefactorSmokeTest {
                 "QT40101 direct runtime family maps to QT401");
         check("QT401".equals(LicenseRecover.localRegisterProductFor("QT40101", false)),
                 "QT40101 local family maps to QT401");
-        check(LicenseRecover.resolveJavaRegStr(qt401Root.toString(), "QT40101") == null,
-                "QT40101 does not inherit the 44-item fallback when regInfo is absent");
+        check("QT40101".equals(LicenseRecover.resolveJavaRegStr(qt401Root.toString(), "QT40101")),
+                "QT40101 uses the exact-sample verified minimum RegStr, not the 44-item fallback");
         LicenseRecoverModernGUIJavaPlan qt401Plan =
                 LicenseRecoverModernGUIJavaPlan.inspect(qt401Root.toFile());
         check(qt401Plan.generation.contains("QT401")
                         && "QT401".equals(qt401Plan.authorizationFamily)
                         && "QT401".equals(qt401Plan.runtimeProductId),
                 "Java GUI plan confirms QT401 family from config1.xml evidence");
-        check(qt401Plan.regStr == null && !qt401Plan.automaticRecoveryReady
-                        && qt401Plan.recoveryReadiness.contains("RegStr"),
-                "QT401 automatic recovery is blocked until dynamic RegStr can be recovered");
+        check("QT40101".equals(qt401Plan.regStr) && qt401Plan.automaticRecoveryReady
+                        && qt401Plan.recoveryReadiness.contains("可安全"),
+                "QT40101 automatic recovery is ready with the exact-sample verified minimum RegStr");
 
         Path qt100101Root = base.resolve("java-QT100101");
         Path qt100101Lib = qt100101Root.resolve("WEB-INF/lib");
