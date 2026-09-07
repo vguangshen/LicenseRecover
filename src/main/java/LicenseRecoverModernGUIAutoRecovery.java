@@ -100,7 +100,11 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (!cli.isFile()) return Result.fail("LicenseRecover.jar was not found.",d);
         List<String> cmd=new ArrayList<String>();
         cmd.add(javaExe()); cmd.add("-Dfile.encoding=UTF-8"); cmd.add("-cp");
-        cmd.add(d.runtimeDir.getAbsolutePath()+File.separator+"*"+File.pathSeparator+cli.getAbsolutePath());
+        File overlay = new File(toolDir(), "LicenseRecoverOverlay.jar");
+        String childCp = d.runtimeDir.getAbsolutePath()+File.separator+"*";
+        if (overlay.isFile()) childCp += File.pathSeparator + overlay.getAbsolutePath();
+        childCp += File.pathSeparator + cli.getAbsolutePath();
+        cmd.add(childCp);
         cmd.add("LicenseRecover"); cmd.add(d.appRoot.getAbsolutePath());
         if (dryRun) cmd.add("--dry-run"); if (!backup) cmd.add("--no-backup"); if (!blockNet) cmd.add("--no-block-net");
         int rc=run(cmd,log);

@@ -183,6 +183,7 @@ Write-Host 'Building deterministic runtime overlay...'
 $classPrefixes = @(
     'AppDetector',
     'ExistingLocalRegStrProbe',
+    'LegacyJavaRegistrationMetadata',
     'AppInfo',
     'BatchTarget',
     'ConfigSafety',
@@ -201,6 +202,14 @@ foreach ($prefix in $classPrefixes) {
     foreach ($match in $matches) {
         Copy-Item -LiteralPath $match.FullName -Destination $overlayDir -Force
     }
+}
+$coreMatches = @(Get-ChildItem -LiteralPath $verifyDir -Filter 'LicenseRecover*.class' -File |
+    Where-Object { $_.Name -eq 'LicenseRecover.class' -or $_.Name.StartsWith('LicenseRecover$') })
+if ($coreMatches.Count -eq 0) {
+    throw 'No compiled LicenseRecover core classes found for overlay.'
+}
+foreach ($match in $coreMatches) {
+    Copy-Item -LiteralPath $match.FullName -Destination $overlayDir -Force
 }
 
 $fixedTime = [DateTime]::ParseExact('1980-01-01 00:00:00', 'yyyy-MM-dd HH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
@@ -224,6 +233,12 @@ if ($overlayEntries -notcontains 'SafeNetRemoverCLI.class') {
 }
 if ($overlayEntries -notcontains 'ExistingLocalRegStrProbe.class') {
     throw 'Overlay is missing ExistingLocalRegStrProbe.class.'
+}
+if ($overlayEntries -notcontains 'LegacyJavaRegistrationMetadata.class') {
+    throw 'Overlay is missing LegacyJavaRegistrationMetadata.class.'
+}
+if ($overlayEntries -notcontains 'LicenseRecover.class') {
+    throw 'Overlay is missing updated LicenseRecover.class.'
 }
 
 Write-Host 'Assembling application-only distribution...'

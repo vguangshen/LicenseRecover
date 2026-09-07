@@ -270,11 +270,27 @@ public class LicenseRecover {
         boolean newStyle = isNewStyleApp(appRoot);
         boolean rootConfigStyle = usesRootConfigApp(appRoot);
 
-        // 自动识别产品号
+        // 自动识别产品号：经典平台优先从目标软件自己的 Global/RegisterUtil 读取，禁止猜测。
         String softId = readSoftId(appRoot);
+        LegacyJavaRegistrationMetadata.Mapping directoryMapping =
+                LegacyJavaRegistrationMetadata.inspect(new File(appRoot), softId);
+        boolean requiresDirectoryMapping =
+                LegacyJavaRegistrationMetadata.requiresDirectoryMapping(new File(appRoot), softId);
+        if ((productOverride == null || productOverride.trim().isEmpty())
+                && requiresDirectoryMapping && directoryMapping == null) {
+            System.err.println("自动恢复已阻止：目标软件目录未解析出注册ID映射，不会使用固定 QT1001/QT04 兜底。");
+            System.out.println("RESULT: FAILED");
+            return 2;
+        }
         if (productOverride == null || productOverride.trim().isEmpty()) {
             if (softId != null && !softId.trim().isEmpty()) {
-                if (newStyle) {
+                if (directoryMapping != null) {
+                    productMain = directoryMapping.productMain;
+                    System.out.println("[识别] 目标软件目录 VersionID = " + softId
+                            + "  -> 运行注册ID " + productMain
+                            + "  授权项 " + directoryMapping.productMainNum
+                            + "  来源=" + directoryMapping.source);
+                } else if (newStyle) {
                     // 新架构 QT3xxx：加密密钥直接用原始产品号（应用按 PRODUCT_ALL_NUM 逐个尝试匹配 config.xml）
                     productMain = softId.trim();
                     System.out.println("[识别] 新架构(data/config.xml 存在)，产品号 = " + productMain);
@@ -540,8 +556,20 @@ public class LicenseRecover {
             String softId = readSoftId(appArg);
             if (softId != null && !softId.trim().isEmpty()) {
                 boolean dataStyle = isNewStyleApp(appArg);
-                registerPid = localRegisterProductFor(softId, dataStyle);
-                System.out.println("[识别] VersionID = " + softId + "  -> 本地注册产品族 " + registerPid);
+                LegacyJavaRegistrationMetadata.Mapping directoryMapping =
+                        LegacyJavaRegistrationMetadata.inspect(new File(appArg), softId);
+                if (directoryMapping != null) {
+                    registerPid = directoryMapping.productMain;
+                    System.out.println("[识别] VersionID = " + softId + "  -> 本地注册产品族 "
+                            + registerPid + "（来源=" + directoryMapping.source + "）");
+                } else if (LegacyJavaRegistrationMetadata.requiresDirectoryMapping(new File(appArg), softId)) {
+                    System.err.println("[错误] 目标软件目录未解析出注册ID映射，已阻止生成授权码。");
+                    System.out.println("RESULT: FAILED");
+                    return 2;
+                } else {
+                    registerPid = localRegisterProductFor(softId, dataStyle);
+                    System.out.println("[识别] VersionID = " + softId + "  -> 本地注册产品族 " + registerPid);
+                }
             }
         }
         System.out.println("======================================================");
@@ -715,6 +743,11 @@ public class LicenseRecover {
         String classes = normalizeCsv(readJavaConfigElement(
                 new File(root, "WEB-INF" + File.separator + "classes" + File.separator + "config.xml"), "regInfo"));
         if (classes != null) return classes;
+
+        LegacyJavaRegistrationMetadata.Mapping directoryMapping =
+                LegacyJavaRegistrationMetadata.inspect(root, softId);
+        if (directoryMapping != null) return directoryMapping.productMainNum;
+        if (LegacyJavaRegistrationMetadata.requiresDirectoryMapping(root, softId)) return null;
 
         String runtimeProduct = productMainFor(softId);
         String libPath = locateLibDir(appRoot == null ? root.getAbsolutePath() : appRoot);

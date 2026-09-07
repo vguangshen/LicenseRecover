@@ -96,6 +96,10 @@ public final class LicenseRecoverModernGUIJavaPlan {
         boolean rootConfig = dataConfig.isFile() || classesConfig.isFile();
 
         String upper = soft == null ? "" : soft.toUpperCase(Locale.ROOT);
+        LegacyJavaRegistrationMetadata.Mapping directoryMapping =
+                LegacyJavaRegistrationMetadata.inspect(root, soft);
+        boolean requiresDirectoryMapping =
+                LegacyJavaRegistrationMetadata.requiresDirectoryMapping(root, soft);
         String confirmedClassesFamily = confirmedClassesAuthorizationFamily(root, soft);
         String generation;
         if (newStyle) {
@@ -118,16 +122,23 @@ public final class LicenseRecoverModernGUIJavaPlan {
             generation = "经典 Java / WEB-INF/lib";
         }
 
-        String family = !blank(confirmedClassesFamily)
-                ? confirmedClassesFamily : authorizationFamilyFor(soft, newStyle, classesConfig.isFile());
-        String runtimeProduct = !blank(confirmedClassesFamily)
-                ? confirmedClassesFamily : (newStyle && !blank(soft) ? soft.trim() : runtimeProductFor(soft));
+        if (directoryMapping != null) generation = "经典 Java / 应用目录注册映射";
+        String family = directoryMapping != null ? directoryMapping.productMain
+                : (!blank(confirmedClassesFamily)
+                ? confirmedClassesFamily : authorizationFamilyFor(soft, newStyle, classesConfig.isFile()));
+        String runtimeProduct = directoryMapping != null ? directoryMapping.productMain
+                : (!blank(confirmedClassesFamily)
+                ? confirmedClassesFamily : (newStyle && !blank(soft) ? soft.trim() : runtimeProductFor(soft)));
         File jar = findRegJar(lib);
         boolean packed = jar != null && isVirboxPackedJar(jar);
-        String products = resolveRegStr(root, soft, runtimeProduct, lib);
+        String products = directoryMapping != null ? directoryMapping.productMainNum
+                : resolveRegStr(root, soft, runtimeProduct, lib);
         boolean ready = true;
         String readiness = "可安全自动恢复";
-        if (blank(family) || "未确认".equals(family)) {
+        if (requiresDirectoryMapping && directoryMapping == null) {
+            ready = false;
+            readiness = "目标软件目录未解析出注册ID映射";
+        } else if (blank(family) || "未确认".equals(family)) {
             ready = false;
             readiness = "授权族未确认";
         } else if (blank(runtimeProduct)) {
@@ -240,6 +251,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
         if ("YT00129".equalsIgnoreCase(softId)) return "QT0420";
         if (new File(root, "WEB-INF" + File.separator + "classes" + File.separator + "config.xml").isFile())
             return null;
+        if (LegacyJavaRegistrationMetadata.requiresDirectoryMapping(root, softId)) return null;
         return FALLBACK_ALL_NUMS;
     }
 

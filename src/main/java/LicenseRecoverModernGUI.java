@@ -407,6 +407,14 @@ public final class LicenseRecoverModernGUI {
     }
 
     private OperationResult runWay1For(AppInfo info) {
+        if (info.type == AppInfo.Type.JAVA) {
+            boolean preview = dryRunCheck.isSelected();
+            LicenseRecoverModernGUIAutoRecovery.Result result =
+                    LicenseRecoverModernGUIAutoRecovery.recover(info.appRoot, backupCheck.isSelected(),
+                            blockNetCheck.isSelected(), preview, this::appendLog);
+            if (!result.success) return OperationResult.failed(result.message, 1);
+            return preview ? OperationResult.preview(result.message) : OperationResult.success(result.message);
+        }
         File cli = cliJar();
         if (!cli.isFile()) return OperationResult.failed("未找到 LicenseRecover.jar", 1);
         List<String> cmd = new ArrayList<String>();

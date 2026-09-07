@@ -40,6 +40,9 @@ public final class RefactorSmokeTest {
 
         check("fwq".equals(LicenseRecover.LOCAL_AUTH_USER_ID),
                 "local authorization UserID fixed to fwq");
+        check("YT001".equals(LegacyJavaRegistrationMetadata.selectFallbackPrefix(
+                        Arrays.asList("QT1001", "DS26", "YT001", "YT00129"), "YT00138")),
+                "legacy runtime family is derived from target RegisterUtil constants");
 
         LegacyRegisterMain2 legacyCtor = (LegacyRegisterMain2)
                 LicenseRecover.instantiateRegisterMainCompatible(
