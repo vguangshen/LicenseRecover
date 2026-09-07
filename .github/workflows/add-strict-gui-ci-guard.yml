@@ -1,0 +1,36 @@
+name: Add strict legacy GUI registration guard
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'scripts/add-strict-gui-ci-guard.py'
+      - '.github/workflows/add-strict-gui-ci-guard.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Add guard
+        run: python3 scripts/add-strict-gui-ci-guard.py
+      - name: Validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          grep -F 'Legacy GUI still uses a fixed .NET product identity' scripts/verify.ps1
+          grep -F 'Legacy GUI Java gencode is not using directory-derived family + RegStr' scripts/verify.ps1
+      - name: Commit guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/verify.ps1
+          git commit -m 'test: 防止旧GUI重新引入注册代号兜底'
+          git push origin HEAD:main
