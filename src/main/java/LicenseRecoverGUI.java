@@ -99,7 +99,6 @@ public class LicenseRecoverGUI {
     static String productMainFor(String softId) { return null; }
 
     /**
-     * 方式二: 生成离线授权码。    /**
      * 方式二: 生成离线授权码。
      * @return {申请号, 授权码, 主板号, 申请时间}
      */
@@ -637,7 +636,7 @@ public class LicenseRecoverGUI {
         }.execute();
     }
 
-    static void run(ActionEvent e) {    static void run(ActionEvent e) {
+    static void run(ActionEvent e) {
         String appRoot = appRootField.getText().trim();
         String productMain = productField.getText().trim();
         String dotnetBin = locateDotNetBin(new File(appRoot));
@@ -784,7 +783,7 @@ public class LicenseRecoverGUI {
         }.execute();
     }
 
-    static void copyCode(ActionEvent e) {    static void copyCode(ActionEvent e) {
+    static void copyCode(ActionEvent e) {
         String c = codeField.getText().trim();
         if (c.isEmpty()) c = lastCode == null ? "" : lastCode.trim();
         if (c.isEmpty()) {
