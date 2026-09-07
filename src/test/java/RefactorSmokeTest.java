@@ -271,9 +271,10 @@ public final class RefactorSmokeTest {
                         && "QT401".equals(qt401Plan.authorizationFamily)
                         && "QT401".equals(qt401Plan.runtimeProductId),
                 "Java GUI plan confirms QT401 family from config1.xml evidence");
-        check(qt401Plan.regStr == null && !qt401Plan.automaticRecoveryReady
-                        && qt401Plan.recoveryReadiness.contains("RegStr"),
-                "QT40101 identity may be confirmed by config1.xml but RegStr must still come from the target directory");
+        check(qt401Plan.regStr == null && qt401Plan.automaticRecoveryReady
+                        && qt401Plan.regStrSummary().contains("动态")
+                        && qt401Plan.recoveryReadiness.contains("RegisterMain.getRegInfo"),
+                "QT40101 never invents RegStr and may read it from the target registration component before write");
 
         Path qt100101Root = base.resolve("java-QT100101");
         Path qt100101Lib = qt100101Root.resolve("WEB-INF/lib");
@@ -299,9 +300,10 @@ public final class RefactorSmokeTest {
                         && "QT100101".equals(qt100101Plan.authorizationFamily)
                         && "QT100101".equals(qt100101Plan.runtimeProductId),
                 "Java GUI plan confirms QT100101 family and runtime id");
-        check(!qt100101Plan.automaticRecoveryReady
-                        && qt100101Plan.recoveryReadiness.contains("RegStr"),
-                "QT100101 stays blocked until RegStr is declared/recovered from target directory");
+        check(qt100101Plan.regStr == null && qt100101Plan.automaticRecoveryReady
+                        && qt100101Plan.regStrSummary().contains("动态")
+                        && qt100101Plan.recoveryReadiness.contains("RegisterMain.getRegInfo"),
+                "QT100101 keeps RegStr unset until the target registration component returns it before write");
 
         check(!ExistingLocalRegStrProbe.isSafeLocalConfig(qt100101Classes.resolve("config.xml").toFile()),
                 "regType=3 is never eligible for local RegStr probing");
