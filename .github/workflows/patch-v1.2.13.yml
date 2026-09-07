@@ -1,0 +1,208 @@
+name: Apply v1.2.13 source patch
+
+on:
+  push:
+    branches: [ work/v1.2.13-native-iis-yt00138 ]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: work/v1.2.13-native-iis-yt00138
+      - name: Apply source and regression updates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new, count=1):
+              p = Path(path)
+              s = p.read_text(encoding='utf-8')
+              actual = s.count(old)
+              if actual != count:
+                  raise SystemExit(f'{path}: expected {count} occurrence(s), found {actual}: {old[:100]!r}')
+              p.write_text(s.replace(old, new), encoding='utf-8')
+
+          # GUI one-click: route modern ASP.NET through the application's own IIS form.
+          replace('src/main/java/LicenseRecoverModernGUIAutoRecovery.java',
+              '            if (d.kind == Kind.DOTNET_MODERN) return recoverDotNet(d,backup,blockNet,dryRun,log);',
+              '            if (d.kind == Kind.DOTNET_MODERN) return LicenseRecoverModernGUIDotNetIisRegistration.recover(d,backup,blockNet,dryRun,log);')
+
+          # YX030107 production sample belongs to YX0302; never derive YX0301 blindly from folder/version digits.
+          replace('src/main/java/LicenseRecoverModernGUIAutoRecovery.java',
+              '        if(version!=null && version.matches("YX\\\\d{6}"))return version.substring(0,6);',
+              '        // YX030107 production sample: recovered PubBase/registration page uses ProName=YX0302.\n'
+              '        if("YX030107".equalsIgnoreCase(version) && s.contains("YX0302")) return "YX0302";\n'
+              '        if(version!=null && version.matches("YX\\\\d{6}")) {\n'
+              '            String derived=version.substring(0,6);\n'
+              '            if(s.contains(derived)) return derived;\n'
+              '        }')
+
+          # YT00138 real startup path: RegisterUtil fallback uses RegisterMain("YT001", ..., rootPath),
+          # and the application gate requires RegStr to contain concrete VersionID YT00138.
+          replace('src/main/java/LicenseRecover.java',
+              '        if ("DS2406".equalsIgnoreCase(softId)) return "DS2406";\n',
+              '        if ("DS2406".equalsIgnoreCase(softId)) return "DS2406";\n'
+              '        if ("YT00138".equalsIgnoreCase(softId)) return "YT00138";\n')
+          replace('src/main/java/LicenseRecover.java',
+              '        if (softId != null && "DS2406".equalsIgnoreCase(softId.trim())) return "DS24";\n',
+              '        if (softId != null && "DS2406".equalsIgnoreCase(softId.trim())) return "DS24";\n'
+              '        if (softId != null && "YT00138".equalsIgnoreCase(softId.trim())) return "YT001";\n')
+
+          # GUI Java plan mirrors the same exact production mapping.
+          replace('src/main/java/LicenseRecoverModernGUIJavaPlan.java',
+              '            generation = "DS2406".equals(upper)\n'
+              '                    ? "DS24 / data-config"\n'
+              '                    : (upper.matches("DS28\\\\d{2}") ? "DS28 / data-config" : "YT/兼容根配置 / data-config");',
+              '            if ("DS2406".equals(upper)) generation = "DS24 / data-config";\n'
+              '            else if ("YT00138".equals(upper)) generation = "YT001 / data-config";\n'
+              '            else generation = upper.matches("DS28\\\\d{2}") ? "DS28 / data-config" : "YT/兼容根配置 / data-config";')
+          replace('src/main/java/LicenseRecoverModernGUIJavaPlan.java',
+              '        if ("DS2406".equalsIgnoreCase(softId)) return "DS2406";\n',
+              '        if ("DS2406".equalsIgnoreCase(softId)) return "DS2406";\n'
+              '        if ("YT00138".equalsIgnoreCase(softId)) return "YT00138";\n')
+          replace('src/main/java/LicenseRecoverModernGUIJavaPlan.java',
+              '        if ("DS2406".equals(id)) return "DS24";\n',
+              '        if ("DS2406".equals(id)) return "DS24";\n'
+              '        if ("YT00138".equals(id)) return "YT001";\n', count=2)
+
+          # Regression fixtures: YT00138 must never regress to QT1001, and YX030107 must resolve YX0302.
+          test = Path('src/test/java/RefactorSmokeTest.java')
+          s = test.read_text(encoding='utf-8')
+          marker = '''        Path ds2406Root = base.resolve("java-DS2406");\n'''
+          yt = '''        Path yt138Root = base.resolve("java-YT00138");
+        Path yt138Lib = yt138Root.resolve("WEB-INF/lib");
+        Files.createDirectories(yt138Lib);
+        Files.createDirectories(yt138Root.resolve("data"));
+        Files.write(yt138Lib.resolve("ITMCReg.jar"), new byte[]{1});
+        Files.write(yt138Root.resolve("systemConfig.yml"), Arrays.asList(
+                "global.system.VersionID=YT00138",
+                "global.system.VersionName=云财务竞赛系统"), StandardCharsets.UTF_8);
+        Files.write(yt138Root.resolve("data/config.xml"), Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>YT00138</SoftVersionID></SystemSoft></ROOT>"), StandardCharsets.UTF_8);
+        check("YT001".equals(LicenseRecover.productMainFor("YT00138")),
+                "YT00138 real startup RegisterMain uses YT001, not QT1001");
+        check("YT001".equals(LicenseRecover.localRegisterProductFor("YT00138", false)),
+                "YT00138 local registration family is YT001");
+        check("YT00138".equals(LicenseRecover.resolveJavaRegStr(yt138Root.toString(), "YT00138")),
+                "YT00138 RegStr contains the concrete VersionID required by RegisterUtil");
+        LicenseRecoverModernGUIJavaPlan yt138Plan = LicenseRecoverModernGUIJavaPlan.inspect(yt138Root.toFile());
+        check(yt138Plan.generation.contains("YT001")
+                        && "YT001".equals(yt138Plan.authorizationFamily)
+                        && "YT001".equals(yt138Plan.runtimeProductId),
+                "Java GUI plan models YT00138 with the real YT001 runtime family");
+        check("YT00138".equals(yt138Plan.regStr) && yt138Plan.automaticRecoveryReady,
+                "YT00138 GUI plan uses concrete RegStr and is ready");
+
+'''
+          if marker not in s: raise SystemExit('test insertion marker for YT00138 missing')
+          s = s.replace(marker, yt + marker, 1)
+
+          marker2 = '''        Path dsFixture = base.resolve("DS01-Web.dll");\n'''
+          dn = '''        Path yx107Fixture = base.resolve("YX030107-Web.dll");
+        writeUtf16Fixture(yx107Fixture, "YX0302", "YX030201", "YX030204", "YX030107");
+        check("YX0302".equals(LicenseRecoverModernGUIAutoRecovery.detectProduct(
+                        yx107Fixture.toFile(), "YX030107")),
+                "YX030107 production sample uses recovered ProName YX0302, not digit-derived YX0301");
+        check("YX030201,YX030204".equals(
+                        LicenseRecoverModernGUIAutoRecovery.detectProductList(
+                                yx107Fixture.toFile(), "YX0302")),
+                "YX030107/YX0302 one-click derives the native product list");
+
+        String nativeSeqPlain = "1234F000606A5990471956782026-09-07 21-00-009012";
+        String nativeSeq = LicenseRecoverModernGUIAutoRecovery.desEncryptHex(nativeSeqPlain, "itmcsoft");
+        String nativeHtml = "<form><input type=hidden name=__VIEWSTATE value=STATE>"
+                + "<input name=ctl00$ContentPlaceHolder1$TextBox1 value=\"" + nativeSeq + "\">"
+                + "<input name=ctl00$ContentPlaceHolder1$TextBox2 value=\"\">"
+                + "<input type=submit name=ctl00$ContentPlaceHolder1$Button1 value=\"本地注册\"></form>";
+        LicenseRecoverModernGUIDotNetIisRegistration.FormPage nativeForm =
+                LicenseRecoverModernGUIDotNetIisRegistration.parseForm(
+                        new java.net.URL("http://127.0.0.1:8088/YX030107/Regester.aspx?s=reg"), nativeHtml, "ASP.NET_SessionId=test");
+        check(nativeSeq.equals(nativeForm.sequence)
+                        && nativeForm.codeName.endsWith("TextBox2")
+                        && "STATE".equals(nativeForm.fields.get("__VIEWSTATE")),
+                "IIS native bridge preserves ASP.NET hidden state and extracts application-generated sequence");
+
+'''
+          if marker2 not in s: raise SystemExit('test insertion marker for YX030107 missing')
+          s = s.replace(marker2, dn + marker2, 1)
+          test.write_text(s, encoding='utf-8')
+
+          # Version and user-facing docs.
+          Path('VERSION.txt').write_text('1.2.13\n', encoding='utf-8')
+          replace('README.md', '当前稳定版本：**v1.2.12**', '当前稳定版本：**v1.2.13**')
+          replace('README.md',
+              '### .NET 应用\n\n支持包含 `ITMC.Web.dll` 与 `ITMC.Regedit.dll` / `itmcRegedit.dll` 等组件的 ASP.NET / .NET 应用。',
+              '### .NET 应用\n\n支持包含 `ITMC.Web.dll` 与 `ITMC.Regedit.dll` / `itmcRegedit.dll` 等组件的 ASP.NET / .NET 应用。v1.2.13 起，IIS 一键恢复优先走应用自己的 `Regester.aspx/Register.aspx` 本地注册页：读取应用原生申请号、自动生成匹配注册码、提交原生表单，并以应用自身写回的 `regName` 做验证；无法取得原生页面时安全失败，不再用“自己写再自己解密”伪装成原生通过。')
+          replace('README.txt', 'LicenseRecover v1.2.12', 'LicenseRecover v1.2.13')
+          p = Path('README.txt'); t = p.read_text(encoding='utf-8')
+          anchor = 'v1.2.3 Java / 批量扫描修复\n'
+          section = '''v1.2.13 IIS 原生注册 / YT00138 修复
+-----------------------------------
+- IIS/.NET 推荐一键恢复改为应用原生本地注册闭环：读取应用生成申请号、生成本地注册码、POST 回 Regester/Register.aspx，再验证应用自身写回的 regName；
+- YX030107 真实 ProName 修正为 YX0302，不再按目录数字误判为 YX0301；
+- YT00138 真实启动 ProductID 修正为 YT001，RegStr=YT00138，避免错误 *ITMCQT1001OK* regName 导致 CheckLocalReg 空指针并拖垮 Tomcat 启动；
+- 原生 IIS 页面不可用或写回验证失败时自动恢复原 config.xml，不回退到直接伪造授权。
+
+'''
+          if anchor not in t: raise SystemExit('README.txt anchor missing')
+          p.write_text(t.replace(anchor, section + anchor, 1), encoding='utf-8')
+
+          changelog = Path('CHANGELOG.md'); c = changelog.read_text(encoding='utf-8')
+          entry = '''## v1.2.13 — IIS 原生本地注册闭环与 YT00138 启动崩溃修复
+
+- 根据 YX030107 真实 FOAP 恢复样本确认 `ProName=YX0302`；移除 `YX030107 -> YX0301` 的盲目数字截断。
+- .NET/IIS 推荐一键恢复改为访问应用自己的 `Regester.aspx/Register.aspx`：保留 ASP.NET ViewState/Session，读取应用 `NewRegistry()` 生成的申请号，自动生成匹配的本地注册码并提交原生表单。
+- 成功标准改为“应用自身 DoRegistry 写回新的 regName，且该 regName 可用真实 ProName/RegID/RegStr 复核”；失败时恢复原 config.xml，不再把工具自写密文的 round-trip 当作应用原生成功。
+- 根据 YT00138 脱壳后的 `RegisterUtil`/`RegisterMain` 确认真实启动链为 `RegisterMain("YT001", ..., rootPath)`，RegStr 门槛为具体 `YT00138`。
+- 修复 YT00138 误用 `QT1001 + *ITMCQT1001OK*` 导致真实应用用 `*ITMCYT001OK*` 解密返回 null、`CheckLocalReg` 第 947 行 `substring` NPE 并使 Tomcat Context 启动失败的问题。
+
+'''
+          changelog.write_text(entry + c, encoding='utf-8')
+
+          notes = Path('release-notes/v1.2.13.md')
+          notes.write_text('''# LicenseRecover v1.2.13
+
+本版同时修复 IIS/.NET 一键恢复的“假原生校验”与 YT00138 Java 平台启动崩溃。
+
+## IIS/.NET 原生本地注册
+
+- YX030107 真实 FOAP 恢复代码确认授权 `ProName=YX0302`，不再按 `YX030107` 前六位错误推导 `YX0301`。
+- 推荐一键恢复现在访问目标 IIS 应用自己的 `Regester.aspx/Register.aspx?s=reg`，从页面读取应用 `NewRegistry()` 生成的申请号。
+- 工具仅根据该原生申请号与确认的 ProName/RegStr 生成本地注册码，再把完整 ASP.NET 表单（含 ViewState/Session）POST 回应用，让目标应用自己的 `DoRegistry()` 完成授权写回。
+- 提交后要求 `config.xml` 中 `regName` 确实由应用更新，并用真实 `*ITMC{ProName}OK*`、RegID 和 RegStr 做复核；IIS 页面不可用或写回不一致时安全失败并恢复原配置。
+- 原生注册成功后才执行授权服务地址阻断，避免残留云端授权校验。
+
+## YT00138
+
+- 脱壳后的真实 `RegisterUtil.checkRegister(rootPath)` 表明，YT00138 未命中特殊映射后进入通用 `YT001` 分支，并以 `YT00138` 作为当前产品授权项。
+- 因此 YT00138 的正确模型为 `SoftVersionID=YT00138 / AuthorizationFamily=YT001 / RuntimeProductID=YT001 / RegStr=YT00138`。
+- 旧版本错误写入 `*ITMCQT1001OK*`；真实应用以 `*ITMCYT001OK*` 解密时得到 null，随后 `CheckLocalReg` 对 null 调用 `substring`，会直接导致 ApplicationRunner/Tomcat Context 启动失败。
+- v1.2.13 改为 `YT001 + YT00138` 并加入回归测试，禁止再次退回 QT1001 通用列表。
+''', encoding='utf-8')
+
+          # Record the new real .NET sample in compatibility docs.
+          doc = Path('docs/DOTNET_ONE_CLICK_COMPATIBILITY.md'); d = doc.read_text(encoding='utf-8')
+          row_anchor = '| YX030204 |'
+          row = '| YX030107 | `99998e80fce8e5a9cc5a8b5356c8e05c785cc182bc2fff70a508a7820baaaf01` | `222df2d024efb4b30510af9bf5f552646e4e2f75ea9b3795daa7a279d8a6f725` | yes | `YX0302` | YX0302xx embedded IDs | `DOTNET_MODERN / YX030107 / YX0302` |\n'
+          pos = d.find(row_anchor)
+          if pos < 0: raise SystemExit('compatibility row anchor missing')
+          d = d[:pos] + row + d[pos:]
+          doc.write_text(d, encoding='utf-8')
+          PY
+
+          git config user.name 'LicenseRecover CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add src/main/java src/test/java VERSION.txt README.md README.txt CHANGELOG.md release-notes/v1.2.13.md docs/DOTNET_ONE_CLICK_COMPATIBILITY.md
+          if git diff --cached --quiet; then
+            echo 'Patch already applied.'
+            exit 0
+          fi
+          git commit -m 'v1.2.13: 修复 IIS 原生注册与 YT00138 授权模型'
+          git push origin HEAD:work/v1.2.13-native-iis-yt00138
