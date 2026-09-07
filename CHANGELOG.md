@@ -2,6 +2,22 @@
 
 All notable user-visible and engineering changes are tracked here from the first stable release onward.
 
+## [1.2.8] - 2026-09-07
+
+### Fixed
+
+- 根据 QT100101 实际 Java 样本确认：应用启动与本地注册均使用具体 `QT100101` 作为 RegisterMain 产品 ID，不再错误回退为 `QT1001`。
+- QT100101 在 `config.xml` 没有静态 `regInfo` 时继续保持 RegStr 未确认，不猜测 `QT100101`，也不使用 44 项通用列表。
+
+### Changed
+
+- 批量/单应用将 QT100101 显示为 `Java / QT1001系列 / classes-config`，授权族与运行校验ID均为 `QT100101`。
+- QT100101 继续由执行资格保护层阻止推荐自动写入，直到能从有效现有授权中可靠恢复动态 RegStr。
+
+### Tests
+
+- 新增 QT100101 `systemConfig.yml + WEB-INF/classes/config.xml` fixture，验证启动产品ID、本地注册产品ID、动态 RegStr 与自动恢复阻止。
+
 ## [1.2.7] - 2026-09-07
 
 ### Fixed

@@ -558,6 +558,7 @@ public class LicenseRecover {
         if (softId == null || softId.trim().isEmpty()) return "YT001";
         String id = softId.toUpperCase(java.util.Locale.ROOT);
         if (id.matches("QT401\\d{2}")) return "QT401";
+        if ("QT100101".equals(id)) return "QT100101";
         if (id.startsWith("DS501")) return "DS501";
         if (id.startsWith("YX0305")) return "YX0305";
         if ("DS2601".equals(id)) return "DS26";
@@ -709,6 +710,7 @@ public class LicenseRecover {
     // Direct config rebuild must use the id application startup passes to RegisterMain.checkReInfo().
     static String productMainFor(String softId) {
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("QT401\\d{2}")) return "QT401";
+        if (softId != null && "QT100101".equalsIgnoreCase(softId.trim())) return "QT100101";
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("DS501")) return softId.trim();
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).startsWith("YX0305")) return softId.trim();
         if (softId != null && softId.toUpperCase(java.util.Locale.ROOT).matches("DS28\\d{2}")) return "DS28";

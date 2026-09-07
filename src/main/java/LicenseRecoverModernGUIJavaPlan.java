@@ -102,6 +102,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
             generation = "QT30xxx / data-config";
         } else if (classesConfig.isFile()) {
             if ("QT401".equals(confirmedClassesFamily)) generation = "QT401 / classes-config";
+            else if ("QT100101".equals(confirmedClassesFamily)) generation = "QT1001系列 / classes-config";
             else if (upper.startsWith("XMT01")) generation = "XMT / classes-config";
             else if (upper.startsWith("DS501")) generation = "DS501 / classes-config";
             else if (upper.startsWith("YX0305")) generation = "YX0305 / classes-config";
@@ -232,12 +233,19 @@ public final class LicenseRecoverModernGUIJavaPlan {
             String family = readElement(config1, "SoftVersionID");
             if ("QT401".equalsIgnoreCase(family)) return "QT401";
         }
+        if ("QT100101".equals(id)) {
+            File config = new File(root, "WEB-INF" + File.separator + "classes"
+                    + File.separator + "config.xml");
+            String concrete = readElement(config, "SoftVersionID");
+            if ("QT100101".equalsIgnoreCase(concrete)) return "QT100101";
+        }
         return null;
     }
 
     static String authorizationFamilyFor(String softId, boolean newStyle, boolean classesStyle) {
         if (blank(softId)) return newStyle ? "QT30xxx" : (classesStyle ? "未确认" : "QT1001");
         String id = softId.toUpperCase(Locale.ROOT);
+        if ("QT100101".equals(id)) return "QT100101";
         if (id.startsWith("DS501")) return "DS501";
         if (id.startsWith("YX0305")) return "YX0305";
         if (id.startsWith("XMT01")) return "XMT01";
@@ -255,6 +263,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
         String id = softId.toUpperCase(Locale.ROOT);
         // Real DS501/YX0305 samples use a broader id on the local-registration page,
         // while application startup checks the concrete SoftVersionID.
+        if ("QT100101".equals(id)) return "QT100101";
         if (id.startsWith("DS501") || id.startsWith("YX0305")) return softId.trim();
         if (id.matches("DS28\\d{2}")) return "DS28";
         if (id.startsWith("XMT01")) return "XMT01";
