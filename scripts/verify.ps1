@@ -179,6 +179,19 @@ $runtimeClasspath = $verifyDir + $classpathSeparator + $testDir + $classpathSepa
 $runTestArgs = @('-cp', $runtimeClasspath, 'RefactorSmokeTest')
 Invoke-External -Command 'java' -ArgumentList $runTestArgs
 
+Write-Host 'Verifying LicenseRecover.NET helper command surface...'
+$nativeHelper = Join-Path $repoRoot 'LicenseRecover.NET/LicenseRecover.NET.exe'
+if (-not (Test-Path -LiteralPath $nativeHelper)) { throw 'Missing LicenseRecover.NET.exe.' }
+$nativeBytes = [IO.File]::ReadAllBytes($nativeHelper)
+$nativeAscii = [Text.Encoding]::ASCII.GetString($nativeBytes)
+$nativeUnicode = [Text.Encoding]::Unicode.GetString($nativeBytes)
+foreach ($commandName in @('gencode','doreg','verify')) {
+    if (($nativeAscii.IndexOf($commandName, [StringComparison]::OrdinalIgnoreCase) -lt 0) -and
+        ($nativeUnicode.IndexOf($commandName, [StringComparison]::OrdinalIgnoreCase) -lt 0)) {
+        throw "LicenseRecover.NET helper command surface is missing: $commandName"
+    }
+}
+
 Write-Host 'Building deterministic runtime overlay...'
 $classPrefixes = @(
     'AppDetector',

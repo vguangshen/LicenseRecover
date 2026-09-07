@@ -326,6 +326,21 @@ public final class RefactorSmokeTest {
                                 productFixture.toFile(), "YX0303")),
                 "one-click derives YX0303 local product list");
 
+        Path yx302CrossFixture = base.resolve("YX030107-Web.dll");
+        writeUtf16Fixture(yx302CrossFixture, "YX030107", "YX0302", "YX030201", "YX030204", "YX030219");
+        check("YX0302".equals(LicenseRecoverModernGUIAutoRecovery.detectProduct(
+                        yx302CrossFixture.toFile(), "YX030107")),
+                "YX030107 does not get misclassified as YX0301 when target DLL proves YX0302 family");
+        check("YX030201,YX030204,YX030219".equals(
+                        LicenseRecoverModernGUIAutoRecovery.detectProductList(yx302CrossFixture.toFile(), "YX0302")),
+                "YX030107/YX0302 sample derives the target-local product list");
+
+        String nativeOut = "注册申请号     : A1B2C3D4\n离线授权码     : 001122AABB\n";
+        check("A1B2C3D4".equals(LicenseRecoverModernGUIAutoRecovery.findLabeledHex(nativeOut, "注册申请号")),
+                "native .NET one-click parses target request code");
+        check("001122AABB".equals(LicenseRecoverModernGUIAutoRecovery.findLabeledHex(nativeOut, "离线授权码")),
+                "native .NET one-click parses target authorization code");
+
         Path dsFixture = base.resolve("DS01-Web.dll");
         writeUtf16Fixture(dsFixture, "itmcIEC", "DS0101", "DS0107", "DS0110", "DS0112");
         check("itmcIEC".equals(LicenseRecoverModernGUIAutoRecovery.detectProduct(
