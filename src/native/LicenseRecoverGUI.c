@@ -156,6 +156,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR commandLine
     size_t len = 0;
     if (!append_arg(cmd, cmdCap, &len, javaExe) ||
         !append_arg(cmd, cmdCap, &len, L"-Dfile.encoding=UTF-8") ||
+        !append_arg(cmd, cmdCap, &len, L"-Djava.net.useSystemProxies=true") ||
         !append_arg(cmd, cmdCap, &len, L"-Dsun.java2d.dpiaware=true") ||
         !append_arg(cmd, cmdCap, &len, L"-Dsun.java2d.noddraw=true") ||
         !append_arg(cmd, cmdCap, &len, L"-cp") ||

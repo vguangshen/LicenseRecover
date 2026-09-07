@@ -2,7 +2,7 @@
 
 ITMC 云实训平台离线授权恢复工具，支持 Java 与 .NET 应用。项目面向原授权服务不可用后的本地恢复场景，保留 Java 8 / Windows 7 / Windows Server 2008 兼容边界。
 
-当前稳定版本：**v1.2.3**
+当前稳定版本：**v1.2.4**
 
 ## 下载
 
@@ -46,6 +46,8 @@ CI 构建正式 portable ZIP 时会下载该固定 runtime、校验 SHA-256，�
 - 优先下载 `LicenseRecover-update.zip`；旧 Release 没有轻量包时自动回退到 `LicenseRecover-latest.zip`。
 - 下载后必须通过 `SHA256SUMS.txt` 校验才会安装。
 - v1.2.1 起下载过程显示实时进度、百分比与已下载/总大小（服务器提供大小时）。
+- v1.2.4 起进度总大小直接取 GitHub Release 资产元数据，不再依赖下载节点是否返回 Content-Length；进度条从 0% 到 100% 对应实际收到的字节数。
+- v1.2.4 起下载连接启用更长超时、4 次自动重试与 Range 断点续传，并让内置 Java 使用 Windows 系统代理设置。
 - v1.2.1 起新 updater 安装完成后直接重新启动 `LicenseRecoverGUI.exe`，不再通过 `cmd.exe` + BAT 完成重启。
 - 为兼容 v1.1.x/v1.2.0 已安装客户端，轻量更新包暂时保留一个最小 `run_gui.bat` 过渡文件；旧 updater 用它完成最后一次 BAT 式重启后，新程序会清理旧入口。
 - 因为旧客户端在下载 v1.2.1 时仍运行旧 updater 代码，所以“第一次从旧版升级到 v1.2.1”的下载本身不会凭空出现新进度条；升级成功后，后续更新都会使用新进度 UI。
