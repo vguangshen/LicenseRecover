@@ -200,7 +200,7 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         final JCheckBox backup = findCheckBox(frame.getContentPane(), "写入前备份");
         final JCheckBox blockNet = findCheckBox(frame.getContentPane(), "Java 方式一同时阻止联网");
         final JCheckBox dryRun = findCheckBox(frame.getContentPane(), "只预览，不写入");
-        final JTextArea logArea = findTextArea(frame.getContentPane());
+        final JTextArea logArea = findTextAreaInTitledPanel(frame.getContentPane(), "运行日志");
 
         final boolean doBackup = backup == null || backup.isSelected();
         final boolean doBlock = blockNet == null || blockNet.isSelected();
@@ -320,6 +320,11 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
             }
         }
         return null;
+    }
+
+    private static JTextArea findTextAreaInTitledPanel(Container root, String title) {
+        JPanel panel = findTitledPanel(root, title);
+        return panel == null ? null : findTextArea(panel);
     }
 
     private static JTextArea findTextArea(Container root) {

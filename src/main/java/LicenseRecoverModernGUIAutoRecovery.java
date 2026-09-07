@@ -331,17 +331,36 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     private static String runCapture(String[]cmd){try{Process p=new ProcessBuilder(cmd).redirectErrorStream(true).start();ByteArrayOutputStream o=new ByteArrayOutputStream();InputStream in=p.getInputStream();byte[]b=new byte[4096];int n;while((n=in.read(b))>=0)o.write(b,0,n);p.waitFor();if(p.exitValue()!=0)return null;Charset c;try{c=Charset.forName("GBK");}catch(Exception e){c=StandardCharsets.UTF_8;}return new String(o.toByteArray(),c);}catch(Throwable e){return null;}}
 
     private static int run(List<String>cmd,Consumer<String>log)throws Exception{
-        Process p=new ProcessBuilder(cmd).redirectErrorStream(true).start();
+        final Process p=new ProcessBuilder(cmd).redirectErrorStream(true).start();
+        final BufferedReader r=new BufferedReader(new InputStreamReader(p.getInputStream(),StandardCharsets.UTF_8));
+        Thread pump=new Thread(new Runnable(){
+            public void run(){
+                try{
+                    String s;while((s=r.readLine())!=null)log.accept(s+"\n");
+                }catch(IOException ignore){}
+            }
+        },"LicenseRecover-OneClick-Output");
+        pump.setDaemon(true);
+        pump.start();
         try{
-            BufferedReader r=new BufferedReader(new InputStreamReader(p.getInputStream(),StandardCharsets.UTF_8));
-            String s;while((s=r.readLine())!=null)log.accept(s+"\n");
-            return p.waitFor();
+            while(true){
+                if(Thread.currentThread().isInterrupted())throw new InterruptedException("cancelled");
+                if(p.waitFor(200L,java.util.concurrent.TimeUnit.MILLISECONDS)){
+                    try{pump.join(1000L);}catch(InterruptedException ex){throw ex;}
+                    return p.exitValue();
+                }
+            }
         }catch(InterruptedException ex){
             p.destroy();
-            try{p.waitFor();}catch(InterruptedException again){Thread.currentThread().interrupt();}
-            try{if(p.isAlive())p.destroyForcibly();}catch(Throwable ignore){}
+            try{
+                if(!p.waitFor(1000L,java.util.concurrent.TimeUnit.MILLISECONDS))p.destroyForcibly();
+            }catch(InterruptedException again){
+                p.destroyForcibly();
+            }
             Thread.currentThread().interrupt();
             throw ex;
+        }finally{
+            try{r.close();}catch(IOException ignore){}
         }
     }
     private static String firstElement(String xml,String name){Matcher m=Pattern.compile("(?is)<"+Pattern.quote(name)+"\\b[^>]*>\\s*([^<]*?)\\s*</"+Pattern.quote(name)+"\\s*>").matcher(xml);return m.find()?unxml(m.group(1).trim()):null;}
