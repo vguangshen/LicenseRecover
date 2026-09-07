@@ -98,8 +98,9 @@ Write-Host "Compiling patched Java sources ($($mainSources.Count) files)..."
 & javac -encoding UTF-8 -cp $guiRuntimeJar -d $outDir @mainSources
 if ($LASTEXITCODE -ne 0) { throw "javac failed with exit code $LASTEXITCODE" }
 
-$runtimeClasses = @(Get-ChildItem -LiteralPath $outDir -Filter 'LicenseRecover*.class' -File |
-        Where-Object { $_.Name -eq 'LicenseRecover.class' -or $_.Name.StartsWith('LicenseRecover$') } |
+$runtimeClasses = @(Get-ChildItem -LiteralPath $outDir -Filter '*.class' -File |
+        Where-Object { $_.Name -eq 'LicenseRecover.class' -or $_.Name.StartsWith('LicenseRecover$') `
+            -or $_.Name -eq 'ExistingLocalRegStrProbe.class' -or $_.Name.StartsWith('ExistingLocalRegStrProbe$') } |
         Sort-Object Name)
 if ($runtimeClasses.Count -eq 0) { throw 'Compiled LicenseRecover runtime classes were not found.' }
 
@@ -107,6 +108,10 @@ Write-Host "Updating LicenseRecover.jar with $($runtimeClasses.Count) compiled C
 foreach ($classFile in $runtimeClasses) {
     & jar uf $cliJar -C $outDir $classFile.Name
     if ($LASTEXITCODE -ne 0) { throw "jar update failed for $($classFile.Name)" }
+}
+$cliEntries = @(& jar tf $cliJar)
+if ($cliEntries -notcontains 'ExistingLocalRegStrProbe.class') {
+    throw 'Patched LicenseRecover.jar is missing ExistingLocalRegStrProbe.class.'
 }
 
 $javapCode = (& javap -classpath $cliJar -c -p LicenseRecover | Out-String)

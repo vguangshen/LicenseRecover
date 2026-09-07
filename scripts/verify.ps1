@@ -182,6 +182,7 @@ Invoke-External -Command 'java' -ArgumentList $runTestArgs
 Write-Host 'Building deterministic runtime overlay...'
 $classPrefixes = @(
     'AppDetector',
+    'ExistingLocalRegStrProbe',
     'AppInfo',
     'BatchTarget',
     'ConfigSafety',
@@ -220,6 +221,9 @@ if ($overlayEntries -notcontains 'LicenseRecoverModernGUIUpdateInstaller.class')
 }
 if ($overlayEntries -notcontains 'SafeNetRemoverCLI.class') {
     throw 'Overlay is missing SafeNetRemoverCLI.class.'
+}
+if ($overlayEntries -notcontains 'ExistingLocalRegStrProbe.class') {
+    throw 'Overlay is missing ExistingLocalRegStrProbe.class.'
 }
 
 Write-Host 'Assembling application-only distribution...'

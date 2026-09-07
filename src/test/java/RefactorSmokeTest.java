@@ -183,17 +183,26 @@ public final class RefactorSmokeTest {
                 "QT100101 startup RegisterMain uses concrete QT100101 id");
         check("QT100101".equals(LicenseRecover.localRegisterProductFor("QT100101", false)),
                 "QT100101 local-registration page uses concrete QT100101 id");
-        check(LicenseRecover.resolveJavaRegStr(qt100101Root.toString(), "QT100101") == null,
-                "QT100101 keeps dynamic RegStr unresolved when config has no regInfo");
+        check("QT100101".equals(LicenseRecover.resolveJavaRegStr(qt100101Root.toString(), "QT100101")),
+                "QT100101 derives the verified minimum RegStr from its real application gate");
         LicenseRecoverModernGUIJavaPlan qt100101Plan =
                 LicenseRecoverModernGUIJavaPlan.inspect(qt100101Root.toFile());
         check(qt100101Plan.generation.contains("QT1001系列")
                         && "QT100101".equals(qt100101Plan.authorizationFamily)
                         && "QT100101".equals(qt100101Plan.runtimeProductId),
                 "Java GUI plan confirms QT100101 family and runtime id");
-        check(qt100101Plan.regStr == null && !qt100101Plan.automaticRecoveryReady
-                        && qt100101Plan.recoveryReadiness.contains("RegStr"),
-                "QT100101 automatic recovery stays blocked until dynamic RegStr is recovered");
+        check("QT100101".equals(qt100101Plan.regStr) && qt100101Plan.automaticRecoveryReady
+                        && qt100101Plan.recoveryReadiness.contains("可安全"),
+                "QT100101 automatic recovery is ready with the sample-verified RegStr");
+
+        check(!ExistingLocalRegStrProbe.isSafeLocalConfig(qt100101Classes.resolve("config.xml").toFile()),
+                "regType=3 is never eligible for local RegStr probing");
+        Path localProbeCfg = base.resolve("existing-local-config.xml");
+        Files.write(localProbeCfg, Arrays.asList(
+                "<ROOT><reg><regType>1</regType><regName>LOCAL-CIPHER-TEXT</regName></reg></ROOT>"),
+                StandardCharsets.UTF_8);
+        check(ExistingLocalRegStrProbe.isSafeLocalConfig(localProbeCfg.toFile()),
+                "only regType=1 with non-empty regName is eligible for offline RegStr probing");
 
         Path genericClassesRoot = base.resolve("java-generic-classes");
         Path genericClassesLib = genericClassesRoot.resolve("WEB-INF/lib");

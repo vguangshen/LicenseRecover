@@ -2,6 +2,22 @@
 
 All notable user-visible and engineering changes are tracked here from the first stable release onward.
 
+## [1.2.9] - 2026-09-07
+
+### Added
+
+- 新增现有本地授权 RegStr 只读恢复：仅当配置明确为 `regType=1` 且存在 `regName` 时，使用应用自己的 `RegisterMain.getRegInfo()` 离线读取原 RegStr。
+- GUI 扫描与 CLI 一键恢复共用同一安全探测器；多个本地配置恢复出的 RegStr 不一致时保持待确认，不猜测。
+
+### Fixed
+
+- 根据 QT100101 实际业务代码确认其授权门槛为 `RegStr.contains(VersionID)`，且真实 VersionID 为 `QT100101`；因此无旧本地授权时也可使用经过样本验证的最小 RegStr `QT100101`，不再长期停留在待确认。
+
+### Safety
+
+- 动态探测绝不对 `regType=3` 调用 `getRegInfo()`，避免进入厂商网络授权分支；探测过程也不会调用 `checkReInfo()`。
+- QT40101 若存在有效旧本地 `regName`，可自动恢复原 RegStr；若没有，仍保持待确认。
+
 ## [1.2.8] - 2026-09-07
 
 ### Fixed
