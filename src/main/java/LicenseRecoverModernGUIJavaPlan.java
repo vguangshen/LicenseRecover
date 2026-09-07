@@ -98,7 +98,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
             else if (upper.startsWith("YX0305")) generation = "YX0305 / classes-config";
             else generation = "通用 / classes-config";
         } else if (dataConfig.isFile()) {
-            generation = upper.matches("DS28\d{2}")
+            generation = upper.matches("DS28\\d{2}")
                     ? "DS28 / data-config" : "YT/兼容根配置 / data-config";
         } else if (relative(root, lib).toLowerCase(Locale.ROOT)
                 .contains("web-inf" + File.separator + "web-inf")) {
@@ -200,7 +200,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
         if (id.startsWith("DS501")) return "DS501";
         if (id.startsWith("YX0305")) return "YX0305";
         if (id.startsWith("XMT01")) return "XMT01";
-        if (id.matches("DS28\d{2}")) return "DS28";
+        if (id.matches("DS28\\d{2}")) return "DS28";
         if (newStyle) return softId.trim();
         if ("YT00128".equals(id) || "YT00127".equals(id) || "YT00129".equals(id)
                 || "YT00139".equals(id) || "YT00132".equals(id) || "YT00141".equals(id)
@@ -215,7 +215,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
         // Real DS501/YX0305 samples use a broader id on the local-registration page,
         // while application startup checks the concrete SoftVersionID.
         if (id.startsWith("DS501") || id.startsWith("YX0305")) return softId.trim();
-        if (id.matches("DS28\d{2}")) return "DS28";
+        if (id.matches("DS28\\d{2}")) return "DS28";
         if (id.startsWith("XMT01")) return "XMT01";
         if ("YT00128".equals(id) || "YT00127".equals(id) || "YT00129".equals(id)
                 || "YT00139".equals(id) || "YT00132".equals(id) || "YT00141".equals(id)
