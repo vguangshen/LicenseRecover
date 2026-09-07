@@ -1,0 +1,31 @@
+name: Apply v1.2.3 DS28 patch
+
+on:
+  push:
+    branches:
+      - refactor/java-batch-fix-v1.2.3
+    paths:
+      - .github/workflows/apply-v1.2.3-ds28.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refactor/java-batch-fix-v1.2.3
+          fetch-depth: 0
+      - name: Apply patch
+        run: python3 scripts/Apply-v1.2.3-DS28-and-batch.py
+      - name: Commit patched sources and remove one-shot files
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f scripts/Apply-v1.2.3-DS28-and-batch.py .github/workflows/apply-v1.2.3-ds28.yml
+          git add src/main/java/LicenseRecover.java src/main/java/LicenseRecoverModernGUIJavaPlan.java src/main/java/LicenseRecoverModernGUI.java
+          git commit -m "v1.2.3：修复 DS28 Java 授权与批量扫描隔离"
+          git push origin HEAD:refactor/java-batch-fix-v1.2.3
