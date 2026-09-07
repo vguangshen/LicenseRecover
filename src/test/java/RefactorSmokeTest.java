@@ -87,12 +87,15 @@ public final class RefactorSmokeTest {
         check(!LicenseRecover.isNewStyleApp(yt129Root.toString()), "YT00129 data config is not misclassified as QT30xxx style");
         check(LicenseRecover.usesRootConfigApp(yt129Root.toString()), "YT00129 uses webapp-root authorization config");
         check("QT04".equals(LicenseRecover.productMainFor("YT00129")), "YT00129 maps to QT04 ProName");
-        check("QT0420".equals(LicenseRecover.resolveJavaRegStr(yt129Root.toString(), "YT00129")), "YT00129 embeds QT0420 authorization product");
+        check(LicenseRecover.resolveJavaRegStr(yt129Root.toString(), "YT00129") == null,
+                "YT00129 inferred QT0420 is not accepted without target-directory evidence");
         LicenseRecoverModernGUIJavaPlan yt129Plan = LicenseRecoverModernGUIJavaPlan.inspect(yt129Root.toFile());
-        check(yt129Plan.detected && "QT04".equals(yt129Plan.productName),
-                "Java GUI plan maps YT00129 to QT04");
-        check("QT0420".equals(yt129Plan.regStr) && yt129Plan.rootConfigStyle,
-                "Java GUI plan exposes YT00129 RegStr and root config target");
+        check(yt129Plan.detected && yt129Plan.productName == null
+                        && yt129Plan.authorizationFamily == null,
+                "Java executable plan does not map YT00129 to QT04 without directory evidence");
+        check(yt129Plan.regStr == null && yt129Plan.rootConfigStyle
+                        && !yt129Plan.automaticRecoveryReady,
+                "YT00129 stays fail-closed instead of exposing inferred QT0420 RegStr");
 
         Path ds2406Root = base.resolve("java-DS2406");
         Path ds2406Lib = ds2406Root.resolve("WEB-INF/lib");
@@ -108,13 +111,13 @@ public final class RefactorSmokeTest {
                 "DS2406 startup RegisterMain uses DS24 family");
         check("DS24".equals(LicenseRecover.localRegisterProductFor("DS2406", false)),
                 "DS2406 local-registration page uses DS24 family");
-        check("DS2406".equals(LicenseRecover.resolveJavaRegStr(ds2406Root.toString(), "DS2406")),
-                "DS2406 RegStr contains the concrete VersionID required by the application gate");
+        check(LicenseRecover.resolveJavaRegStr(ds2406Root.toString(), "DS2406") == null,
+                "DS2406 does not invent RegStr from VersionID");
         LicenseRecoverModernGUIJavaPlan ds2406Plan = LicenseRecoverModernGUIJavaPlan.inspect(ds2406Root.toFile());
         check(ds2406Plan.generation.contains("DS24")
-                        && "DS24".equals(ds2406Plan.authorizationFamily)
-                        && "DS24".equals(ds2406Plan.runtimeProductId),
-                "Java GUI plan models DS2406 as DS24 authorization family");
+                        && ds2406Plan.authorizationFamily == null
+                        && ds2406Plan.runtimeProductId == null,
+                "DS2406 generation label does not become executable identity without directory proof");
         check(!ds2406Plan.automaticRecoveryReady
                         && ds2406Plan.recoveryReadiness.contains("目录"),
                 "DS2406 stays blocked when fixture lacks directory registration-id evidence");
@@ -154,12 +157,15 @@ public final class RefactorSmokeTest {
                 LicenseRecoverModernGUIAutoRecovery.detect(xmtRoot.toFile());
         check("XMT0107".equals(xmtOneClick.versionId), "one-click detector reads XMT0107 classes config");
         check(LicenseRecover.usesRootConfigApp(xmtRoot.toString()), "XMT0107 uses webapp-root authorization config");
-        check("QT0423,QT0428,QT0424,QT0425,QT0427,QT0426,QT0406,QT0430".equals(LicenseRecover.resolveJavaRegStr(xmtRoot.toString(), "XMT0107")), "XMT0107 preserves classes regInfo");
+        check(LicenseRecover.resolveJavaRegStr(xmtRoot.toString(), "XMT0107") == null,
+                "XMT0107 classes RegStr alone is insufficient without directory-proven identity");
         LicenseRecoverModernGUIJavaPlan xmtPlan = LicenseRecoverModernGUIJavaPlan.inspect(xmtRoot.toFile());
-        check(xmtPlan.detected && "XMT01".equals(xmtPlan.productName),
-                "Java GUI plan maps XMT0107 to XMT01");
-        check(xmtPlan.generation.contains("XMT") && xmtPlan.regStrSummary().startsWith("8 项"),
-                "Java GUI plan exposes XMT generation and compact RegStr summary");
+        check(xmtPlan.detected && xmtPlan.productName == null
+                        && xmtPlan.authorizationFamily == null,
+                "Java executable plan does not infer XMT01 family from VersionID");
+        check(xmtPlan.generation.contains("XMT") && xmtPlan.regStrSummary().startsWith("8 项")
+                        && !xmtPlan.automaticRecoveryReady,
+                "XMT directory RegStr may be displayed but execution stays blocked until identity is proven");
 
         Path ds501Root = base.resolve("java-DS50109");
         Path ds501Lib = ds501Root.resolve("WEB-INF/lib");
@@ -173,13 +179,14 @@ public final class RefactorSmokeTest {
                 "DS501 direct rebuild uses concrete runtime check id");
         check("DS501".equals(LicenseRecover.localRegisterProductFor("DS50109", false)),
                 "DS501 local-registration page uses DS501 family");
-        check("DS50109".equals(LicenseRecover.resolveJavaRegStr(ds501Root.toString(), "DS50109")),
-                "DS501 fallback RegStr contains concrete SoftVersionID");
+        check(LicenseRecover.resolveJavaRegStr(ds501Root.toString(), "DS50109") == null,
+                "DS501 does not use concrete SoftVersionID as fallback RegStr");
         LicenseRecoverModernGUIJavaPlan ds501Plan = LicenseRecoverModernGUIJavaPlan.inspect(ds501Root.toFile());
-        check(ds501Plan.generation.contains("DS501") && "DS501".equals(ds501Plan.authorizationFamily),
-                "Java GUI plan names DS501 family instead of generic classes-config");
-        check("DS50109".equals(ds501Plan.runtimeProductId) && "DS50109".equals(ds501Plan.regStr),
-                "Java GUI plan separates DS501 family from runtime id and RegStr");
+        check(ds501Plan.generation.contains("DS501") && ds501Plan.authorizationFamily == null,
+                "DS501 generation label does not imply an executable family");
+        check(ds501Plan.runtimeProductId == null && ds501Plan.regStr == null
+                        && !ds501Plan.automaticRecoveryReady,
+                "DS501 stays fail-closed without directory identity/RegStr evidence");
 
         Path yx305Root = base.resolve("java-YX030506");
         Path yx305Lib = yx305Root.resolve("WEB-INF/lib");
@@ -194,14 +201,15 @@ public final class RefactorSmokeTest {
                 "YX0305 direct rebuild uses concrete runtime check id");
         check("YX0305".equals(LicenseRecover.localRegisterProductFor("YX030506", false)),
                 "YX0305 local-registration page uses YX0305 family");
-        check("QT100101,QT100102".equals(LicenseRecover.resolveJavaRegStr(yx305Root.toString(), "YX030506")),
-                "YX030506 preserves declared classes-config regInfo");
+        check(LicenseRecover.resolveJavaRegStr(yx305Root.toString(), "YX030506") == null,
+                "YX030506 classes RegStr alone cannot authorize execution without identity evidence");
         LicenseRecoverModernGUIJavaPlan yx305Plan = LicenseRecoverModernGUIJavaPlan.inspect(yx305Root.toFile());
-        check(yx305Plan.generation.contains("YX0305") && "YX0305".equals(yx305Plan.authorizationFamily),
-                "Java GUI plan names YX0305 family instead of generic classes-config");
-        check("YX030506".equals(yx305Plan.runtimeProductId)
-                        && "QT100101,QT100102".equals(yx305Plan.regStr),
-                "Java GUI plan separates YX0305 family, runtime id and feature RegStr");
+        check(yx305Plan.generation.contains("YX0305") && yx305Plan.authorizationFamily == null,
+                "YX0305 generation label does not imply executable identity");
+        check(yx305Plan.runtimeProductId == null
+                        && "QT100101,QT100102".equals(yx305Plan.regStr)
+                        && !yx305Plan.automaticRecoveryReady,
+                "YX0305 directory RegStr is retained for diagnostics but execution is blocked without identity proof");
 
         Path qt401Root = base.resolve("java-QT40101");
         Path qt401Lib = qt401Root.resolve("WEB-INF/lib");
@@ -223,17 +231,17 @@ public final class RefactorSmokeTest {
                 "QT40101 direct runtime family maps to QT401");
         check("QT401".equals(LicenseRecover.localRegisterProductFor("QT40101", false)),
                 "QT40101 local family maps to QT401");
-        check("QT40101".equals(LicenseRecover.resolveJavaRegStr(qt401Root.toString(), "QT40101")),
-                "QT40101 uses the exact-sample verified minimum RegStr, not the 44-item fallback");
+        check(LicenseRecover.resolveJavaRegStr(qt401Root.toString(), "QT40101") == null,
+                "QT40101 no longer synthesizes minimum RegStr from a known sample");
         LicenseRecoverModernGUIJavaPlan qt401Plan =
                 LicenseRecoverModernGUIJavaPlan.inspect(qt401Root.toFile());
         check(qt401Plan.generation.contains("QT401")
                         && "QT401".equals(qt401Plan.authorizationFamily)
                         && "QT401".equals(qt401Plan.runtimeProductId),
                 "Java GUI plan confirms QT401 family from config1.xml evidence");
-        check("QT40101".equals(qt401Plan.regStr) && qt401Plan.automaticRecoveryReady
-                        && qt401Plan.recoveryReadiness.contains("可安全"),
-                "QT40101 automatic recovery is ready with the exact-sample verified minimum RegStr");
+        check(qt401Plan.regStr == null && !qt401Plan.automaticRecoveryReady
+                        && qt401Plan.recoveryReadiness.contains("RegStr"),
+                "QT40101 identity may be confirmed by config1.xml but RegStr must still come from the target directory");
 
         Path qt100101Root = base.resolve("java-QT100101");
         Path qt100101Lib = qt100101Root.resolve("WEB-INF/lib");
@@ -251,8 +259,8 @@ public final class RefactorSmokeTest {
                 "QT100101 startup RegisterMain uses concrete QT100101 id");
         check("QT100101".equals(LicenseRecover.localRegisterProductFor("QT100101", false)),
                 "QT100101 local-registration page uses concrete QT100101 id");
-        check("QT100101".equals(LicenseRecover.resolveJavaRegStr(qt100101Root.toString(), "QT100101")),
-                "QT100101 derives the verified minimum RegStr from its real application gate");
+        check(LicenseRecover.resolveJavaRegStr(qt100101Root.toString(), "QT100101") == null,
+                "QT100101 no longer synthesizes minimum RegStr from a known sample");
         LicenseRecoverModernGUIJavaPlan qt100101Plan =
                 LicenseRecoverModernGUIJavaPlan.inspect(qt100101Root.toFile());
         check(qt100101Plan.generation.contains("QT1001系列")

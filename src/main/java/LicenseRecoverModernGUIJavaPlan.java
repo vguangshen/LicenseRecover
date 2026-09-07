@@ -23,14 +23,6 @@ import java.util.regex.Pattern;
 public final class LicenseRecoverModernGUIJavaPlan {
     private static final Pattern XML_ELEMENT_TEMPLATE = Pattern.compile("a");
 
-    // Must stay byte-for-byte equivalent in meaning to LicenseRecover.ALL_NUMS.
-    private static final String FALLBACK_ALL_NUMS =
-            "QT100103,QT100107,QT100105,QT100109,QT100112,QT100108,"
-          + "QT0436,QT0421,QT0420,QT0437,QT0424,QT0438,QT0435,QT0445,QT0441,ZGZF11,"
-          + "PT0212,PT0208,PT0210,QT0454,PT0202,QT0456,PT0301,QT0447,PT0303,"
-          + "YT00124,YT00125,YT00142,YT00143,YT00123,YT00147,YT00148,YT00149,YT00150,"
-          + "YT00128,YT00127,YT00129,YT00139,YT00132,YT00141,BKSM4,YT00126,YT00154,YT001";
-
     public final boolean detected;
     public final File appRoot;
     public final File libDir;
@@ -123,30 +115,30 @@ public final class LicenseRecoverModernGUIJavaPlan {
         }
 
         if (directoryMapping != null) generation = "经典 Java / 应用目录注册映射";
-        String family = directoryMapping != null ? directoryMapping.productMain
-                : (!blank(confirmedClassesFamily)
-                ? confirmedClassesFamily : authorizationFamilyFor(soft, newStyle, classesConfig.isFile()));
-        String runtimeProduct = directoryMapping != null ? directoryMapping.productMain
-                : (!blank(confirmedClassesFamily)
-                ? confirmedClassesFamily : (newStyle && !blank(soft) ? soft.trim() : runtimeProductFor(soft)));
-        File jar = findRegJar(lib);
-        boolean packed = jar != null && isVirboxPackedJar(jar);
-        String products = directoryMapping != null ? directoryMapping.productMainNum
-                : resolveRegStr(root, soft, runtimeProduct, lib);
-
-        // Automatic write-back is allowed only when the selected application's own
-        // directory proves both the registration identity and authorization items.
-        // Legacy compatibility tables may still populate preview labels, but they
-        // are never sufficient to make a target executable.
         String dataSoft = readElement(dataConfig, "SoftVersionID");
         String dataRegInfo = normalizeCsv(readElement(dataConfig, "regInfo"));
         String classesRegInfo = normalizeCsv(readElement(classesConfig, "regInfo"));
+        boolean directDataIdentity = newStyle && !blank(soft) && !blank(dataSoft)
+                && soft.trim().equalsIgnoreCase(dataSoft.trim()) && dataRegInfo != null;
+
+        // No product-family/runtime-id guessing here. The executable plan receives
+        // identity only from target-directory evidence: parsed Global/RegisterUtil,
+        // confirmed classes config, or a self-describing data/config.xml generation.
+        String family = directoryMapping != null ? directoryMapping.productMain
+                : (!blank(confirmedClassesFamily) ? confirmedClassesFamily
+                : (directDataIdentity ? soft.trim() : null));
+        String runtimeProduct = directoryMapping != null ? directoryMapping.productMain
+                : (!blank(confirmedClassesFamily) ? confirmedClassesFamily
+                : (directDataIdentity ? soft.trim() : null));
+        File jar = findRegJar(lib);
+        boolean packed = jar != null && isVirboxPackedJar(jar);
+        String products = directoryMapping != null ? directoryMapping.productMainNum
+                : resolveRegStr(root, runtimeProduct, lib);
+
         String recoveredLocalRegStr = blank(runtimeProduct)
                 ? null : ExistingLocalRegStrProbe.recover(root, lib, runtimeProduct);
         boolean directoryIdentity = directoryMapping != null
-                || (newStyle && !blank(soft) && !blank(dataSoft)
-                    && soft.trim().equalsIgnoreCase(dataSoft.trim()) && dataRegInfo != null)
-                || !blank(confirmedClassesFamily);
+                || directDataIdentity || !blank(confirmedClassesFamily);
         boolean directoryRegStr = directoryMapping != null
                 || dataRegInfo != null || classesRegInfo != null || recoveredLocalRegStr != null;
 
@@ -241,38 +233,13 @@ public final class LicenseRecoverModernGUIJavaPlan {
         return blank(classes) ? null : classes.trim();
     }
 
-    private static String resolveRegStr(File root, String softId, String runtimeProduct, File lib) {
+    private static String resolveRegStr(File root, String runtimeProduct, File lib) {
         String data = normalizeCsv(readElement(new File(root, "data" + File.separator + "config.xml"), "regInfo"));
         if (data != null) return data;
         String classes = normalizeCsv(readElement(new File(root, "WEB-INF" + File.separator
                 + "classes" + File.separator + "config.xml"), "regInfo"));
         if (classes != null) return classes;
-
-        String recovered = ExistingLocalRegStrProbe.recover(root, lib, runtimeProduct);
-        if (recovered != null) return recovered;
-
-        // QT40101 production sample: RegisterListener sets hasRegister/authorizeFlag=true
-        // before consuming RegStr, and no application-side startup gate requires a
-        // ClassPid match. Use the concrete VersionID as the deterministic minimum
-        // non-empty RegStr. Do not generalize this rule to other QT401xx products.
-        if ("QT40101".equalsIgnoreCase(softId)
-                && "QT401".equals(confirmedClassesAuthorizationFamily(root, softId))) {
-            return "QT40101";
-        }
-
-        if ("QT100101".equalsIgnoreCase(softId)
-                && "QT100101".equals(confirmedClassesAuthorizationFamily(root, softId))) {
-            return "QT100101";
-        }
-
-        if ("DS2406".equalsIgnoreCase(softId)) return "DS2406";
-        if (softId != null && softId.toUpperCase(Locale.ROOT).startsWith("DS501")) return softId.trim();
-        if (softId != null && softId.toUpperCase(Locale.ROOT).matches("DS28\\d{2}")) return softId.trim();
-        if ("YT00129".equalsIgnoreCase(softId)) return "QT0420";
-        if (new File(root, "WEB-INF" + File.separator + "classes" + File.separator + "config.xml").isFile())
-            return null;
-        if (LegacyJavaRegistrationMetadata.requiresDirectoryMapping(root, softId)) return null;
-        return FALLBACK_ALL_NUMS;
+        return blank(runtimeProduct) ? null : ExistingLocalRegStrProbe.recover(root, lib, runtimeProduct);
     }
 
     static String confirmedClassesAuthorizationFamily(File root, String softId) {

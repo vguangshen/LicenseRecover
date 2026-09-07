@@ -204,6 +204,13 @@ if ($legacyNetSource.Contains('PRODUCT_NAME = "itmcIEC"')) { throw 'Legacy .NET 
 if (-not $coreSource.Contains('LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect')) { throw 'Java core is not using the fail-closed directory plan.' }
 if (-not $autoSource.Contains('VersionID/default-list fallback is disabled')) { throw '.NET fail-closed guard is missing.' }
 
+$javaPlanSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUIJavaPlan.java') -Raw
+if ($javaPlanSource.Contains('FALLBACK_ALL_NUMS')) { throw 'Java plan still contains catch-all fallback RegStr.' }
+if ($javaPlanSource.Contains('return "QT0420"')) { throw 'Java plan still synthesizes YT00129 RegStr.' }
+if ($javaPlanSource.Contains('return "DS2406"')) { throw 'Java plan still synthesizes DS2406 RegStr.' }
+if ($javaPlanSource.Contains('return "QT40101"')) { throw 'Java plan still synthesizes QT40101 RegStr.' }
+if (-not $javaPlanSource.Contains('No product-family/runtime-id guessing here')) { throw 'Strict Java directory identity marker missing.' }
+
 Write-Host 'Building deterministic runtime overlay...'
 $classPrefixes = @(
     'AppDetector',
