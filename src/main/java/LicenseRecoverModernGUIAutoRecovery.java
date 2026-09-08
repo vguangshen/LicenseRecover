@@ -60,7 +60,9 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (bin != null) {
             File root = "bin".equalsIgnoreCase(bin.getName()) && bin.getParentFile()!=null ? bin.getParentFile() : bin;
             String version = readVersion(root, bin);
-            String product = detectProduct(new File(bin,"ITMC.Web.dll"), version);
+            String configuredProduct = detectConfiguredDotNetProduct(root, bin, version);
+            String product = !blank(configuredProduct)
+                    ? configuredProduct : detectProduct(new File(bin,"ITMC.Web.dll"), version);
             Kind k = new File(bin,"ITMC.Regedit.dll").isFile() ? Kind.DOTNET_MODERN : Kind.DOTNET_LEGACY;
             return new Detection(k,s,root,bin,version,product);
         }
@@ -125,7 +127,11 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             return Result.fail("Target ITMC.Web.dll did not prove a ProName; default product fallback is disabled.", d);
         String regStr = detectDotNetRegStr(d);
         if (blank(regStr))
-            return Result.fail("Target ITMC.Web.dll did not prove RegStr products; VersionID/default-list fallback is disabled.", d);
+            return Result.fail("Target application directory did not prove RegStr products; VersionID/default-list fallback is disabled.", d);
+
+        RegisterVersionEvidence compatibility = readRegisterVersionEvidence(d);
+        if (compatibility != null && compatibility.relationCount > 0)
+            log.accept("[one-click] target RegisterVersion.db compatibility: " + compatibility.summary() + "\n");
 
         List<String> generate = new ArrayList<String>();
         generate.add(helper.getAbsolutePath());
@@ -427,6 +433,266 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     }
     private static String readVersionFile(File f) { try{if(!f.isFile())return null;return match(SOFT_VERSION,readUtf8(f));}catch(Exception e){return null;} }
 
+    /**
+     * Resolve the direct .NET registration ProName from this application's own
+     * Web.config.  The configuration value is executable evidence only when the
+     * same target ITMC.Web.dll also contains that product token and the native
+     * local-registration/check flow.  Folder names and VersionID prefixes are
+     * deliberately not used as proof here.
+     */
+    static String detectConfiguredDotNetProduct(File root, File bin, String version) {
+        if (root == null || bin == null || blank(version)) return null;
+        File webDll = new File(bin, "ITMC.Web.dll");
+        File webConfig = new File(root, "Web.config");
+        String product = readAppSetting(webConfig, "productName");
+        if (blank(product) || !product.matches("(?i)[A-Z0-9][A-Z0-9._-]{1,63}")) return null;
+        if (!targetContainsAll(webDll, product, "RegeditNew", "NewRegistry", "DoRegistry",
+                "ProName", "SoftVersionID", "GetProVersion", "CheckSoftVersionID")) return null;
+        return product.trim();
+    }
+
+    private static String readAppSetting(File webConfig, String wantedKey) {
+        if (webConfig == null || !webConfig.isFile() || blank(wantedKey)) return null;
+        try {
+            String xml = readUtf8(webConfig);
+            Matcher add = Pattern.compile("(?is)<add\\b([^>]*)>").matcher(xml);
+            while (add.find()) {
+                String attrs = add.group(1);
+                String key = xmlAttribute(attrs, "key");
+                if (!wantedKey.equalsIgnoreCase(key)) continue;
+                String value = xmlAttribute(attrs, "value");
+                return blank(value) ? null : unxml(value.trim());
+            }
+        } catch (Throwable ignore) { }
+        return null;
+    }
+
+    private static String xmlAttribute(String attrs, String name) {
+        if (attrs == null || name == null) return null;
+        Matcher m = Pattern.compile("(?is)\\b" + Pattern.quote(name)
+                + "\\s*=\\s*([\\\"'])(.*?)\\1").matcher(attrs);
+        return m.find() ? m.group(2) : null;
+    }
+
+    /**
+     * Direct local-registration identity used by Regester.Page_Load/Button1_Click:
+     * configured ProName + current config.xml SoftVersionID.  This is kept separate
+     * from RegisterVersion.db, whose parent product/version rows are compatibility
+     * aliases consumed by GetProVersion()/CheckReg rather than the direct page identity.
+     */
+    static String detectDirectDotNetRegStr(Detection d) {
+        if (d == null || d.appRoot == null || d.runtimeDir == null
+                || blank(d.productName) || blank(d.versionId)) return null;
+        String configured = detectConfiguredDotNetProduct(d.appRoot, d.runtimeDir, d.versionId);
+        if (blank(configured) || !configured.equalsIgnoreCase(d.productName.trim())) return null;
+        String current = readVersion(d.appRoot, d.runtimeDir);
+        if (blank(current) || !current.trim().equalsIgnoreCase(d.versionId.trim())) return null;
+        String token = d.versionId.trim();
+        return token.matches("(?i)[A-Z0-9][A-Z0-9._-]{1,63}") ? token.toUpperCase(Locale.ROOT) : null;
+    }
+
+    static final class RegisterVersionEvidence {
+        final String versionId;
+        final LinkedHashMap<String, List<String>> compatibility;
+        final int relationCount;
+
+        RegisterVersionEvidence(String versionId, LinkedHashMap<String, LinkedHashSet<String>> rows) {
+            this.versionId = versionId;
+            this.compatibility = new LinkedHashMap<String, List<String>>();
+            int count = 0;
+            for (Map.Entry<String, LinkedHashSet<String>> e : rows.entrySet()) {
+                ArrayList<String> values = new ArrayList<String>(e.getValue());
+                this.compatibility.put(e.getKey(), Collections.unmodifiableList(values));
+                count += values.size();
+            }
+            this.relationCount = count;
+        }
+
+        String summary() {
+            StringBuilder b = new StringBuilder();
+            for (Map.Entry<String, List<String>> e : compatibility.entrySet()) {
+                if (b.length() > 0) b.append("; ");
+                b.append(e.getKey()).append(" -> ");
+                for (int i = 0; i < e.getValue().size(); i++) {
+                    if (i > 0) b.append(',');
+                    b.append(e.getValue().get(i));
+                }
+            }
+            return b.toString();
+        }
+    }
+
+    private static final class EncryptedRegisterVersionRow {
+        final String versionId, parentProductId, parentVersionId;
+        EncryptedRegisterVersionRow(String v, String p, String pv) {
+            versionId = v; parentProductId = p; parentVersionId = pv;
+        }
+    }
+
+    /**
+     * Parse target RegisterVersion.db read-only.  The TripleDES key is never fixed in
+     * LicenseRecover: 24-byte candidates are collected from this target ITMC.Web.dll
+     * and accepted only when exactly one candidate decrypts rows whose versionID is
+     * the current target SoftVersionID and whose parent fields are valid product tokens.
+     */
+    static RegisterVersionEvidence readRegisterVersionEvidence(Detection d) {
+        if (d == null || d.appRoot == null || d.runtimeDir == null || blank(d.versionId)) return null;
+        File db = new File(d.appRoot, "RegisterVersion.db");
+        File webDll = new File(d.runtimeDir, "ITMC.Web.dll");
+        if (!db.isFile() || !webDll.isFile()) return null;
+        if (!targetContainsAll(webDll, "Encrypt3Des", "Decrypt3Des", "GetRegisterVersionList",
+                "GetProVersion", "CheckSoftVersionID")) return null;
+        try {
+            List<EncryptedRegisterVersionRow> encryptedRows = scanRegisterVersionRows(
+                    Files.readAllBytes(db.toPath()));
+            if (encryptedRows.isEmpty()) return null;
+
+            LinkedHashSet<String> keyCandidates = new LinkedHashSet<String>();
+            for (String text : extractUtf16Ascii(webDll)) {
+                if (text == null || text.length() != 24) continue;
+                byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+                if (bytes.length != 24) continue;
+                boolean printable = true;
+                for (byte value : bytes) {
+                    int c = value & 255;
+                    if (c < 32 || c > 126) { printable = false; break; }
+                }
+                if (printable) keyCandidates.add(text);
+            }
+
+            RegisterVersionEvidence winner = null;
+            int winnerCount = 0;
+            for (String key : keyCandidates) {
+                LinkedHashMap<String, LinkedHashSet<String>> matches =
+                        new LinkedHashMap<String, LinkedHashSet<String>>();
+                for (EncryptedRegisterVersionRow row : encryptedRows) {
+                    String version = decryptRegisterVersionToken(row.versionId, key);
+                    if (version == null || !version.equalsIgnoreCase(d.versionId.trim())) continue;
+                    String parentProduct = decryptRegisterVersionToken(row.parentProductId, key);
+                    String parentVersion = decryptRegisterVersionToken(row.parentVersionId, key);
+                    if (!validRegistrationToken(parentProduct) || !validRegistrationToken(parentVersion)) continue;
+                    LinkedHashSet<String> versions = matches.get(parentProduct);
+                    if (versions == null) {
+                        versions = new LinkedHashSet<String>();
+                        matches.put(parentProduct, versions);
+                    }
+                    versions.add(parentVersion);
+                }
+                if (!matches.isEmpty()) {
+                    winner = new RegisterVersionEvidence(d.versionId.trim(), matches);
+                    winnerCount++;
+                    if (winnerCount > 1) return null; // ambiguous target-owned key evidence
+                }
+            }
+            return winnerCount == 1 ? winner : null;
+        } catch (Throwable ignore) {
+            return null;
+        }
+    }
+
+    private static boolean validRegistrationToken(String value) {
+        return value != null && value.matches("(?i)[A-Z0-9][A-Z0-9._-]{1,63}");
+    }
+
+    private static String decryptRegisterVersionToken(String encrypted, String key) {
+        try {
+            if (blank(encrypted) || key == null || key.getBytes(StandardCharsets.UTF_8).length != 24) return null;
+            Cipher cipher = Cipher.getInstance("DESede/ECB/PKCS5Padding");
+            cipher.init(Cipher.DECRYPT_MODE,
+                    new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "DESede"));
+            byte[] plain = cipher.doFinal(Base64.getDecoder().decode(encrypted.trim()));
+            String value = new String(plain, StandardCharsets.UTF_8).trim();
+            return validRegistrationToken(value) ? value : null;
+        } catch (Throwable ignore) {
+            return null;
+        }
+    }
+
+    /**
+     * LiteDB stores these relation documents as BSON-style string fields.  We scan
+     * only the three named fields and require their BSON string type/length framing;
+     * crypto + current VersionID validation below prevents unrelated byte matches
+     * from becoming executable evidence.
+     */
+    private static List<EncryptedRegisterVersionRow> scanRegisterVersionRows(byte[] data) {
+        ArrayList<EncryptedRegisterVersionRow> out = new ArrayList<EncryptedRegisterVersionRow>();
+        if (data == null || data.length < 32) return out;
+        byte[] versionField = "versionID\0".getBytes(StandardCharsets.US_ASCII);
+        byte[] productField = "parentProID\0".getBytes(StandardCharsets.US_ASCII);
+        byte[] parentVersionField = "parentVersionID\0".getBytes(StandardCharsets.US_ASCII);
+        HashSet<String> seen = new HashSet<String>();
+        int from = 0;
+        while (from < data.length) {
+            int versionPos = indexOfBytes(data, versionField, from, data.length);
+            if (versionPos < 0) break;
+            int nextVersion = indexOfBytes(data, versionField, versionPos + versionField.length, data.length);
+            int limit = Math.min(data.length, versionPos + 768);
+            if (nextVersion >= 0) limit = Math.min(limit, nextVersion);
+            String version = readBsonStringField(data, versionPos, versionField.length, limit);
+            int productPos = indexOfBytes(data, productField, versionPos + versionField.length, limit);
+            int parentVersionPos = indexOfBytes(data, parentVersionField,
+                    productPos < 0 ? versionPos + versionField.length : productPos + productField.length, limit);
+            String product = productPos < 0 ? null
+                    : readBsonStringField(data, productPos, productField.length, limit);
+            String parentVersion = parentVersionPos < 0 ? null
+                    : readBsonStringField(data, parentVersionPos, parentVersionField.length, limit);
+            if (!blank(version) && !blank(product) && !blank(parentVersion)) {
+                String identity = version + "\u0000" + product + "\u0000" + parentVersion;
+                if (seen.add(identity)) out.add(new EncryptedRegisterVersionRow(version, product, parentVersion));
+            }
+            from = versionPos + versionField.length;
+        }
+        return out;
+    }
+
+    private static String readBsonStringField(byte[] data, int namePos, int nameLength, int limit) {
+        try {
+            if (namePos <= 0 || (data[namePos - 1] & 255) != 0x02) return null;
+            int lengthPos = namePos + nameLength;
+            if (lengthPos + 4 > limit) return null;
+            int length = le32(data, lengthPos);
+            if (length < 2 || length > 1024) return null;
+            int valuePos = lengthPos + 4;
+            if (valuePos + length > limit || data[valuePos + length - 1] != 0) return null;
+            return new String(data, valuePos, length - 1, StandardCharsets.UTF_8).trim();
+        } catch (Throwable ignore) {
+            return null;
+        }
+    }
+
+    private static int le32(byte[] data, int offset) {
+        if (offset < 0 || offset + 4 > data.length) return -1;
+        return (data[offset] & 255) | ((data[offset + 1] & 255) << 8)
+                | ((data[offset + 2] & 255) << 16) | ((data[offset + 3] & 255) << 24);
+    }
+
+    private static int indexOfBytes(byte[] data, byte[] needle, int start, int limit) {
+        if (data == null || needle == null || needle.length == 0) return -1;
+        int last = Math.min(data.length, limit) - needle.length;
+        outer: for (int i = Math.max(0, start); i <= last; i++) {
+            for (int j = 0; j < needle.length; j++) if (data[i + j] != needle[j]) continue outer;
+            return i;
+        }
+        return -1;
+    }
+
+    private static boolean targetContainsAll(File file, String... tokens) {
+        if (file == null || !file.isFile() || tokens == null) return false;
+        try {
+            byte[] data = Files.readAllBytes(file.toPath());
+            for (String token : tokens) {
+                if (blank(token)) return false;
+                byte[] ascii = token.getBytes(StandardCharsets.US_ASCII);
+                byte[] utf16 = token.getBytes(StandardCharsets.UTF_16LE);
+                if (indexOfBytes(data, ascii, 0, data.length) < 0
+                        && indexOfBytes(data, utf16, 0, data.length) < 0) return false;
+            }
+            return true;
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
     static String detectProduct(File webDll,String version) {
         Set<String> s=extractUtf16Ascii(webDll);
         if(s.contains("itmcIEC"))return "itmcIEC";
@@ -469,6 +735,8 @@ public final class LicenseRecoverModernGUIAutoRecovery {
      */
     static String detectDotNetRegStr(Detection d) {
         if (d == null || blank(d.productName) || d.runtimeDir == null) return null;
+        String direct = detectDirectDotNetRegStr(d);
+        if (!blank(direct)) return direct;
         String local = recoverDotNetLocalRegStr(d.appRoot, d.runtimeDir, d.productName);
         if (!blank(local)) return local;
         return detectProductList(new File(d.runtimeDir, "ITMC.Web.dll"), d.productName);

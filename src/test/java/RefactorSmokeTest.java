@@ -1,10 +1,14 @@
+import javax.crypto.Cipher;
+import javax.crypto.spec.SecretKeySpec;
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -513,28 +517,57 @@ public final class RefactorSmokeTest {
         Path yx0102Root = base.resolve("dotnet-YX0102");
         Path yx0102Bin = yx0102Root.resolve("bin");
         Files.createDirectories(yx0102Bin);
-        writeUtf16Fixture(yx0102Bin.resolve("ITMC.Web.dll"), "YX0102", "ProName", "RegStr");
+        String yx0102DbKey = "ABCDEFGHijklmnop12345678";
+        writeUtf16Fixture(yx0102Bin.resolve("ITMC.Web.dll"),
+                "YS01", "RegeditNew", "NewRegistry", "DoRegistry", "ProName", "SoftVersionID",
+                "GetProVersion", "CheckSoftVersionID", "Encrypt3Des", "Decrypt3Des",
+                "GetRegisterVersionList", yx0102DbKey);
         Files.write(yx0102Bin.resolve("ITMC.Regedit.dll"), new byte[]{1});
-        String yx0102Plain = "877842{\"RegStr\":\"YX0102\",\"RegID\":\"F000606A59904719\",\"UserID\":\"fwq\",\"ProName\":\"YX0102\"}708027";
-        String yx0102Cipher = LicenseRecoverModernGUIAutoRecovery.desEncryptHex(
-                yx0102Plain, "*ITMCYX0102OK*");
+        Files.write(yx0102Root.resolve("Web.config"), Arrays.asList(
+                "<configuration><appSettings><add key=\"productName\" value=\"YS01\" />",
+                "</appSettings></configuration>"), StandardCharsets.UTF_8);
         Files.write(yx0102Root.resolve("config.xml"), Arrays.asList(
-                "<ROOT><reg><regType>1</regType><regName>" + yx0102Cipher + "</regName></reg>",
+                "<ROOT><reg><regType>3</regType></reg>",
                 "<SystemSoft><SoftVersionID>YX0102</SoftVersionID></SystemSoft></ROOT>"),
                 StandardCharsets.UTF_8);
+        writeRegisterVersionFixture(yx0102Root.resolve("RegisterVersion.db"), yx0102DbKey,
+                "YX0102", "qt1001", "QT100106", "QT100110");
+
         LicenseRecoverModernGUIAutoRecovery.Detection yx0102Detection =
                 LicenseRecoverModernGUIAutoRecovery.detect(yx0102Root.toFile());
-        check("YX0102".equals(yx0102Detection.productName)
-                        && "YX0102".equals(LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(yx0102Detection)),
-                "YX0102 recovers RegStr from target-local regName only after ProName-key verification");
-        LicenseRecoverModernGUIAutoRecovery.Detection yx0102WrongProduct =
-                new LicenseRecoverModernGUIAutoRecovery.Detection(
-                        LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN,
-                        yx0102Root.toFile(), yx0102Root.toFile(), yx0102Bin.toFile(),
-                        "YX0102", "YX0103");
-        String yx0102WrongRegStr = LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(yx0102WrongProduct);
-        check(yx0102WrongRegStr == null || yx0102WrongRegStr.trim().isEmpty(),
-                "target-local .NET regName is rejected when its cryptographic ProName does not match");
+        check("YS01".equals(yx0102Detection.productName),
+                "YX0102 direct ProName comes from target Web.config and is proven by target ITMC.Web.dll");
+        check("YX0102".equals(LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(yx0102Detection)),
+                "YX0102 direct RegStr is current target SoftVersionID, matching the native registration-page flow");
+        LicenseRecoverModernGUIAutoRecovery.RegisterVersionEvidence yx0102Compatibility =
+                LicenseRecoverModernGUIAutoRecovery.readRegisterVersionEvidence(yx0102Detection);
+        check(yx0102Compatibility != null
+                        && yx0102Compatibility.compatibility.containsKey("qt1001")
+                        && yx0102Compatibility.compatibility.get("qt1001").equals(
+                                Arrays.asList("QT100106", "QT100110")),
+                "YX0102 RegisterVersion.db compatibility rows are decrypted with a key extracted from target DLL");
+
+        Files.write(yx0102Root.resolve("Web.config"), Arrays.asList(
+                "<configuration><appSettings><add key=\"productName\" value=\"BAD01\" />",
+                "</appSettings></configuration>"), StandardCharsets.UTF_8);
+        check(LicenseRecoverModernGUIAutoRecovery.detectConfiguredDotNetProduct(
+                        yx0102Root.toFile(), yx0102Bin.toFile(), "YX0102") == null,
+                "configured .NET ProName is rejected when target DLL does not contain the same identity");
+        Files.write(yx0102Root.resolve("Web.config"), Arrays.asList(
+                "<configuration><appSettings><add key=\"productName\" value=\"YS01\" />",
+                "</appSettings></configuration>"), StandardCharsets.UTF_8);
+
+        writeUtf16Fixture(yx0102Bin.resolve("ITMC.Web.dll"),
+                "YS01", "RegeditNew", "NewRegistry", "DoRegistry", "ProName", "SoftVersionID",
+                "GetProVersion", "CheckSoftVersionID", "Encrypt3Des", "Decrypt3Des",
+                "GetRegisterVersionList");
+        LicenseRecoverModernGUIAutoRecovery.Detection yx0102NoKeyDetection =
+                LicenseRecoverModernGUIAutoRecovery.detect(yx0102Root.toFile());
+        check("YS01".equals(yx0102NoKeyDetection.productName)
+                        && "YX0102".equals(LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(yx0102NoKeyDetection)),
+                "direct YS01/YX0102 native identity does not depend on compatibility database aliases");
+        check(LicenseRecoverModernGUIAutoRecovery.readRegisterVersionEvidence(yx0102NoKeyDetection) == null,
+                "RegisterVersion.db compatibility evidence fails closed when its key is not proven by target DLL");
 
         Path yx302CrossFixture = base.resolve("YX030107-Web.dll");
         writeUtf16Fixture(yx302CrossFixture, "YX030107", "YX0302", "YX030201", "YX030204", "YX030219");
@@ -718,6 +751,45 @@ public final class RefactorSmokeTest {
                 "updater blocks zip-slip entries");
 
         System.out.println("ALL REFACTOR SMOKE TESTS PASSED");
+    }
+
+    private static void writeRegisterVersionFixture(Path path, String key, String version,
+                                                    String parentProduct, String... parentVersions)
+            throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        for (String parentVersion : parentVersions) {
+            writeBsonString(out, "versionID", tripleDesEncrypt(version, key));
+            writeBsonString(out, "parentProID", tripleDesEncrypt(parentProduct, key));
+            writeBsonString(out, "parentVersionID", tripleDesEncrypt(parentVersion, key));
+            out.write(0);
+        }
+        Files.write(path, out.toByteArray());
+    }
+
+    private static String tripleDesEncrypt(String value, String key) throws Exception {
+        Cipher cipher = Cipher.getInstance("DESede/ECB/PKCS5Padding");
+        cipher.init(Cipher.ENCRYPT_MODE,
+                new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "DESede"));
+        return Base64.getEncoder().encodeToString(
+                cipher.doFinal(value.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private static void writeBsonString(ByteArrayOutputStream out, String name, String value)
+            throws IOException {
+        out.write(0x02);
+        out.write(name.getBytes(StandardCharsets.US_ASCII));
+        out.write(0);
+        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
+        writeLe32(out, bytes.length + 1);
+        out.write(bytes);
+        out.write(0);
+    }
+
+    private static void writeLe32(ByteArrayOutputStream out, int value) {
+        out.write(value & 255);
+        out.write((value >>> 8) & 255);
+        out.write((value >>> 16) & 255);
+        out.write((value >>> 24) & 255);
     }
 
     private static void writeUtf16Fixture(Path path, String... values) throws IOException {
