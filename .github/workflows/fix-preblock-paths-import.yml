@@ -1,0 +1,26 @@
+name: Fix pre-block Paths import
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'scripts/fix-preblock-paths-import.py'
+      - '.github/workflows/fix-preblock-paths-import.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - run: python scripts/fix-preblock-paths-import.py
+      - run: git diff --check
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/test/java/RefactorSmokeTest.java
+          git commit -m 'test: 补齐pre-block回归Paths导入'
+          git push origin HEAD:main
