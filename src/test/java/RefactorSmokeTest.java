@@ -588,9 +588,9 @@ public final class RefactorSmokeTest {
         String autoRecoverySource = new String(Files.readAllBytes(
                 Paths.get("src/main/java/LicenseRecoverModernGUIAutoRecovery.java")), StandardCharsets.UTF_8);
         int preBlockAt = autoRecoverySource.indexOf("installTemporaryDotNetNetworkGuard(helper, log)");
-        int generateAt = autoRecoverySource.indexOf("generate.add(\\\"gencode\\\")");
-        int applyAt = autoRecoverySource.indexOf("apply.add(\\\"doreg\\\")");
-        int verifyAt = autoRecoverySource.indexOf("verify.add(\\\"verify\\\")");
+        int generateAt = autoRecoverySource.indexOf("generate.add(\"gencode\")");
+        int applyAt = autoRecoverySource.indexOf("apply.add(\"doreg\")");
+        int verifyAt = autoRecoverySource.indexOf("verify.add(\"verify\")");
         check(preBlockAt >= 0 && generateAt > preBlockAt && applyAt > generateAt && verifyAt > applyAt,
                 ".NET pre-block guard is established before gencode, DoRegistry and CheckReInfo in source order");
         check(autoRecoverySource.contains("action=block")
