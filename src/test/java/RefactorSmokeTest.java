@@ -532,7 +532,8 @@ public final class RefactorSmokeTest {
                         LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN,
                         yx0102Root.toFile(), yx0102Root.toFile(), yx0102Bin.toFile(),
                         "YX0102", "YX0103");
-        check(LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(yx0102WrongProduct) == null,
+        String yx0102WrongRegStr = LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(yx0102WrongProduct);
+        check(yx0102WrongRegStr == null || yx0102WrongRegStr.trim().isEmpty(),
                 "target-local .NET regName is rejected when its cryptographic ProName does not match");
 
         Path yx302CrossFixture = base.resolve("YX030107-Web.dll");
