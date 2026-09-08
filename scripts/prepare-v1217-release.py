@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+from pathlib import Path
+
+root = Path(__file__).resolve().parents[1]
+version = root / 'VERSION.txt'
+readme = root / 'README.md'
+notes = root / 'release-notes' / 'v1.2.17.md'
+
+if version.read_text(encoding='utf-8').strip() != '1.2.16':
+    raise SystemExit('VERSION.txt is not 1.2.16')
+version.write_text('1.2.17\n', encoding='utf-8')
+
+text = readme.read_text(encoding='utf-8')
+old = '当前稳定版本：**v1.2.16**'
+new = '当前稳定版本：**v1.2.17**'
+if old not in text:
+    raise SystemExit('README stable-version marker not found')
+readme.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+notes.write_text('''# LicenseRecover v1.2.17
+
+本版补全 DS3110 所属的一类经典 Java 直连注册结构，继续坚持“只接受目标软件目录证据、无证据则 fail-closed”的原则。
+
+- 新增 `Global.PRODUCT_NUM -> RegisterMain` 直连注册链识别，不要求目标必须使用 `registerProductBeans` 分派表。
+- 只有目标自己的 `IXmlUtil.class` 同时证明 `VersionID -> SYS_PRODUCT_NUM`，且 `SysParamInit.class` 证明 `Global.PRODUCT_NUM -> RegisterMain` 与 `RegStr.contains(SYS_PRODUCT_NUM)` 时，才允许生成可执行注册身份。
+- DS3110 由其自身目录解析为：授权族 `DS31`、运行校验 ID `DS31`、RegStr `DS3110`；这些值均不是 LicenseRecover 内置兜底。
+- 与 SoftVersionID 无关的其它产品字符串（例如同目录其它授权/API配置中的编号）不会被当作当前应用 ProductID。
+- 增加负向回归：仅在 `Global.class` 中发现 `PRODUCT_NUM`/产品字符串不足以解锁自动恢复，缺失完整数据流证据时仍保持 BLOCKED。
+
+> 本版不改变 v1.2.16 的批量扫描进度、.NET 原生注册闭环以及其它 Java/.NET fail-closed 规则。
+''', encoding='utf-8')
+print('prepared v1.2.17 metadata')
