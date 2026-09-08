@@ -1,0 +1,33 @@
+name: Prepare v1.2.15 release
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - run: python3 scripts/prepare-v1215-release.py
+      - shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          grep -q '^1.2.15$' VERSION.txt
+          grep -q '当前稳定版本：\*\*v1.2.15\*\*' README.md
+          test -f release-notes/v1.2.15.md
+      - shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add VERSION.txt README.md release-notes/v1.2.15.md
+          git commit -m 'release: prepare LicenseRecover v1.2.15'
+          git push origin HEAD:main
