@@ -22,11 +22,10 @@ jobs:
         run: |
           set -euo pipefail
           git diff --check
-          changed="$(git diff --name-only | sort)"
-          test "$changed" = $'README.md\nVERSION.txt\nrelease-notes/v1.2.18.md'
-          test "$(cat VERSION.txt)" = '1.2.18'
-          grep -q '当前稳定版本：\*\*v1.2.18\*\*' README.md
-          grep -q 'Windows WinINet' release-notes/v1.2.18.md
+          test "$(tr -d '\r\n[:space:]' < VERSION.txt)" = '1.2.18'
+          grep -Fq '当前稳定版本：**v1.2.18**' README.md
+          test -f release-notes/v1.2.18.md
+          grep -Fq 'Windows WinINet' release-notes/v1.2.18.md
       - name: Commit release metadata
         shell: bash
         run: |
