@@ -1,0 +1,35 @@
+name: Fix updater List ambiguity
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Fix updater compile ambiguity
+        run: python3 scripts/fix-updater-list-ambiguity.py
+      - name: Validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(git diff --name-only)" = 'src/main/java/LicenseRecoverModernGUILauncher.java'
+          grep -q 'java.util.List<NetworkRoute>' src/main/java/LicenseRecoverModernGUILauncher.java
+      - name: Commit to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main/java/LicenseRecoverModernGUILauncher.java
+          git commit -m 'fix: 修复更新器List类型编译冲突'
+          git push origin HEAD:main
