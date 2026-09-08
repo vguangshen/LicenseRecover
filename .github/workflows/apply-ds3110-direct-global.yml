@@ -1,0 +1,38 @@
+name: Apply DS3110 direct Global registration flow
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Apply DS3110 patch
+        run: python3 scripts/apply-ds3110-direct-global.py
+      - name: Validate patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          changed="$(git diff --name-only | sort)"
+          test "$changed" = $'src/main/java/LegacyJavaRegistrationMetadata.java\nsrc/test/java/RefactorSmokeTest.java'
+          grep -q 'Global.PRODUCT_NUM + VersionID registration flow' src/main/java/LegacyJavaRegistrationMetadata.java
+          grep -q 'DS3110 direct Global.PRODUCT_NUM flow resolves DS31 / DS3110' src/test/java/RefactorSmokeTest.java
+          grep -q 'Global PRODUCT_NUM string alone is not sufficient' src/test/java/RefactorSmokeTest.java
+      - name: Commit to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main/java/LegacyJavaRegistrationMetadata.java src/test/java/RefactorSmokeTest.java
+          git commit -m 'fix: 从目标目录识别DS31直连注册链'
+          git push origin HEAD:main
