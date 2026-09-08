@@ -8,3 +8,4 @@ if old not in text:
     raise SystemExit('directoryIdentity anchor not found')
 p.write_text(text.replace(old, new, 1), encoding='utf-8')
 print('config-driven runtime now participates in directory identity')
+# one-time workflow trigger
