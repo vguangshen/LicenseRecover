@@ -146,6 +146,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
         boolean packed = jar != null && isVirboxPackedJar(jar);
         String configDrivenPrimaryRegStr = confirmedConfigDrivenPrimaryRegStr(
                 root, soft, family, configDrivenRuntime);
+        String dataDrivenPrimaryRegStr = confirmedDataDrivenPrimaryRegStr(
+                root, soft, family, runtimeProduct);
         String recoveredLocalRegStr = null;
         String products;
         if (directoryMapping != null) {
@@ -156,6 +158,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
             products = classesRegInfo;
         } else if (!blank(configDrivenPrimaryRegStr)) {
             products = configDrivenPrimaryRegStr;
+        } else if (!blank(dataDrivenPrimaryRegStr)) {
+            products = dataDrivenPrimaryRegStr;
         } else {
             recoveredLocalRegStr = blank(runtimeProduct)
                     ? null : ExistingLocalRegStrProbe.recover(root, lib, runtimeProduct);
@@ -168,7 +172,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 || directDataIdentity || !blank(confirmedClassesFamily) || binaryIdentity;
         boolean directoryRegStr = directoryMapping != null
                 || dataRegInfo != null || classesRegInfo != null
-                || !blank(configDrivenPrimaryRegStr) || recoveredLocalRegStr != null;
+                || !blank(configDrivenPrimaryRegStr) || !blank(dataDrivenPrimaryRegStr)
+                || recoveredLocalRegStr != null;
         // A missing static regInfo is not itself a reason to guess. If the target ships
         // ITMCReg and its product identity is already proven by directory evidence, the
         // CLI can ask that exact target RegisterMain.getRegInfo() for RegStr before any write.
@@ -431,6 +436,45 @@ public final class LicenseRecoverModernGUIJavaPlan {
         if (!classFileContainsAll(listener, "com/itmc/register/utils/SystemInfo", "registerId",
                 "itmc/regedit/RegisterMain", "getRegStr",
                 "com/itmc/register/utils/RegisterContant", "versionID", "contains")) return null;
+        return concrete;
+    }
+
+    /**
+     * Confirm a legacy data-config generation whose own startup code maps
+     * systemConfig.yml VersionID -> IStatic._SYS_CODE and then requires the
+     * primary RegisterMain RegStr to contain that code.  The family/runtime
+     * identity must also be proved by this target's IGlobal/local-register/startup
+     * classes.  No VersionID naming rule is executable evidence by itself.
+     */
+    static String confirmedDataDrivenPrimaryRegStr(File root, String softId,
+                                                    String confirmedFamily,
+                                                    String confirmedRuntimeProduct) {
+        if (root == null || blank(softId) || blank(confirmedFamily)
+                || blank(confirmedRuntimeProduct)) return null;
+        String concrete = softId.trim();
+        String family = confirmedFamily.trim();
+        String runtime = confirmedRuntimeProduct.trim();
+        if (!family.equalsIgnoreCase(runtime)) return null;
+        if (!concrete.toUpperCase(Locale.ROOT).startsWith(family.toUpperCase(Locale.ROOT))) return null;
+
+        String ymlVersion = readSystemConfigVersionId(root);
+        if (blank(ymlVersion) || !concrete.equalsIgnoreCase(ymlVersion.trim())) return null;
+        File dataConfig = new File(root, "data" + File.separator + "config.xml");
+        String configured = readElement(dataConfig, "SoftVersionID");
+        if (blank(configured) || !concrete.equalsIgnoreCase(configured.trim())) return null;
+
+        File classes = new File(root, "WEB-INF" + File.separator + "classes");
+        File xmlUtil = new File(classes, "util" + File.separator + "IXmlUtil.class");
+        File iGlobal = new File(classes, "global" + File.separator + "IGlobal.class");
+        File listener = new File(classes, "listener" + File.separator + "SystemSetListener.class");
+        File softReg = new File(classes, "action" + File.separator + "SoftRegAction.class");
+
+        if (!classFileContainsAll(xmlUtil, "systemConfig.yml", "global.system.VersionID",
+                "/data/config.xml", "global/IStatic", "_SYS_CODE")) return null;
+        if (!classFileContainsAll(iGlobal, "SYS_PRODUCT_CODE", family)) return null;
+        if (!classFileContainsAll(softReg, family, "itmc/regedit/RegisterMain", "doRegistry")) return null;
+        if (!classFileContainsAll(listener, family, "itmc/regedit/RegisterMain",
+                "checkReInfo", "getRegInfo", "regStr", "global/IStatic", "_SYS_CODE", "contains")) return null;
         return concrete;
     }
 

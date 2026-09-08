@@ -160,6 +160,38 @@ public final class RefactorSmokeTest {
                         && ds2406Plan.regStrSummary().contains("动态"),
                 "DS2406 accepts target-binary family evidence and defers RegStr to target component");
 
+        Path ds2406XmlUtil = ds2406Root.resolve("WEB-INF/classes/util/IXmlUtil.class");
+        Path ds2406IGlobal = ds2406Root.resolve("WEB-INF/classes/global/IGlobal.class");
+        Path ds2406Listener = ds2406Root.resolve("WEB-INF/classes/listener/SystemSetListener.class");
+        Path ds2406SoftReg = ds2406Root.resolve("WEB-INF/classes/action/SoftRegAction.class");
+        Files.createDirectories(ds2406XmlUtil.getParent());
+        Files.createDirectories(ds2406IGlobal.getParent());
+        Files.createDirectories(ds2406Listener.getParent());
+        Files.createDirectories(ds2406SoftReg.getParent());
+        Files.write(ds2406XmlUtil,
+                "systemConfig.yml global.system.VersionID /data/config.xml global/IStatic _SYS_CODE"
+                        .getBytes(StandardCharsets.ISO_8859_1));
+        Files.write(ds2406IGlobal,
+                "SYS_PRODUCT_CODE DS24".getBytes(StandardCharsets.ISO_8859_1));
+        Files.write(ds2406SoftReg,
+                "DS24 itmc/regedit/RegisterMain doRegistry".getBytes(StandardCharsets.ISO_8859_1));
+        Files.write(ds2406Listener,
+                "DS24 itmc/regedit/RegisterMain checkReInfo getRegInfo regStr global/IStatic _SYS_CODE"
+                        .getBytes(StandardCharsets.ISO_8859_1));
+        ds2406Plan = LicenseRecoverModernGUIJavaPlan.inspect(ds2406Root.toFile());
+        check(ds2406Plan.regStr == null && ds2406Plan.regStrSummary().contains("动态"),
+                "DS2406 incomplete startup membership evidence still defers RegStr dynamically");
+        Files.write(ds2406Listener,
+                "DS24 itmc/regedit/RegisterMain checkReInfo getRegInfo regStr global/IStatic _SYS_CODE contains"
+                        .getBytes(StandardCharsets.ISO_8859_1));
+        ds2406Plan = LicenseRecoverModernGUIJavaPlan.inspect(ds2406Root.toFile());
+        check("DS24".equals(ds2406Plan.authorizationFamily)
+                        && "DS24".equals(ds2406Plan.runtimeProductId)
+                        && "DS2406".equals(ds2406Plan.regStr)
+                        && ds2406Plan.automaticRecoveryReady
+                        && !ds2406Plan.regStrSummary().contains("动态"),
+                "DS2406 primary RegStr is static only after target VersionID->_SYS_CODE->RegStr.contains flow is complete");
+
         Path ds2802Root = base.resolve("java-DS2802");
         Path ds2802Lib = ds2802Root.resolve("WEB-INF/lib");
         Path ds2802Global = ds2802Root.resolve("WEB-INF/classes/com/common/global/Global.class");
