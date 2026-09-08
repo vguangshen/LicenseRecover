@@ -578,6 +578,27 @@ public final class RefactorSmokeTest {
                         LicenseRecoverModernGUIAutoRecovery.detectProductList(yx302CrossFixture.toFile(), "YX0302")),
                 "YX030107/YX0302 sample derives the target-local product list");
 
+        LicenseRecover.installJavaAuthorizationNetworkGuard();
+        check("127.0.0.1".equals(System.getProperty("http.proxyHost"))
+                        && "9".equals(System.getProperty("http.proxyPort"))
+                        && "127.0.0.1".equals(System.getProperty("https.proxyHost"))
+                        && "9".equals(System.getProperty("https.proxyPort")),
+                "Java vendor RegisterMain calls are process-isolated before runtime probing/verification");
+
+        String autoRecoverySource = new String(Files.readAllBytes(
+                Paths.get("src/main/java/LicenseRecoverModernGUIAutoRecovery.java")), StandardCharsets.UTF_8);
+        int preBlockAt = autoRecoverySource.indexOf("installTemporaryDotNetNetworkGuard(helper, log)");
+        int generateAt = autoRecoverySource.indexOf("generate.add(\\\"gencode\\\")");
+        int applyAt = autoRecoverySource.indexOf("apply.add(\\\"doreg\\\")");
+        int verifyAt = autoRecoverySource.indexOf("verify.add(\\\"verify\\\")");
+        check(preBlockAt >= 0 && generateAt > preBlockAt && applyAt > generateAt && verifyAt > applyAt,
+                ".NET pre-block guard is established before gencode, DoRegistry and CheckReInfo in source order");
+        check(autoRecoverySource.contains("action=block")
+                        && autoRecoverySource.contains("program=\" + helper.getAbsolutePath()")
+                        && autoRecoverySource.contains("HTTP_PROXY")
+                        && autoRecoverySource.contains("127.0.0.1:9"),
+                ".NET native helper has application firewall guard plus proxy defense in depth");
+
         String nativeOut = "注册申请号     : A1B2C3D4\n离线授权码     : 001122AABB\n";
         check("A1B2C3D4".equals(LicenseRecoverModernGUIAutoRecovery.findLabeledHex(nativeOut, "注册申请号")),
                 "native .NET one-click parses target request code");

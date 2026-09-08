@@ -275,6 +275,7 @@ public class LicenseRecover {
         }
         String softId = plan.softVersionId;
         String productMain = plan.runtimeProductId;
+        installJavaAuthorizationNetworkGuard();
         if (productOverride != null && !productOverride.trim().isEmpty()
                 && !productOverride.trim().equalsIgnoreCase(productMain)) {
             System.err.println("自动恢复已阻止：-p 指定值 " + productOverride.trim()
@@ -471,6 +472,22 @@ public class LicenseRecover {
      * This is intentionally read-only and is used only after product identity is proven from
      * target-directory evidence. Returning null keeps the caller fail-closed.
      */
+    static void installJavaAuthorizationNetworkGuard() {
+        // This JVM is the dedicated LicenseRecover child process. Route Java HTTP/HTTPS
+        // clients to an inert local endpoint before any target RegisterMain code executes.
+        // We deliberately do not add a Windows Firewall rule for java.exe because that
+        // executable may also host the user's running Tomcat or unrelated Java services.
+        System.setProperty("java.net.useSystemProxies", "false");
+        System.setProperty("http.proxyHost", "127.0.0.1");
+        System.setProperty("http.proxyPort", "9");
+        System.setProperty("https.proxyHost", "127.0.0.1");
+        System.setProperty("https.proxyPort", "9");
+        System.setProperty("http.nonProxyHosts", "localhost|127.*|[::1]");
+        System.setProperty("sun.net.client.defaultConnectTimeout", "3000");
+        System.setProperty("sun.net.client.defaultReadTimeout", "3000");
+        System.out.println("[pre-block] Java Patch 子进程 HTTP/HTTPS 已隔离到 127.0.0.1:9；随后才允许调用目标 RegisterMain。");
+    }
+
     static String probeTargetRegStr(String product, String appRoot, String libDir, boolean rootConfigStyle) {
         if (product == null || product.trim().isEmpty() || libDir == null) return null;
         String jsonForMain;

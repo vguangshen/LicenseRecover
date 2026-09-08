@@ -133,41 +133,55 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (compatibility != null && compatibility.relationCount > 0)
             log.accept("[one-click] target RegisterVersion.db compatibility: " + compatibility.summary() + "\n");
 
-        List<String> generate = new ArrayList<String>();
-        generate.add(helper.getAbsolutePath());
-        generate.add("gencode");
-        generate.add(d.runtimeDir.getAbsolutePath());
-        generate.add("--product"); generate.add(product);
-        generate.add("--regstr"); generate.add(regStr);
-        // gencode is read-only; it asks the target registration assembly for the
-        // local request code and builds the matching offline code.
-        NativeProcessResult generated = runNativeCapture(generate, d.appRoot, log);
-        if (generated.exitCode != 0)
-            return Result.fail("Target-native .NET request-code generation failed; no file was changed.", d);
-
-        String request = findLabeledHex(generated.output, "注册申请号", "申请号");
-        String auth = findLabeledHex(generated.output, "离线授权码", "授权码");
-        if (blank(request) || blank(auth))
-            return Result.fail("Native helper did not return both request code and authorization code; no file was changed.", d);
-
-        String machine = null;
+        LinkedHashMap<File, byte[]> originals = dryRun ? null : snapshotDotNetRegistrationFiles(d);
+        String firewallRule = null;
         try {
-            String plain = desDecryptHex(request, "itmcsoft");
-            if (plain != null && plain.length() >= 20) machine = plain.substring(4, 20);
-        } catch (Throwable ignore) { }
+            // Network isolation is established BEFORE any vendor registration code is invoked.
+            // The target ITMC.Regedit assembly is loaded inside LicenseRecover.NET.exe, so an
+            // application-specific Windows Firewall rule blocks even hard-coded outbound URLs.
+            firewallRule = installTemporaryDotNetNetworkGuard(helper, log);
+            if (blank(firewallRule))
+                throw new IOException("failed to establish the temporary .NET outbound firewall guard; refusing to call vendor registration code");
 
-        log.accept("[one-click] .NET native registration flow: gencode -> DoRegistry -> CheckReInfo\n");
-        log.accept("[one-click] ProName=" + valueOrPending(product) + " products=" + valueOrPending(regStr)
-                + " RegID=" + valueOrPending(machine) + "\n");
-        if (dryRun) {
-            log.accept("[dry-run] native request/auth codes generated; DoRegistry was not called and no file was changed.\n");
-            return new Result(true, "Preview completed with target-native request-code generation; no file was changed.",
-                    d, machine, request, auth);
-        }
+            if (!dryRun) {
+                if (backup) backupDotNetRegistrationFiles(originals, log);
+                blockPrimaryDotNetConfigs(d, log);
+                blockSidecars(d, false, false, log);
+                log.accept("[pre-block] authorization network isolation is active before gencode / DoRegistry / CheckReInfo.\n");
+            } else {
+                log.accept("[dry-run] temporary process-level outbound guard is active; configuration files remain unchanged.\n");
+            }
 
-        LinkedHashMap<File, byte[]> originals = snapshotDotNetRegistrationFiles(d);
-        if (backup) backupDotNetRegistrationFiles(originals, log);
-        try {
+            List<String> generate = new ArrayList<String>();
+            generate.add(helper.getAbsolutePath());
+            generate.add("gencode");
+            generate.add(d.runtimeDir.getAbsolutePath());
+            generate.add("--product"); generate.add(product);
+            generate.add("--regstr"); generate.add(regStr);
+            NativeProcessResult generated = runNativeCapture(generate, d.appRoot, log);
+            if (generated.exitCode != 0)
+                throw new IOException("Target-native .NET request-code generation failed under network isolation");
+
+            String request = findLabeledHex(generated.output, "注册申请号", "申请号");
+            String auth = findLabeledHex(generated.output, "离线授权码", "授权码");
+            if (blank(request) || blank(auth))
+                throw new IOException("Native helper did not return both request code and authorization code under network isolation");
+
+            String machine = null;
+            try {
+                String plain = desDecryptHex(request, "itmcsoft");
+                if (plain != null && plain.length() >= 20) machine = plain.substring(4, 20);
+            } catch (Throwable ignore) { }
+
+            log.accept("[one-click] .NET native registration flow: PRE-BLOCK -> gencode -> DoRegistry -> CheckReInfo\n");
+            log.accept("[one-click] ProName=" + valueOrPending(product) + " products=" + valueOrPending(regStr)
+                    + " RegID=" + valueOrPending(machine) + "\n");
+            if (dryRun) {
+                log.accept("[dry-run] native request/auth codes generated under outbound isolation; no file was changed.\n");
+                return new Result(true, "Preview completed under temporary outbound isolation; no file was changed.",
+                        d, machine, request, auth);
+            }
+
             List<String> apply = new ArrayList<String>();
             apply.add(helper.getAbsolutePath());
             apply.add("doreg");
@@ -175,7 +189,8 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             apply.add("--seq"); apply.add(request);
             apply.add("--code"); apply.add(auth);
             apply.add("--product"); apply.add(product);
-            // Verify the untouched native local-registration result first; cloud blocking is a separate final step.
+            // Keep the helper from changing network settings itself; the outer coordinator
+            // already established isolation before the first vendor-code call.
             apply.add("--no-block-net");
             if (!backup) apply.add("--no-backup");
             NativeProcessResult applied = runNativeCapture(apply, d.appRoot, log);
@@ -190,17 +205,22 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             if (checked.exitCode != 0) throw new IOException("target RegeditMain.CheckReInfo() did not confirm the native write-back");
 
             if (blockNet) {
+                // Re-assert in case the native writer rewrote config.xml while registering.
                 blockPrimaryDotNetConfigs(d, log);
-                blockSidecars(d, backup, false, log);
+                blockSidecars(d, false, false, log);
+            } else {
+                restoreDotNetAuthorizationNetworkSettings(originals, d, log);
             }
-            log.accept("[verify] target-native DoRegistry + CheckReInfo passed; authorization cloud blocking applied afterwards.\n");
+            log.accept("[verify] target-native DoRegistry + CheckReInfo passed while authorization outbound traffic was isolated.\n");
             return new Result(true,
-                    ".NET local authorization was applied by the target registration assembly and native verification passed. Restart the IIS app pool/site.",
+                    ".NET local authorization was applied and verified while authorization outbound traffic was isolated. Restart the IIS app pool/site.",
                     d, machine, request, auth);
         } catch (Throwable ex) {
-            restoreDotNetRegistrationFiles(originals, log);
+            if (!dryRun && originals != null) restoreDotNetRegistrationFiles(originals, log);
             if (ex instanceof Exception) throw (Exception) ex;
             throw new Exception(ex);
+        } finally {
+            removeTemporaryDotNetNetworkGuard(firewallRule, log);
         }
     }
 
@@ -213,6 +233,13 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     static NativeProcessResult runNativeCapture(List<String> cmd, File workDir, Consumer<String> log) throws Exception {
         ProcessBuilder pb = new ProcessBuilder(cmd).redirectErrorStream(true);
         if (workDir != null && workDir.isDirectory()) pb.directory(workDir);
+        // Defense in depth for HTTP stacks that honor proxy environment variables.
+        // The Windows Firewall application rule remains the authoritative guard.
+        Map<String,String> env = pb.environment();
+        env.put("HTTP_PROXY", "http://127.0.0.1:9");
+        env.put("HTTPS_PROXY", "http://127.0.0.1:9");
+        env.put("ALL_PROXY", "http://127.0.0.1:9");
+        env.put("NO_PROXY", "localhost,127.0.0.1,::1");
         Process p = pb.start();
         BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
         StringBuilder all = new StringBuilder();
@@ -245,10 +272,14 @@ public final class LicenseRecoverModernGUIAutoRecovery {
 
     private static LinkedHashMap<File, byte[]> snapshotDotNetRegistrationFiles(Detection d) throws IOException {
         LinkedHashMap<File, byte[]> out = new LinkedHashMap<File, byte[]>();
-        File[] candidates = new File[]{
-                new File(d.appRoot, "config.xml"), new File(d.runtimeDir, "config.xml"),
-                new File(d.appRoot, "Register.xml"), new File(d.runtimeDir, "Register.xml")
-        };
+        List<File> candidates = new ArrayList<File>();
+        addIfFile(candidates, new File(d.appRoot, "config.xml"));
+        addIfFile(candidates, new File(d.runtimeDir, "config.xml"));
+        addIfFile(candidates, new File(d.appRoot, "Register.xml"));
+        addIfFile(candidates, new File(d.runtimeDir, "Register.xml"));
+        addIfFile(candidates, new File(d.appRoot, "Web.config"));
+        addConfigs(candidates, d.appRoot);
+        addConfigs(candidates, d.runtimeDir);
         HashSet<String> seen = new HashSet<String>();
         for (File f : candidates) {
             String key;
@@ -297,6 +328,89 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                 if (log != null) log.accept("[block-net] " + f.getAbsolutePath() + "\n");
             }
         }
+    }
+
+    static String installTemporaryDotNetNetworkGuard(File helper, Consumer<String> log) throws Exception {
+        if (!isWindows() || helper == null || !helper.isFile()) return null;
+        String rule = "LicenseRecover-Temp-" + Long.toHexString(System.nanoTime());
+        List<String> cmd = Arrays.asList("netsh", "advfirewall", "firewall", "add", "rule",
+                "name=" + rule, "dir=out", "action=block", "enable=yes", "profile=any",
+                "program=" + helper.getAbsolutePath());
+        NativeProcessResult r = runSystemCommand(cmd);
+        if (r.exitCode != 0) {
+            if (log != null) log.accept("[pre-block-error] Windows Firewall guard failed: " + r.output + "\n");
+            return null;
+        }
+        if (log != null) log.accept("[pre-block] Windows Firewall outbound guard installed for "
+                + helper.getName() + " (" + rule + ")\n");
+        return rule;
+    }
+
+    static void removeTemporaryDotNetNetworkGuard(String rule, Consumer<String> log) {
+        if (blank(rule) || !isWindows()) return;
+        try {
+            NativeProcessResult r = runSystemCommand(Arrays.asList("netsh", "advfirewall", "firewall",
+                    "delete", "rule", "name=" + rule));
+            if (log != null) log.accept(r.exitCode == 0
+                    ? "[pre-block] temporary Windows Firewall guard removed.\n"
+                    : "[pre-block-warning] failed to remove temporary firewall guard: " + r.output + "\n");
+        } catch (Throwable ex) {
+            if (log != null) log.accept("[pre-block-warning] failed to remove temporary firewall guard: " + safe(ex) + "\n");
+        }
+    }
+
+    static NativeProcessResult runSystemCommand(List<String> cmd) throws Exception {
+        Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        InputStream in = p.getInputStream();
+        byte[] buf = new byte[4096];
+        int n;
+        while ((n = in.read(buf)) >= 0) out.write(buf, 0, n);
+        int rc = p.waitFor();
+        Charset cs;
+        try { cs = Charset.forName("GBK"); } catch (Throwable ignore) { cs = StandardCharsets.UTF_8; }
+        return new NativeProcessResult(rc, new String(out.toByteArray(), cs));
+    }
+
+    private static void restoreDotNetAuthorizationNetworkSettings(LinkedHashMap<File, byte[]> originals,
+                                                                   Detection d, Consumer<String> log) {
+        if (originals == null) return;
+        HashSet<String> primary = new HashSet<String>();
+        try { primary.add(new File(d.appRoot, "config.xml").getCanonicalPath().toLowerCase(Locale.ROOT)); } catch (Throwable ignore) { }
+        try { primary.add(new File(d.runtimeDir, "config.xml").getCanonicalPath().toLowerCase(Locale.ROOT)); } catch (Throwable ignore) { }
+        Pattern service = Pattern.compile("(?is)<Service\\b[^>]*>.*?</Service\\s*>");
+        for (Map.Entry<File, byte[]> e : originals.entrySet()) {
+            File f = e.getKey();
+            byte[] originalBytes = e.getValue();
+            if (originalBytes == null || f == null || !f.isFile()) continue;
+            try {
+                String key = f.getCanonicalPath().toLowerCase(Locale.ROOT);
+                if (!primary.contains(key)) {
+                    // Sidecar/Web.config files are not registration write targets; restore exactly.
+                    Files.write(f.toPath(), originalBytes);
+                    continue;
+                }
+                String before = new String(originalBytes, StandardCharsets.UTF_8);
+                String current = readUtf8(f);
+                Matcher om = service.matcher(before);
+                Matcher cm = service.matcher(current);
+                String restored;
+                if (om.find()) {
+                    String originalService = om.group();
+                    restored = cm.find()
+                            ? current.substring(0, cm.start()) + originalService + current.substring(cm.end())
+                            : current;
+                } else {
+                    restored = cm.replaceFirst("");
+                }
+                validateXml(restored);
+                Files.write(f.toPath(), restored.getBytes(StandardCharsets.UTF_8));
+            } catch (Throwable ex) {
+                if (log != null) log.accept("[pre-block-warning] could not restore original network setting for "
+                        + f.getAbsolutePath() + ": " + safe(ex) + "\n");
+            }
+        }
+        if (log != null) log.accept("[pre-block] temporary authorization network settings restored (--no-block-net).\n");
     }
 
     private static String valueOrPending(String value) { return blank(value) ? "<auto>" : value; }
