@@ -502,9 +502,16 @@ public final class LicenseRecoverModernGUIAutoRecovery {
 
     private static String jsonStringField(String json, String name) {
         if (json == null || name == null) return null;
-        Matcher m = Pattern.compile("(?is)\\"" + Pattern.quote(name)
-                + "\\"\\s*:\s*\\"([^\\"]*)\\"").matcher(json);
-        return m.find() ? m.group(1).trim() : null;
+        String marker = "\"" + name + "\"";
+        int key = json.indexOf(marker);
+        if (key < 0) return null;
+        int colon = json.indexOf(':', key + marker.length());
+        if (colon < 0) return null;
+        int begin = json.indexOf('\"', colon + 1);
+        if (begin < 0) return null;
+        int end = json.indexOf('\"', begin + 1);
+        if (end < 0) return null;
+        return json.substring(begin + 1, end).trim();
     }
 
     private static String normalizeProductCsv(String raw) {
