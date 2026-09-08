@@ -527,7 +527,7 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
         }
         progress.bytes(downloaded, expectedTotal);
         IOException last = null;
-        List<NetworkRoute> routes = networkRoutes();
+        java.util.List<NetworkRoute> routes = networkRoutes();
 
         for (int i = 0; i < routes.size(); i++) {
             if (expectedTotal > 0L && downloaded == expectedTotal) return;
@@ -600,8 +600,8 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
         }
     }
 
-    private static List<NetworkRoute> networkRoutes() {
-        List<NetworkRoute> routes = new ArrayList<NetworkRoute>();
+    private static java.util.List<NetworkRoute> networkRoutes() {
+        java.util.List<NetworkRoute> routes = new ArrayList<NetworkRoute>();
         routes.add(new NetworkRoute("Windows/Java 系统代理", null, true));
         Proxy env = environmentProxy();
         if (env != null) routes.add(new NetworkRoute("HTTPS_PROXY 环境代理", env, false));
