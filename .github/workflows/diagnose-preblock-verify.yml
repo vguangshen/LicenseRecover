@@ -1,0 +1,39 @@
+name: Diagnose pre-block verify
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/diagnose-preblock-verify.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '8'
+      - name: Run verification with captured log
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Continue'
+          & ./scripts/prepare-java-sample-profiles.py 2>&1 | Out-File -FilePath build-diagnose.log -Encoding utf8
+          & ./scripts/prepare-java-detection.py 2>&1 | Out-File -FilePath build-diagnose.log -Encoding utf8 -Append
+          & ./scripts/prepare-local-auth-userid.ps1 *>&1 | Out-File -FilePath build-diagnose.log -Encoding utf8 -Append
+          & ./scripts/verify.ps1 *>&1 | Tee-Object -FilePath verify-diagnose.log
+          $rc = $LASTEXITCODE
+          if ($null -eq $rc) { $rc = 0 }
+          exit $rc
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: preblock-verify-log
+          path: |
+            verify-diagnose.log
+            build-diagnose.log
+          if-no-files-found: warn
