@@ -298,6 +298,8 @@ public final class RefactorSmokeTest {
         Files.write(ds501Lib.resolve("ITMCReg.jar"), new byte[]{1});
         Files.write(ds501Classes.resolve("config.xml"), Arrays.asList(
                 "<ROOT><reg><regType>3</regType></reg><SystemSoft><SoftVersionID>DS50109</SoftVersionID></SystemSoft></ROOT>"), StandardCharsets.UTF_8);
+        Files.write(ds501Root.resolve("systemConfig.yml"),
+                Arrays.asList("global.system.VersionID=DS50109"), StandardCharsets.UTF_8);
         check("DS50109".equals(LicenseRecover.productMainFor("DS50109")),
                 "DS501 direct rebuild uses concrete runtime check id");
         check("DS501".equals(LicenseRecover.localRegisterProductFor("DS50109", false)),
@@ -313,20 +315,83 @@ public final class RefactorSmokeTest {
         Files.write(ds501Classes.resolve("RegistrationEvidence.class"),
                 "DS501".getBytes(StandardCharsets.US_ASCII));
         Path ds501SystemInfo = ds501Classes.resolve("com/itmc/register/utils/SystemInfo.class");
+        Path ds501Contant = ds501Classes.resolve("com/itmc/register/utils/RegisterContant.class");
         Path ds501Listener = ds501Classes.resolve("com/itmc/register/service/RegisterListener.class");
         Files.createDirectories(ds501SystemInfo.getParent());
         Files.createDirectories(ds501Listener.getParent());
         Files.write(ds501SystemInfo,
                 "config.xml SystemSoft registerId".getBytes(StandardCharsets.US_ASCII));
+        Files.write(ds501Contant,
+                "global.system.VersionID versionID java/util/Properties getProperty"
+                        .getBytes(StandardCharsets.US_ASCII));
         Files.write(ds501Listener,
-                "com/itmc/register/utils/SystemInfo registerId itmc/regedit/RegisterMain getRegStr versionID contains"
+                "com/itmc/register/utils/SystemInfo registerId itmc/regedit/RegisterMain getRegStr "
+                        .concat("com/itmc/register/utils/RegisterContant versionID contains")
                         .getBytes(StandardCharsets.US_ASCII));
         ds501Plan = LicenseRecoverModernGUIJavaPlan.inspect(ds501Root.toFile());
         check("DS501".equals(ds501Plan.authorizationFamily)
                         && "DS50109".equals(ds501Plan.runtimeProductId)
+                        && "DS50109".equals(ds501Plan.regStr)
                         && ds501Plan.automaticRecoveryReady
-                        && ds501Plan.regStrSummary().contains("动态"),
-                "DS501 concrete runtime ID is accepted from target config only when target bytecode proves config->RegisterMain flow");
+                        && !ds501Plan.regStrSummary().contains("动态"),
+                "DS50109 derives primary RegStr statically only from target VersionID->registerId->RegisterMain->RegStr.contains(versionID) flow");
+
+        Path ds501WeakRoot = base.resolve("java-DS50112-weak-primary-regstr");
+        Path ds501WeakLib = ds501WeakRoot.resolve("WEB-INF/lib");
+        Path ds501WeakClasses = ds501WeakRoot.resolve("WEB-INF/classes");
+        Files.createDirectories(ds501WeakLib);
+        Files.createDirectories(ds501WeakClasses.resolve("com/itmc/register/utils"));
+        Files.createDirectories(ds501WeakClasses.resolve("com/itmc/register/service"));
+        Files.write(ds501WeakLib.resolve("ITMCReg.jar"), new byte[]{1});
+        Files.write(ds501WeakRoot.resolve("systemConfig.yml"),
+                Arrays.asList("global.system.VersionID=DS50112"), StandardCharsets.UTF_8);
+        Files.write(ds501WeakClasses.resolve("config.xml"), Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>DS50112</SoftVersionID></SystemSoft></ROOT>"), StandardCharsets.UTF_8);
+        Files.write(ds501WeakClasses.resolve("RegistrationEvidence.class"),
+                "DS501".getBytes(StandardCharsets.US_ASCII));
+        Files.write(ds501WeakClasses.resolve("com/itmc/register/utils/SystemInfo.class"),
+                "config.xml SystemSoft registerId".getBytes(StandardCharsets.US_ASCII));
+        Files.write(ds501WeakClasses.resolve("com/itmc/register/service/RegisterListener.class"),
+                "com/itmc/register/utils/SystemInfo registerId itmc/regedit/RegisterMain getRegStr "
+                        .concat("com/itmc/register/utils/RegisterContant versionID contains")
+                        .getBytes(StandardCharsets.US_ASCII));
+        LicenseRecoverModernGUIJavaPlan ds501WeakPlan =
+                LicenseRecoverModernGUIJavaPlan.inspect(ds501WeakRoot.toFile());
+        check("DS50112".equals(ds501WeakPlan.runtimeProductId)
+                        && ds501WeakPlan.regStr == null
+                        && ds501WeakPlan.regStrSummary().contains("动态")
+                        && ds501WeakPlan.automaticRecoveryReady,
+                "DS501 runtime proof alone does not synthesize static RegStr when RegisterContant VersionID source proof is missing");
+
+        Path ds50113Root = base.resolve("java-DS50113");
+        Path ds50113Lib = ds50113Root.resolve("WEB-INF/lib");
+        Path ds50113Classes = ds50113Root.resolve("WEB-INF/classes");
+        Files.createDirectories(ds50113Lib);
+        Files.createDirectories(ds50113Classes.resolve("com/itmc/register/utils"));
+        Files.createDirectories(ds50113Classes.resolve("com/itmc/register/service"));
+        Files.write(ds50113Lib.resolve("ITMCReg.jar"), new byte[]{1});
+        Files.write(ds50113Root.resolve("systemConfig.yml"),
+                Arrays.asList("global.system.VersionID=DS50113"), StandardCharsets.UTF_8);
+        Files.write(ds50113Classes.resolve("config.xml"), Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>DS50113</SoftVersionID></SystemSoft></ROOT>"), StandardCharsets.UTF_8);
+        Files.write(ds50113Classes.resolve("RegistrationEvidence.class"),
+                "DS501".getBytes(StandardCharsets.US_ASCII));
+        Files.write(ds50113Classes.resolve("com/itmc/register/utils/SystemInfo.class"),
+                "config.xml SystemSoft registerId".getBytes(StandardCharsets.US_ASCII));
+        Files.write(ds50113Classes.resolve("com/itmc/register/utils/RegisterContant.class"),
+                "global.system.VersionID versionID java/util/Properties getProperty"
+                        .getBytes(StandardCharsets.US_ASCII));
+        Files.write(ds50113Classes.resolve("com/itmc/register/service/RegisterListener.class"),
+                "com/itmc/register/utils/SystemInfo registerId itmc/regedit/RegisterMain getRegStr "
+                        .concat("com/itmc/register/utils/RegisterContant versionID contains")
+                        .getBytes(StandardCharsets.US_ASCII));
+        LicenseRecoverModernGUIJavaPlan ds50113Plan =
+                LicenseRecoverModernGUIJavaPlan.inspect(ds50113Root.toFile());
+        check("DS501".equals(ds50113Plan.authorizationFamily)
+                        && "DS50113".equals(ds50113Plan.runtimeProductId)
+                        && "DS50113".equals(ds50113Plan.regStr)
+                        && ds50113Plan.automaticRecoveryReady,
+                "DS50113 independently proves concrete primary RegStr from its own target-directory registration flow");
 
         Path yx305Root = base.resolve("java-YX030506");
         Path yx305Lib = yx305Root.resolve("WEB-INF/lib");

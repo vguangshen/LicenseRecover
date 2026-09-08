@@ -144,17 +144,31 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 : (!blank(configDrivenRuntime) ? configDrivenRuntime : binaryRuntime)));
         File jar = findRegJar(lib);
         boolean packed = jar != null && isVirboxPackedJar(jar);
-        String products = directoryMapping != null ? directoryMapping.productMainNum
-                : resolveRegStr(root, runtimeProduct, lib);
+        String configDrivenPrimaryRegStr = confirmedConfigDrivenPrimaryRegStr(
+                root, soft, family, configDrivenRuntime);
+        String recoveredLocalRegStr = null;
+        String products;
+        if (directoryMapping != null) {
+            products = directoryMapping.productMainNum;
+        } else if (dataRegInfo != null) {
+            products = dataRegInfo;
+        } else if (classesRegInfo != null) {
+            products = classesRegInfo;
+        } else if (!blank(configDrivenPrimaryRegStr)) {
+            products = configDrivenPrimaryRegStr;
+        } else {
+            recoveredLocalRegStr = blank(runtimeProduct)
+                    ? null : ExistingLocalRegStrProbe.recover(root, lib, runtimeProduct);
+            products = recoveredLocalRegStr;
+        }
 
-        String recoveredLocalRegStr = blank(runtimeProduct)
-                ? null : ExistingLocalRegStrProbe.recover(root, lib, runtimeProduct);
         boolean binaryIdentity = !blank(binaryFamily)
                 && (!blank(binaryRuntime) || !blank(configDrivenRuntime));
         boolean directoryIdentity = directoryMapping != null
                 || directDataIdentity || !blank(confirmedClassesFamily) || binaryIdentity;
         boolean directoryRegStr = directoryMapping != null
-                || dataRegInfo != null || classesRegInfo != null || recoveredLocalRegStr != null;
+                || dataRegInfo != null || classesRegInfo != null
+                || !blank(configDrivenPrimaryRegStr) || recoveredLocalRegStr != null;
         // A missing static regInfo is not itself a reason to guess. If the target ships
         // ITMCReg and its product identity is already proven by directory evidence, the
         // CLI can ask that exact target RegisterMain.getRegInfo() for RegStr before any write.
@@ -375,6 +389,67 @@ public final class LicenseRecoverModernGUIJavaPlan {
         // The field name alone is not sufficient; both parser and runner bytecode must
         // expose the complete target-local flow before the concrete VersionID is accepted.
         if (confirmedProductAllNumRuntimeProduct(classes)) return concrete;
+        return null;
+    }
+
+    /**
+     * Confirm that the selected application's own primary registration path requires
+     * the concrete VersionID to occur in RegInfo.RegStr.  This is deliberately stronger
+     * than runtime ProductID proof: systemConfig.yml, classes/config.xml, SystemInfo,
+     * RegisterContant and RegisterListener must all agree before the concrete id is used
+     * as a static RegStr.  Compatibility/alternate-platform checks are not used here.
+     */
+    static String confirmedConfigDrivenPrimaryRegStr(File root, String softId,
+                                                      String confirmedFamily,
+                                                      String confirmedRuntimeProduct) {
+        if (root == null || blank(softId) || blank(confirmedFamily)
+                || blank(confirmedRuntimeProduct)) return null;
+        String concrete = softId.trim();
+        String family = confirmedFamily.trim();
+        String runtime = confirmedRuntimeProduct.trim();
+        if (!concrete.equalsIgnoreCase(runtime)) return null;
+        if (!concrete.toUpperCase(Locale.ROOT).startsWith(family.toUpperCase(Locale.ROOT))) return null;
+
+        String ymlVersion = readSystemConfigVersionId(root);
+        if (blank(ymlVersion) || !concrete.equalsIgnoreCase(ymlVersion.trim())) return null;
+
+        File classes = new File(root, "WEB-INF" + File.separator + "classes");
+        File config = new File(classes, "config.xml");
+        String configured = readElement(config, "SoftVersionID");
+        if (blank(configured) || !concrete.equalsIgnoreCase(configured.trim())) return null;
+
+        File systemInfo = new File(classes, "com" + File.separator + "itmc" + File.separator
+                + "register" + File.separator + "utils" + File.separator + "SystemInfo.class");
+        File registerContant = new File(classes, "com" + File.separator + "itmc" + File.separator
+                + "register" + File.separator + "utils" + File.separator + "RegisterContant.class");
+        File listener = new File(classes, "com" + File.separator + "itmc" + File.separator
+                + "register" + File.separator + "service" + File.separator + "RegisterListener.class");
+
+        if (!classFileContainsAll(systemInfo, "config.xml", "SystemSoft", "registerId")) return null;
+        if (!classFileContainsAll(registerContant, "global.system.VersionID", "versionID",
+                "java/util/Properties", "getProperty")) return null;
+        if (!classFileContainsAll(listener, "com/itmc/register/utils/SystemInfo", "registerId",
+                "itmc/regedit/RegisterMain", "getRegStr",
+                "com/itmc/register/utils/RegisterContant", "versionID", "contains")) return null;
+        return concrete;
+    }
+
+    private static String readSystemConfigVersionId(File root) {
+        if (root == null) return null;
+        File yml = new File(root, "systemConfig.yml");
+        if (!yml.isFile()) return null;
+        try {
+            for (String raw : Files.readAllLines(yml.toPath(), StandardCharsets.UTF_8)) {
+                String line = raw.trim();
+                if (!line.toLowerCase(Locale.ROOT).contains("versionid")) continue;
+                int split = line.indexOf(':');
+                if (split < 0) split = line.indexOf('=');
+                if (split > 0) {
+                    String value = line.substring(split + 1).trim();
+                    if (!value.isEmpty()) return value;
+                }
+            }
+        } catch (Exception ignore) { }
         return null;
     }
 
