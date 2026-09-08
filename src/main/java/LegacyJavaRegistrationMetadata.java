@@ -64,6 +64,17 @@ public final class LegacyJavaRegistrationMetadata {
                 + "global" + File.separator + "Global.class");
         GlobalScan scan = scanGlobal(global, softId.trim());
         if (scan.mapping != null) return scan.mapping;
+
+        // A third legacy layout does not build registerProductBeans at all.  Instead,
+        // Global.PRODUCT_NUM is passed directly to RegisterMain while the concrete
+        // VersionID is loaded into SYS_PRODUCT_NUM and checked against RegStr.  Accept
+        // this only when the selected target's own classes prove the whole data flow;
+        // merely finding a product-looking string in Global.class is not sufficient.
+        if (!globalHasRegistrationDispatch(global)) {
+            Mapping direct = directGlobalProductMapping(appRoot, global, softId.trim());
+            if (direct != null) return direct;
+        }
+
         // If a protected Global.class exists but cannot be inspected safely, do not
         // silently fall through to a guessed family.
         if (scan.present && !scan.complete) return null;
@@ -108,6 +119,65 @@ public final class LegacyJavaRegistrationMetadata {
                     && pool.contains("setProductNums");
         } catch (Throwable ex) {
             return true;
+        }
+    }
+
+    static Mapping directGlobalProductMapping(File root, File global, String softId) {
+        if (root == null || global == null || !global.isFile() || blank(softId)) return null;
+        if (globalHasRegistrationDispatch(global)) return null;
+
+        String family = directGlobalProductFromGlobal(global, softId);
+        if (blank(family)) return null;
+
+        File classes = new File(root, "WEB-INF" + File.separator + "classes");
+        File xmlUtil = new File(classes, "com" + File.separator + "common" + File.separator
+                + "utils" + File.separator + "IXmlUtil.class");
+        File init = new File(classes, "com" + File.separator + "common" + File.separator
+                + "sys" + File.separator + "configuration" + File.separator + "SysParamInit.class");
+
+        // IXmlUtil proves that the concrete application VersionID is assigned to
+        // SYS_PRODUCT_NUM.  SysParamInit proves that Global.PRODUCT_NUM drives
+        // RegisterMain and that the returned RegStr is checked against SYS_PRODUCT_NUM.
+        if (!rawClassContainsAll(xmlUtil, "global.system.VersionID", "SYS_PRODUCT_NUM")) return null;
+        if (!rawClassContainsAll(init, "itmc/regedit/RegisterMain", "PRODUCT_NUM",
+                "SYS_PRODUCT_NUM", "getRegInfo", "contains")) return null;
+
+        return new Mapping(family, softId.trim(), softId.trim(),
+                "Global.PRODUCT_NUM + VersionID registration flow");
+    }
+
+    static String directGlobalProductFromGlobal(File global, String softId) {
+        if (global == null || !global.isFile() || blank(softId)) return null;
+        try {
+            String raw = new String(Files.readAllBytes(global.toPath()), StandardCharsets.ISO_8859_1);
+            if (!raw.contains("PRODUCT_NUM")) return null;
+            String id = softId.trim().toUpperCase(Locale.ROOT);
+            java.util.regex.Matcher matcher = java.util.regex.Pattern
+                    .compile("(?i)(?<![A-Za-z0-9])([A-Z]{2,8}[0-9]{2,8})(?![A-Za-z0-9])")
+                    .matcher(raw);
+            String best = null;
+            while (matcher.find()) {
+                String candidate = matcher.group(1).toUpperCase(Locale.ROOT);
+                if (candidate.equals(id) || candidate.length() >= id.length()) continue;
+                if (!id.startsWith(candidate)) continue;
+                if (best == null || candidate.length() > best.length()) best = candidate;
+            }
+            return best;
+        } catch (Throwable ignore) {
+            return null;
+        }
+    }
+
+    private static boolean rawClassContainsAll(File file, String... tokens) {
+        if (file == null || !file.isFile() || tokens == null) return false;
+        try {
+            String raw = new String(Files.readAllBytes(file.toPath()), StandardCharsets.ISO_8859_1);
+            for (String token : tokens) {
+                if (blank(token) || !raw.contains(token)) return false;
+            }
+            return true;
+        } catch (Throwable ignore) {
+            return false;
         }
     }
 

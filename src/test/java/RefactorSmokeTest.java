@@ -180,6 +180,59 @@ public final class RefactorSmokeTest {
                         base.resolve("dispatch-only").toFile(), "ANY0001"),
                 "Global registerProductBeans setter trio still forces fail-closed directory mapping");
 
+        Path ds3110Root = base.resolve("java-DS3110");
+        Path ds3110Lib = ds3110Root.resolve("WEB-INF/lib");
+        Path ds3110Classes = ds3110Root.resolve("WEB-INF/classes");
+        Path ds3110Global = ds3110Classes.resolve("com/common/global/Global.class");
+        Path ds3110XmlUtil = ds3110Classes.resolve("com/common/utils/IXmlUtil.class");
+        Path ds3110RegisterUtil = ds3110Classes.resolve("com/common/utils/RegisterUtil.class");
+        Path ds3110Init = ds3110Classes.resolve("com/common/sys/configuration/SysParamInit.class");
+        Files.createDirectories(ds3110Lib);
+        Files.createDirectories(ds3110Global.getParent());
+        Files.createDirectories(ds3110XmlUtil.getParent());
+        Files.createDirectories(ds3110Init.getParent());
+        Files.createDirectories(ds3110Root.resolve("data"));
+        Files.write(ds3110Lib.resolve("ITMCReg.jar"), new byte[]{1});
+        Files.write(ds3110Root.resolve("systemConfig.yml"),
+                Arrays.asList("global.system.VersionID=DS3110"), StandardCharsets.UTF_8);
+        Files.write(ds3110Root.resolve("data/config.xml"), Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>DS3110</SoftVersionID></SystemSoft></ROOT>"),
+                StandardCharsets.UTF_8);
+        // DS2901 intentionally models an unrelated application.yml authorization code.
+        // It must not win over the target Global.PRODUCT_NUM prefix evidence.
+        Files.write(ds3110Global, "PRODUCT_NUM DS31 DS2901".getBytes(StandardCharsets.ISO_8859_1));
+        Files.write(ds3110XmlUtil,
+                "global.system.VersionID SYS_PRODUCT_NUM".getBytes(StandardCharsets.ISO_8859_1));
+        Files.write(ds3110RegisterUtil,
+                "itmc/regedit/RegisterMain getRegStr contains".getBytes(StandardCharsets.ISO_8859_1));
+        Files.write(ds3110Init,
+                "itmc/regedit/RegisterMain PRODUCT_NUM SYS_PRODUCT_NUM getRegInfo regStr contains"
+                        .getBytes(StandardCharsets.ISO_8859_1));
+        check(LegacyJavaRegistrationMetadata.requiresDirectoryMapping(ds3110Root.toFile(), "DS3110"),
+                "DS3110 still requires target-directory mapping because RegisterUtil is present");
+        LegacyJavaRegistrationMetadata.Mapping ds3110Mapping =
+                LegacyJavaRegistrationMetadata.inspect(ds3110Root.toFile(), "DS3110");
+        check(ds3110Mapping != null
+                        && "DS31".equals(ds3110Mapping.productMain)
+                        && "DS3110".equals(ds3110Mapping.productMainNum)
+                        && "DS3110".equals(ds3110Mapping.productNums),
+                "DS3110 direct Global.PRODUCT_NUM flow resolves DS31 / DS3110 from target classes");
+        LicenseRecoverModernGUIJavaPlan ds3110Plan =
+                LicenseRecoverModernGUIJavaPlan.inspect(ds3110Root.toFile());
+        check("DS31".equals(ds3110Plan.authorizationFamily)
+                        && "DS31".equals(ds3110Plan.runtimeProductId)
+                        && "DS3110".equals(ds3110Plan.regStr)
+                        && ds3110Plan.automaticRecoveryReady,
+                "DS3110 executable plan is READY only from direct target registration-flow evidence");
+
+        Path ds3110Weak = base.resolve("java-DS3110-weak");
+        Path ds3110WeakGlobal = ds3110Weak.resolve("WEB-INF/classes/com/common/global/Global.class");
+        Files.createDirectories(ds3110WeakGlobal.getParent());
+        Files.write(ds3110WeakGlobal, "PRODUCT_NUM DS31".getBytes(StandardCharsets.ISO_8859_1));
+        check(LegacyJavaRegistrationMetadata.directGlobalProductMapping(
+                        ds3110Weak.toFile(), ds3110WeakGlobal.toFile(), "DS3110") == null,
+                "Global PRODUCT_NUM string alone is not sufficient without VersionID/RegisterMain data-flow proof");
+
         Path qt30103Root = base.resolve("java-QT30103");
         Path qt30103Lib = qt30103Root.resolve("WEB-INF/lib");
         Files.createDirectories(qt30103Lib);
