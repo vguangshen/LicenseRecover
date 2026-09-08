@@ -123,7 +123,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         String product = d.productName;
         if (blank(product))
             return Result.fail("Target ITMC.Web.dll did not prove a ProName; default product fallback is disabled.", d);
-        String regStr = detectProductList(new File(d.runtimeDir, "ITMC.Web.dll"), product);
+        String regStr = detectDotNetRegStr(d);
         if (blank(regStr))
             return Result.fail("Target ITMC.Web.dll did not prove RegStr products; VersionID/default-list fallback is disabled.", d);
 
@@ -458,6 +458,68 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         else if(product!=null&&product.matches("YX\\d{4}")){for(String x:s)if(x.matches(Pattern.quote(product)+"\\d{2}"))out.add(x);}
         else if(product!=null&&product.matches("GM\\d{3}")){for(String x:s)if(x.matches(Pattern.quote(product)+"\\d{2}"))out.add(x);}
         StringBuilder b=new StringBuilder();for(String x:out){if(b.length()>0)b.append(',');b.append(x);}return b.toString();
+    }
+
+    /**
+     * Resolve .NET RegStr only from the selected application directory.  A valid
+     * existing local regName is stronger evidence than string scraping: decrypt it
+     * with the ProName already proven by ITMC.Web.dll, require the embedded ProName
+     * to match, and then reuse its RegStr.  If no valid local license exists, keep
+     * the existing DLL product-list parser as the secondary source.
+     */
+    static String detectDotNetRegStr(Detection d) {
+        if (d == null || blank(d.productName) || d.runtimeDir == null) return null;
+        String local = recoverDotNetLocalRegStr(d.appRoot, d.runtimeDir, d.productName);
+        if (!blank(local)) return local;
+        return detectProductList(new File(d.runtimeDir, "ITMC.Web.dll"), d.productName);
+    }
+
+    static String recoverDotNetLocalRegStr(File root, File runtimeDir, String product) {
+        if (blank(product)) return null;
+        File[] candidates = new File[]{
+                root == null ? null : new File(root, "config.xml"),
+                runtimeDir == null ? null : new File(runtimeDir, "config.xml")
+        };
+        HashSet<String> seen = new HashSet<String>();
+        for (File cfg : candidates) {
+            if (cfg == null || !cfg.isFile()) continue;
+            try {
+                String key = cfg.getCanonicalPath().toLowerCase(Locale.ROOT);
+                if (!seen.add(key)) continue;
+                String encrypted = firstElement(readUtf8(cfg), "regName");
+                if (blank(encrypted)) continue;
+                String plain = desDecryptHex(encrypted.trim(), "*ITMC" + product.trim() + "OK*");
+                int begin = plain.indexOf('{'), end = plain.lastIndexOf('}');
+                if (begin < 0 || end <= begin) continue;
+                String json = plain.substring(begin, end + 1);
+                String embeddedProduct = jsonStringField(json, "ProName");
+                String regStr = normalizeProductCsv(jsonStringField(json, "RegStr"));
+                if (product.trim().equalsIgnoreCase(embeddedProduct) && !blank(regStr)) return regStr;
+            } catch (Throwable ignore) { }
+        }
+        return null;
+    }
+
+    private static String jsonStringField(String json, String name) {
+        if (json == null || name == null) return null;
+        Matcher m = Pattern.compile("(?is)\\"" + Pattern.quote(name)
+                + "\\"\\s*:\s*\\"([^\\"]*)\\"").matcher(json);
+        return m.find() ? m.group(1).trim() : null;
+    }
+
+    private static String normalizeProductCsv(String raw) {
+        if (blank(raw)) return null;
+        LinkedHashSet<String> out = new LinkedHashSet<String>();
+        for (String part : raw.split(",")) {
+            String token = part.trim();
+            if (token.isEmpty()) continue;
+            if (!token.matches("(?i)[A-Z0-9][A-Z0-9._-]{1,63}")) return null;
+            out.add(token.toUpperCase(Locale.ROOT));
+        }
+        if (out.isEmpty()) return null;
+        StringBuilder b = new StringBuilder();
+        for (String token : out) { if (b.length() > 0) b.append(','); b.append(token); }
+        return b.toString();
     }
     static Set<String> extractUtf16Ascii(File f) {
         LinkedHashSet<String> raw = new LinkedHashSet<String>();

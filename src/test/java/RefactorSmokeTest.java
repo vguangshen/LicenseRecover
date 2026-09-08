@@ -345,13 +345,33 @@ public final class RefactorSmokeTest {
                         && "QT100101,QT100102".equals(yx305Plan.regStr)
                         && !yx305Plan.automaticRecoveryReady,
                 "YX0305 directory RegStr is retained for diagnostics but execution is blocked without identity proof");
-        Files.write(yx305Classes.resolve("RegistrationEvidence.class"),
-                "YX0305 YX030506".getBytes(StandardCharsets.US_ASCII));
+        Path yx305Servlet = yx305Classes.resolve("com/itmc/sys/platformregister/RegisterHttpServlet.class");
+        Path yx305XmlUtil = yx305Classes.resolve("com/itmc/utils/IXmlUtil.class");
+        Path yx305Runner = yx305Classes.resolve("com/itmc/utils/ProjectApplicationRunner.class");
+        Files.createDirectories(yx305Servlet.getParent());
+        Files.createDirectories(yx305XmlUtil.getParent());
+        Files.write(yx305Servlet,
+                "YX0305 itmc/regedit/RegisterMain doRegistry".getBytes(StandardCharsets.ISO_8859_1));
+        Files.write(yx305XmlUtil,
+                "global.system.VersionID /config.xml SystemSoft SoftVersionID regInfo SYS_PRODUCT_NUM PRODUCT_ALL_NUM PRODUCT_INFO"
+                        .getBytes(StandardCharsets.ISO_8859_1));
+        Files.write(yx305Runner,
+                "PRODUCT_ALL_NUM split itmc/regedit/RegisterMain checkReInfo"
+                        .getBytes(StandardCharsets.ISO_8859_1));
+        yx305Plan = LicenseRecoverModernGUIJavaPlan.inspect(yx305Root.toFile());
+        check("YX0305".equals(yx305Plan.authorizationFamily)
+                        && yx305Plan.runtimeProductId == null
+                        && !yx305Plan.automaticRecoveryReady,
+                "YX030506 family evidence alone stays blocked when startup PRODUCT_ALL_NUM flow is incomplete");
+        Files.write(yx305Runner,
+                "PRODUCT_ALL_NUM split itmc/regedit/GetRegisterCode RegeditNew itmcsoft itmc/regedit/RegisterMain writeRegisterUser checkReInfo"
+                        .getBytes(StandardCharsets.ISO_8859_1));
         yx305Plan = LicenseRecoverModernGUIJavaPlan.inspect(yx305Root.toFile());
         check("YX0305".equals(yx305Plan.authorizationFamily)
                         && "YX030506".equals(yx305Plan.runtimeProductId)
+                        && "QT100101,QT100102".equals(yx305Plan.regStr)
                         && yx305Plan.automaticRecoveryReady,
-                "YX0305 family/runtime IDs become ready only with target-binary evidence");
+                "YX030506 runtime id is accepted only from target config->PRODUCT_ALL_NUM->RegisterMain flow");
 
         Path qt401Root = base.resolve("java-QT40101");
         Path qt401Lib = qt401Root.resolve("WEB-INF/lib");
@@ -489,6 +509,31 @@ public final class RefactorSmokeTest {
         check(LicenseRecoverModernGUIAutoRecovery.detectProductList(
                         noRegStrFixture.toFile(), "YX0303").isEmpty(),
                 ".NET directory parser returns empty instead of inventing RegStr");
+
+        Path yx0102Root = base.resolve("dotnet-YX0102");
+        Path yx0102Bin = yx0102Root.resolve("bin");
+        Files.createDirectories(yx0102Bin);
+        writeUtf16Fixture(yx0102Bin.resolve("ITMC.Web.dll"), "YX0102", "ProName", "RegStr");
+        Files.write(yx0102Bin.resolve("ITMC.Regedit.dll"), new byte[]{1});
+        String yx0102Plain = "877842{\"RegStr\":\"YX0102\",\"RegID\":\"F000606A59904719\",\"UserID\":\"fwq\",\"ProName\":\"YX0102\"}708027";
+        String yx0102Cipher = LicenseRecoverModernGUIAutoRecovery.desEncryptHex(
+                yx0102Plain, "*ITMCYX0102OK*");
+        Files.write(yx0102Root.resolve("config.xml"), Arrays.asList(
+                "<ROOT><reg><regType>1</regType><regName>" + yx0102Cipher + "</regName></reg>",
+                "<SystemSoft><SoftVersionID>YX0102</SoftVersionID></SystemSoft></ROOT>"),
+                StandardCharsets.UTF_8);
+        LicenseRecoverModernGUIAutoRecovery.Detection yx0102Detection =
+                LicenseRecoverModernGUIAutoRecovery.detect(yx0102Root.toFile());
+        check("YX0102".equals(yx0102Detection.productName)
+                        && "YX0102".equals(LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(yx0102Detection)),
+                "YX0102 recovers RegStr from target-local regName only after ProName-key verification");
+        LicenseRecoverModernGUIAutoRecovery.Detection yx0102WrongProduct =
+                new LicenseRecoverModernGUIAutoRecovery.Detection(
+                        LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN,
+                        yx0102Root.toFile(), yx0102Root.toFile(), yx0102Bin.toFile(),
+                        "YX0102", "YX0103");
+        check(LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(yx0102WrongProduct) == null,
+                "target-local .NET regName is rejected when its cryptographic ProName does not match");
 
         Path yx302CrossFixture = base.resolve("YX030107-Web.dll");
         writeUtf16Fixture(yx302CrossFixture, "YX030107", "YX0302", "YX030201", "YX030204", "YX030219");

@@ -365,10 +365,31 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 + "register" + File.separator + "utils" + File.separator + "SystemInfo.class");
         File listener = new File(classes, "com" + File.separator + "itmc" + File.separator
                 + "register" + File.separator + "service" + File.separator + "RegisterListener.class");
-        if (!classFileContainsAll(systemInfo, "config.xml", "SystemSoft", "registerId")) return null;
-        if (!classFileContainsAll(listener, "com/itmc/register/utils/SystemInfo", "registerId",
-                "itmc/regedit/RegisterMain", "getRegStr", "versionID", "contains")) return null;
-        return concrete;
+        if (classFileContainsAll(systemInfo, "config.xml", "SystemSoft", "registerId")
+                && classFileContainsAll(listener, "com/itmc/register/utils/SystemInfo", "registerId",
+                "itmc/regedit/RegisterMain", "getRegStr", "versionID", "contains")) return concrete;
+
+        // Another target-owned generation (for example YX0305xx) loads
+        // classes/config.xml SoftVersionID into PRODUCT_ALL_NUM and its startup runner
+        // splits that value and feeds every concrete id to RegisterMain.checkReInfo().
+        // The field name alone is not sufficient; both parser and runner bytecode must
+        // expose the complete target-local flow before the concrete VersionID is accepted.
+        if (confirmedProductAllNumRuntimeProduct(classes)) return concrete;
+        return null;
+    }
+
+    static boolean confirmedProductAllNumRuntimeProduct(File classes) {
+        if (classes == null || !classes.isDirectory()) return false;
+        File xmlUtil = new File(classes, "com" + File.separator + "itmc" + File.separator
+                + "utils" + File.separator + "IXmlUtil.class");
+        File runner = new File(classes, "com" + File.separator + "itmc" + File.separator
+                + "utils" + File.separator + "ProjectApplicationRunner.class");
+        return classFileContainsAll(xmlUtil, "global.system.VersionID", "/config.xml",
+                        "SystemSoft", "SoftVersionID", "regInfo", "SYS_PRODUCT_NUM",
+                        "PRODUCT_ALL_NUM", "PRODUCT_INFO")
+                && classFileContainsAll(runner, "PRODUCT_ALL_NUM", "split",
+                        "itmc/regedit/GetRegisterCode", "RegeditNew", "itmcsoft",
+                        "itmc/regedit/RegisterMain", "writeRegisterUser", "checkReInfo");
     }
 
     private static boolean classFileContainsAll(File file, String... tokens) {

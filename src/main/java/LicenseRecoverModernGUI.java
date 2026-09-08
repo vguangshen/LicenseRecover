@@ -648,8 +648,7 @@ public final class LicenseRecoverModernGUI {
                             String kind = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
                                     ? ".NET Modern" : ".NET Legacy";
                             String dotNetRegStr = d.productName == null ? null
-                                    : LicenseRecoverModernGUIAutoRecovery.detectProductList(
-                                            new File(info.binDir, "ITMC.Web.dll"), d.productName);
+                                    : LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(d);
                             boolean dotNetIdentityReady = d.productName != null && !d.productName.trim().isEmpty();
                             boolean dotNetRegReady = dotNetRegStr != null && !dotNetRegStr.trim().isEmpty();
                             String verify = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
@@ -832,8 +831,7 @@ public final class LicenseRecoverModernGUI {
         if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN) {
             if (d.productName == null || d.productName.trim().isEmpty())
                 return ".NET 授权产品号未确认";
-            String products = LicenseRecoverModernGUIAutoRecovery.detectProductList(
-                    new File(target.binDir, "ITMC.Web.dll"), d.productName);
+            String products = LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(d);
             if (products == null || products.trim().isEmpty())
                 return ".NET RegStr 未从目标 DLL 确认";
         }
