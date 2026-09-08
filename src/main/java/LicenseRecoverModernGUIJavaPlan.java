@@ -149,7 +149,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
 
         String recoveredLocalRegStr = blank(runtimeProduct)
                 ? null : ExistingLocalRegStrProbe.recover(root, lib, runtimeProduct);
-        boolean binaryIdentity = !blank(binaryFamily) && !blank(binaryRuntime);
+        boolean binaryIdentity = !blank(binaryFamily)
+                && (!blank(binaryRuntime) || !blank(configDrivenRuntime));
         boolean directoryIdentity = directoryMapping != null
                 || directDataIdentity || !blank(confirmedClassesFamily) || binaryIdentity;
         boolean directoryRegStr = directoryMapping != null
