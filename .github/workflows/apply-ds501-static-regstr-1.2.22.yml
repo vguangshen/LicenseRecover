@@ -1,0 +1,29 @@
+name: Apply DS501 static RegStr 1.2.22
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'scripts/patch-ds501-static-regstr-1.2.22.py'
+      - '.github/workflows/apply-ds501-static-regstr-1.2.22.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Apply source/test/release patch
+        run: python scripts/patch-ds501-static-regstr-1.2.22.py
+      - name: Check diff
+        run: git diff --check
+      - name: Commit patch
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main/java/LicenseRecoverModernGUIJavaPlan.java src/test/java/RefactorSmokeTest.java VERSION.txt README.md release-notes/v1.2.22.md
+          git commit -m 'fix: 静态确认DS501主RegStr并发布v1.2.22'
+          git push origin HEAD:main
