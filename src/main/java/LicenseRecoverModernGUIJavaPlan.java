@@ -137,9 +137,11 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 : (directDataIdentity ? soft.trim() : binaryFamily));
         String binaryRuntime = confirmedBinaryRuntimeProduct(
                 root, lib, soft, binaryFamily, newStyle, classesConfig.isFile());
+        String configDrivenRuntime = confirmedConfigDrivenRuntimeProduct(root, soft, family);
         String runtimeProduct = directoryMapping != null ? directoryMapping.productMain
                 : (!blank(confirmedClassesFamily) ? confirmedClassesFamily
-                : (directDataIdentity ? soft.trim() : binaryRuntime));
+                : (directDataIdentity ? soft.trim()
+                : (!blank(configDrivenRuntime) ? configDrivenRuntime : binaryRuntime)));
         File jar = findRegJar(lib);
         boolean packed = jar != null && isVirboxPackedJar(jar);
         String products = directoryMapping != null ? directoryMapping.productMainNum
@@ -339,6 +341,46 @@ public final class LicenseRecoverModernGUIJavaPlan {
         // Concrete runtime IDs (DS501xx/YX0305xx) must also occur as an exact token
         // in target bytecode; the occurrence in config.xml alone is intentionally insufficient.
         return hasDirectoryBinaryToken(root, lib, candidate) ? candidate.trim() : null;
+    }
+
+    /**
+     * Prove a config-driven concrete runtime ProductID without guessing it from the
+     * VersionID.  The concrete value is accepted only when the selected application's
+     * own classes/config.xml supplies that same SoftVersionID and its own bytecode
+     * proves the data flow into RegisterMain plus the RegStr/versionID membership check.
+     */
+    static String confirmedConfigDrivenRuntimeProduct(File root, String softId, String confirmedFamily) {
+        if (root == null || blank(softId) || blank(confirmedFamily)) return null;
+        String concrete = softId.trim();
+        String family = confirmedFamily.trim();
+        if (!concrete.toUpperCase(Locale.ROOT).startsWith(family.toUpperCase(Locale.ROOT))) return null;
+
+        File classes = new File(root, "WEB-INF" + File.separator + "classes");
+        File config = new File(classes, "config.xml");
+        String configured = readElement(config, "SoftVersionID");
+        if (blank(configured) || !concrete.equalsIgnoreCase(configured.trim())) return null;
+
+        File systemInfo = new File(classes, "com" + File.separator + "itmc" + File.separator
+                + "register" + File.separator + "utils" + File.separator + "SystemInfo.class");
+        File listener = new File(classes, "com" + File.separator + "itmc" + File.separator
+                + "register" + File.separator + "service" + File.separator + "RegisterListener.class");
+        if (!classFileContainsAll(systemInfo, "config.xml", "SystemSoft", "registerId")) return null;
+        if (!classFileContainsAll(listener, "com/itmc/register/utils/SystemInfo", "registerId",
+                "itmc/regedit/RegisterMain", "getRegStr", "versionID", "contains")) return null;
+        return concrete;
+    }
+
+    private static boolean classFileContainsAll(File file, String... tokens) {
+        if (file == null || !file.isFile() || tokens == null) return false;
+        try {
+            byte[] data = Files.readAllBytes(file.toPath());
+            for (String token : tokens) {
+                if (!bytesContainExactAsciiToken(data, token)) return false;
+            }
+            return true;
+        } catch (Throwable ignore) {
+            return false;
+        }
     }
 
     static boolean hasDirectoryBinaryToken(File root, File lib, String token) {

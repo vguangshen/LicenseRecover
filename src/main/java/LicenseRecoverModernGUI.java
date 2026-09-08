@@ -706,9 +706,14 @@ public final class LicenseRecoverModernGUI {
         }
         LicenseRecoverModernGUIAutoRecovery.Detection d =
                 LicenseRecoverModernGUIAutoRecovery.detect(target.binDir);
-        if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
-                && (d.productName == null || d.productName.trim().isEmpty()))
-            return ".NET 授权产品号未确认";
+        if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN) {
+            if (d.productName == null || d.productName.trim().isEmpty())
+                return ".NET 授权产品号未确认";
+            String products = LicenseRecoverModernGUIAutoRecovery.detectProductList(
+                    new File(target.binDir, "ITMC.Web.dll"), d.productName);
+            if (products == null || products.trim().isEmpty())
+                return ".NET RegStr 未从目标 DLL 确认";
+        }
         return null;
     }
 
@@ -746,7 +751,7 @@ public final class LicenseRecoverModernGUI {
         LicenseRecoverModernGUIAutoRecovery.Detection d = LicenseRecoverModernGUIAutoRecovery.detect(target.binDir);
         if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY) return "兼容方式一: 不适用";
         if (preview) return "预览: 未执行写回校验";
-        return result.isSuccess() ? "写回解密校验: OK" : "写回解密校验: FAILED";
+        return result.isSuccess() ? "DoRegistry + CheckReInfo: OK" : "DoRegistry + CheckReInfo: FAILED";
     }
 
     private void cancelBatch() {

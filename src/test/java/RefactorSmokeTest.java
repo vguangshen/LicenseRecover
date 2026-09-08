@@ -15,6 +15,11 @@ public final class RefactorSmokeTest {
         System.out.println("PASS: " + message);
     }
 
+    public static final class LegacyRegisterMain1 {
+        final String product;
+        public LegacyRegisterMain1(String product) { this.product = product; }
+    }
+
     public static final class LegacyRegisterMain2 {
         final String product;
         final String configPath;
@@ -58,6 +63,24 @@ public final class RefactorSmokeTest {
                         && "encrypted-json".equals(modernCtor.json)
                         && "D:/app/".equals(modernCtor.configPath),
                 "modern 3-arg RegisterMain keeps json and configPath arguments");
+
+        LegacyRegisterMain2 probeCtor2 = (LegacyRegisterMain2)
+                ExistingLocalRegStrProbe.instantiateTargetRegisterMain(
+                        LegacyRegisterMain2.class, "DS50109", "ignored-token", "D:/app/WEB-INF/lib/", true);
+        check("DS50109".equals(probeCtor2.product)
+                        && "D:/app/WEB-INF/lib/".equals(probeCtor2.configPath),
+                "existing-local RegStr probe passes ConfigPath to 2-arg RegisterMain");
+        ModernRegisterMain3 probeCtor3 = (ModernRegisterMain3)
+                ExistingLocalRegStrProbe.instantiateTargetRegisterMain(
+                        ModernRegisterMain3.class, "DS28", "encrypted-token", "D:/ds28/WEB-INF/lib/", true);
+        check("encrypted-token".equals(probeCtor3.json)
+                        && "D:/ds28/WEB-INF/lib/".equals(probeCtor3.configPath),
+                "existing-local RegStr probe preserves token/path for 3-arg RegisterMain");
+        LegacyRegisterMain1 probeCtor1 = (LegacyRegisterMain1)
+                ExistingLocalRegStrProbe.instantiateTargetRegisterMain(
+                        LegacyRegisterMain1.class, "DS50109", "ignored-token", "D:/app/WEB-INF/lib/", true);
+        check("DS50109".equals(probeCtor1.product),
+                "existing-local RegStr probe supports 1-arg RegisterMain default-path generation");
 
         Path javaRoot = base.resolve("javaApp");
         Path javaLib = javaRoot.resolve("WEB-INF/lib");
@@ -132,6 +155,31 @@ public final class RefactorSmokeTest {
                         && ds2406Plan.regStrSummary().contains("动态"),
                 "DS2406 accepts target-binary family evidence and defers RegStr to target component");
 
+        Path ds2802Root = base.resolve("java-DS2802");
+        Path ds2802Lib = ds2802Root.resolve("WEB-INF/lib");
+        Path ds2802Global = ds2802Root.resolve("WEB-INF/classes/com/common/global/Global.class");
+        Files.createDirectories(ds2802Lib);
+        Files.createDirectories(ds2802Global.getParent());
+        Files.write(ds2802Lib.resolve("ITMCReg.jar"), new byte[]{1});
+        Files.write(ds2802Root.resolve("systemConfig.yml"),
+                Arrays.asList("global.system.VersionID=DS2802"), StandardCharsets.UTF_8);
+        Files.write(ds2802Global, "PRODUCT_NUM DS28".getBytes(StandardCharsets.US_ASCII));
+        check(!LegacyJavaRegistrationMetadata.requiresDirectoryMapping(ds2802Root.toFile(), "DS2802"),
+                "DS28 Global with direct PRODUCT_NUM is not mistaken for registerProductBeans dispatch");
+        LicenseRecoverModernGUIJavaPlan ds2802Plan = LicenseRecoverModernGUIJavaPlan.inspect(ds2802Root.toFile());
+        check("DS28".equals(ds2802Plan.authorizationFamily)
+                        && "DS28".equals(ds2802Plan.runtimeProductId)
+                        && ds2802Plan.automaticRecoveryReady
+                        && ds2802Plan.regStrSummary().contains("动态"),
+                "DS2802 accepts DS28 only because the selected target Global.class contains that exact token");
+        Path dispatchGlobal = base.resolve("dispatch-only/WEB-INF/classes/com/common/global/Global.class");
+        Files.createDirectories(dispatchGlobal.getParent());
+        Files.write(dispatchGlobal,
+                "setProductMain setProductMainNum setProductNums".getBytes(StandardCharsets.US_ASCII));
+        check(LegacyJavaRegistrationMetadata.requiresDirectoryMapping(
+                        base.resolve("dispatch-only").toFile(), "ANY0001"),
+                "Global registerProductBeans setter trio still forces fail-closed directory mapping");
+
         Path qt30103Root = base.resolve("java-QT30103");
         Path qt30103Lib = qt30103Root.resolve("WEB-INF/lib");
         Files.createDirectories(qt30103Lib);
@@ -205,13 +253,22 @@ public final class RefactorSmokeTest {
                         && !ds501Plan.automaticRecoveryReady,
                 "DS501 stays fail-closed without directory identity/RegStr evidence");
         Files.write(ds501Classes.resolve("RegistrationEvidence.class"),
-                "DS501 DS50109".getBytes(StandardCharsets.US_ASCII));
+                "DS501".getBytes(StandardCharsets.US_ASCII));
+        Path ds501SystemInfo = ds501Classes.resolve("com/itmc/register/utils/SystemInfo.class");
+        Path ds501Listener = ds501Classes.resolve("com/itmc/register/service/RegisterListener.class");
+        Files.createDirectories(ds501SystemInfo.getParent());
+        Files.createDirectories(ds501Listener.getParent());
+        Files.write(ds501SystemInfo,
+                "config.xml SystemSoft registerId".getBytes(StandardCharsets.US_ASCII));
+        Files.write(ds501Listener,
+                "com/itmc/register/utils/SystemInfo registerId itmc/regedit/RegisterMain getRegStr versionID contains"
+                        .getBytes(StandardCharsets.US_ASCII));
         ds501Plan = LicenseRecoverModernGUIJavaPlan.inspect(ds501Root.toFile());
         check("DS501".equals(ds501Plan.authorizationFamily)
                         && "DS50109".equals(ds501Plan.runtimeProductId)
                         && ds501Plan.automaticRecoveryReady
                         && ds501Plan.regStrSummary().contains("动态"),
-                "DS501 family/runtime IDs require exact target-binary tokens and use runtime RegStr probe");
+                "DS501 concrete runtime ID is accepted from target config only when target bytecode proves config->RegisterMain flow");
 
         Path yx305Root = base.resolve("java-YX030506");
         Path yx305Lib = yx305Root.resolve("WEB-INF/lib");

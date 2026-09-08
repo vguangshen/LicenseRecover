@@ -89,7 +89,26 @@ public final class LegacyJavaRegistrationMetadata {
                 + File.separator + "utils" + File.separator + "RegisterUtil.class");
         File global = new File(classes, "com" + File.separator + "common"
                 + File.separator + "global" + File.separator + "Global.class");
-        return registerUtil.isFile() || global.isFile();
+        return registerUtil.isFile() || globalHasRegistrationDispatch(global);
+    }
+
+    /**
+     * Some generations (for example DS28) keep only a direct PRODUCT_NUM constant
+     * in Global.class.  Virbox protects method Code bytes but leaves constant-pool
+     * names intact, so require the Global mapping parser only when the target class
+     * itself advertises the registerProductBeans setter trio.  Read failure remains
+     * fail-closed.
+     */
+    static boolean globalHasRegistrationDispatch(File global) {
+        if (global == null || !global.isFile()) return false;
+        try {
+            String pool = new String(Files.readAllBytes(global.toPath()), StandardCharsets.ISO_8859_1);
+            return pool.contains("setProductMain")
+                    && pool.contains("setProductMainNum")
+                    && pool.contains("setProductNums");
+        } catch (Throwable ex) {
+            return true;
+        }
     }
 
     static String selectFallbackPrefix(Collection<String> targetStrings, String softId) {

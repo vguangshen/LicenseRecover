@@ -20,6 +20,29 @@ import java.util.regex.Pattern;
 final class ExistingLocalRegStrProbe {
     private ExistingLocalRegStrProbe() { }
 
+    static Object instantiateTargetRegisterMain(Class<?> mainType, String product,
+                                                String token, String configDir,
+                                                boolean allowDefaultPath) throws Exception {
+        try {
+            java.lang.reflect.Constructor<?> ctor = mainType.getConstructor(
+                    String.class, String.class, String.class);
+            return ctor.newInstance(product, token, configDir);
+        } catch (NoSuchMethodException noThreeArg) { }
+        try {
+            java.lang.reflect.Constructor<?> ctor = mainType.getConstructor(String.class, String.class);
+            // Real legacy generations (DS2406/DS50109 included) define the second
+            // argument as ConfigPath, not an encrypted registration token.
+            return ctor.newInstance(product, configDir);
+        } catch (NoSuchMethodException noTwoArg) { }
+        if (allowDefaultPath) {
+            try {
+                java.lang.reflect.Constructor<?> ctor = mainType.getConstructor(String.class);
+                return ctor.newInstance(product);
+            } catch (NoSuchMethodException noOneArg) { }
+        }
+        throw new NoSuchMethodException("RegisterMain requires supported 3/2/1-arg constructor");
+    }
+
     static boolean isSafeLocalConfig(File config) {
         if (config == null || !config.isFile()) return false;
         return "1".equals(readElement(config, "regType")) && !blank(readElement(config, "regName"));
@@ -70,25 +93,14 @@ final class ExistingLocalRegStrProbe {
             if (blank(token)) return null;
 
             Class<?> mainType = Class.forName("itmc.regedit.RegisterMain", true, loader);
-            java.lang.reflect.Constructor<?> ctor3 = null;
-            java.lang.reflect.Constructor<?> ctor2 = null;
-            try { ctor3 = mainType.getConstructor(String.class, String.class, String.class); } catch (Exception ignore) { }
-            try { ctor2 = mainType.getConstructor(String.class, String.class); } catch (Exception ignore) { }
             java.lang.reflect.Method getRegInfo = mainType.getMethod("getRegInfo");
 
             LinkedHashSet<String> recovered = new LinkedHashSet<String>();
             for (File config : safe) {
                 try {
-                    Object main;
                     String dir = config.getParentFile().getAbsolutePath() + File.separator;
-                    if (ctor3 != null) {
-                        main = ctor3.newInstance(runtimeProductId, token, dir);
-                    } else if (ctor2 != null && sameFile(config.getParentFile(), libDir)) {
-                        // Older two-argument RegisterMain always resolves config.xml beside ITMCReg.jar.
-                        main = ctor2.newInstance(runtimeProductId, token);
-                    } else {
-                        continue;
-                    }
+                    Object main = instantiateTargetRegisterMain(mainType, runtimeProductId, token, dir,
+                            sameFile(config.getParentFile(), libDir));
 
                     // Deliberately call getRegInfo() directly. Never call checkReInfo() while probing.
                     Object info = getRegInfo.invoke(main);
