@@ -3,6 +3,7 @@
 
 #include <windows.h>
 #include <shellapi.h>
+#include <wininet.h>
 #include <wchar.h>
 #include <stdlib.h>
 
@@ -121,8 +122,70 @@ static int append_arg(wchar_t *buffer, size_t cap, size_t *len, const wchar_t *a
     return append_text(buffer, cap, len, L"\"");
 }
 
+static int native_download(const wchar_t *url, const wchar_t *target) {
+    if (!url || !target || _wcsnicmp(url, L"https://", 8) != 0) return 21;
+
+    HINTERNET internet = InternetOpenW(L"LicenseRecover-Updater",
+            INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (!internet) return 22;
+
+    DWORD connectTimeout = 12000, receiveTimeout = 60000, sendTimeout = 30000;
+    InternetSetOptionW(internet, INTERNET_OPTION_CONNECT_TIMEOUT, &connectTimeout, sizeof(connectTimeout));
+    InternetSetOptionW(internet, INTERNET_OPTION_RECEIVE_TIMEOUT, &receiveTimeout, sizeof(receiveTimeout));
+    InternetSetOptionW(internet, INTERNET_OPTION_SEND_TIMEOUT, &sendTimeout, sizeof(sendTimeout));
+
+    const wchar_t *headers = L"Accept: application/octet-stream, */*;q=0.8\r\nAccept-Encoding: identity\r\n";
+    HINTERNET request = InternetOpenUrlW(internet, url, headers, (DWORD)-1,
+            INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE | INTERNET_FLAG_SECURE | INTERNET_FLAG_NO_UI, 0);
+    if (!request) {
+        InternetCloseHandle(internet);
+        return 23;
+    }
+
+    DWORD status = 0, statusLen = sizeof(status);
+    if (!HttpQueryInfoW(request, HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
+                        &status, &statusLen, NULL) || status < 200 || status >= 300) {
+        InternetCloseHandle(request);
+        InternetCloseHandle(internet);
+        return 24;
+    }
+
+    HANDLE file = CreateFileW(target, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
+                              FILE_ATTRIBUTE_TEMPORARY | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED, NULL);
+    if (file == INVALID_HANDLE_VALUE) {
+        InternetCloseHandle(request);
+        InternetCloseHandle(internet);
+        return 25;
+    }
+
+    BYTE buffer[65536];
+    DWORD got = 0;
+    int rc = 0;
+    for (;;) {
+        if (!InternetReadFile(request, buffer, sizeof(buffer), &got)) { rc = 26; break; }
+        if (got == 0) break;
+        DWORD written = 0;
+        if (!WriteFile(file, buffer, got, &written, NULL) || written != got) { rc = 27; break; }
+    }
+    FlushFileBuffers(file);
+    CloseHandle(file);
+    InternetCloseHandle(request);
+    InternetCloseHandle(internet);
+    if (rc != 0) DeleteFileW(target);
+    return rc;
+}
+
 int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR commandLine, int showCommand) {
     (void)instance; (void)previous; (void)commandLine; (void)showCommand;
+
+    int earlyArgc = 0;
+    LPWSTR *earlyArgv = CommandLineToArgvW(GetCommandLineW(), &earlyArgc);
+    if (earlyArgv && earlyArgc == 4 && wcscmp(earlyArgv[1], L"--native-download") == 0) {
+        int rc = native_download(earlyArgv[2], earlyArgv[3]);
+        LocalFree(earlyArgv);
+        return rc;
+    }
+    if (earlyArgv) LocalFree(earlyArgv);
 
     wchar_t dir[32768], javaExe[32768], overlay[32768], guiJar[32768], classpath[65536];
     if (!get_exe_dir(dir, ARRAY_LEN(dir))) {
@@ -157,6 +220,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR commandLine
     if (!append_arg(cmd, cmdCap, &len, javaExe) ||
         !append_arg(cmd, cmdCap, &len, L"-Dfile.encoding=UTF-8") ||
         !append_arg(cmd, cmdCap, &len, L"-Djava.net.useSystemProxies=true") ||
+        !append_arg(cmd, cmdCap, &len, L"-Djava.net.preferIPv4Stack=true") ||
         !append_arg(cmd, cmdCap, &len, L"-Dsun.java2d.dpiaware=true") ||
         !append_arg(cmd, cmdCap, &len, L"-Dsun.java2d.noddraw=true") ||
         !append_arg(cmd, cmdCap, &len, L"-cp") ||

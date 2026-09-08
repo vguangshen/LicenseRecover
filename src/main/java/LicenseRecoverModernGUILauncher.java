@@ -2,6 +2,9 @@ import javax.swing.*;
 import java.awt.*;
 import java.io.*;
 import java.net.HttpURLConnection;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
+import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -321,10 +324,10 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
     private static final String API_LATEST =
             "https://api.github.com/repos/" + REPOSITORY + "/releases/latest";
     private static final Pattern SEMVER = Pattern.compile("^\\d+\\.\\d+\\.\\d+$");
-    private static final int CONNECT_TIMEOUT_MS = 30000;
+    private static final int CONNECT_TIMEOUT_MS = 12000;
     private static final int READ_TIMEOUT_MS = 60000;
-    private static final int DOWNLOAD_RETRIES = 4;
-    private static final long RETRY_BACKOFF_MS = 1500L;
+    private static final int MAX_REDIRECTS = 8;
+    private static final long NATIVE_DOWNLOAD_TIMEOUT_MS = 180000L;
     private static final LicenseRecoverModernGUIUpdateProgress NO_PROGRESS =
             new LicenseRecoverModernGUIUpdateProgress() {
                 public void status(String text) { }
@@ -484,13 +487,34 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
     }
 
     private static String getText(String url) throws IOException {
-        HttpURLConnection c = connection(url);
-        try (InputStream in = c.getInputStream(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            byte[] buffer = new byte[8192];
-            int n;
-            while ((n = in.read(buffer)) >= 0) out.write(buffer, 0, n);
-            return new String(out.toByteArray(), StandardCharsets.UTF_8);
-        } finally { c.disconnect(); }
+        IOException javaFailure = null;
+        for (NetworkRoute route : networkRoutes()) {
+            HttpURLConnection c = null;
+            try {
+                c = openFollowingRedirects(url, -1L, route);
+                try (InputStream in = c.getInputStream(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+                    byte[] buffer = new byte[8192];
+                    int n;
+                    while ((n = in.read(buffer)) >= 0) out.write(buffer, 0, n);
+                    return new String(out.toByteArray(), StandardCharsets.UTF_8);
+                }
+            } catch (IOException ex) {
+                javaFailure = ex;
+            } finally {
+                if (c != null) c.disconnect();
+            }
+        }
+
+        File temp = Files.createTempFile("LicenseRecover-update-text-", ".tmp").toFile();
+        try {
+            if (nativeDownload(url, temp, -1L, NO_PROGRESS, s -> { })) {
+                return new String(Files.readAllBytes(temp.toPath()), StandardCharsets.UTF_8);
+            }
+        } finally {
+            temp.delete();
+        }
+        throw new IOException("GitHub 文本请求在 Java 与 Windows 网络栈均失败。最后 Java 错误: "
+                + (javaFailure == null ? "未知" : safeNetworkMessage(javaFailure)), javaFailure);
     }
 
     private static void download(String url, File target, long expectedTotal,
@@ -503,15 +527,16 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
         }
         progress.bytes(downloaded, expectedTotal);
         IOException last = null;
+        List<NetworkRoute> routes = networkRoutes();
 
-        for (int attempt = 1; attempt <= DOWNLOAD_RETRIES; attempt++) {
+        for (int i = 0; i < routes.size(); i++) {
             if (expectedTotal > 0L && downloaded == expectedTotal) return;
+            NetworkRoute route = routes.get(i);
             HttpURLConnection c = null;
             try {
-                progress.status(attempt == 1
-                        ? "正在连接 GitHub 下载节点..."
-                        : "正在重试下载 (" + attempt + "/" + DOWNLOAD_RETRIES + ")...");
-                c = connection(url, downloaded > 0L ? downloaded : -1L);
+                progress.status("正在连接 GitHub 下载节点（" + route.label + "，线路 "
+                        + (i + 1) + "/" + routes.size() + "）...");
+                c = openFollowingRedirects(url, downloaded > 0L ? downloaded : -1L, route);
                 int code = c.getResponseCode();
                 boolean append = downloaded > 0L && code == HttpURLConnection.HTTP_PARTIAL;
                 if (downloaded > 0L && !append) {
@@ -525,7 +550,7 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
                     total = parseContentRangeTotal(c.getHeaderField("Content-Range"));
                     if (total <= 0L && responseLength >= 0L) total = downloaded + responseLength;
                 }
-                progress.status("正在下载 " + target.getName() + "...");
+                progress.status("正在下载 " + target.getName() + "（" + route.label + "）...");
                 progress.bytes(downloaded, total);
 
                 try (InputStream in = new BufferedInputStream(c.getInputStream());
@@ -545,21 +570,116 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
                 return;
             } catch (IOException ex) {
                 last = ex;
-                log.accept("[更新] 下载第 " + attempt + " 次连接失败: " + ex.getMessage() + "\n");
-                if (attempt >= DOWNLOAD_RETRIES) break;
-                progress.status("网络中断，稍后自动重试...");
-                try { Thread.sleep(RETRY_BACKOFF_MS * attempt); }
-                catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("更新下载被中断。", interrupted);
-                }
+                log.accept("[更新] Java 下载线路 " + route.label + " 失败: "
+                        + safeNetworkMessage(ex) + "\n");
             } finally {
                 if (c != null) c.disconnect();
             }
         }
-        String reason = last == null || last.getMessage() == null ? "未知网络错误" : last.getMessage();
-        throw new IOException("连接 GitHub 下载节点失败，已自动重试 " + DOWNLOAD_RETRIES
-                + " 次。最后错误: " + reason, last);
+
+        progress.status("Java 下载线路不可用，正在切换 Windows 系统网络栈...");
+        log.accept("[更新] Java 下载线路全部失败，切换 LicenseRecoverGUI.exe / WinINet。\n");
+        if (nativeDownload(url, target, expectedTotal, progress, log)) return;
+
+        String reason = last == null ? "未知网络错误" : safeNetworkMessage(last);
+        throw new IOException("GitHub 更新下载失败：Java 多线路与 Windows WinINet 均未成功。最后 Java 错误: "
+                + reason, last);
+    }
+
+    private static final class NetworkRoute {
+        final String label;
+        final Proxy proxy;
+        final boolean system;
+        NetworkRoute(String label, Proxy proxy, boolean system) {
+            this.label = label;
+            this.proxy = proxy;
+            this.system = system;
+        }
+        HttpURLConnection open(URL url) throws IOException {
+            return (HttpURLConnection) (system ? url.openConnection() : url.openConnection(proxy));
+        }
+    }
+
+    private static List<NetworkRoute> networkRoutes() {
+        List<NetworkRoute> routes = new ArrayList<NetworkRoute>();
+        routes.add(new NetworkRoute("Windows/Java 系统代理", null, true));
+        Proxy env = environmentProxy();
+        if (env != null) routes.add(new NetworkRoute("HTTPS_PROXY 环境代理", env, false));
+        routes.add(new NetworkRoute("直接连接", Proxy.NO_PROXY, false));
+        return routes;
+    }
+
+    static Proxy parseProxy(String value) {
+        if (value == null || value.trim().isEmpty()) return null;
+        try {
+            String raw = value.trim();
+            if (!raw.contains("://")) raw = "http://" + raw;
+            URI uri = new URI(raw);
+            if (uri.getUserInfo() != null || uri.getHost() == null) return null;
+            String scheme = uri.getScheme() == null ? "http" : uri.getScheme().toLowerCase(Locale.ROOT);
+            if (!"http".equals(scheme) && !"https".equals(scheme)) return null;
+            int port = uri.getPort();
+            if (port <= 0) port = "https".equals(scheme) ? 443 : 80;
+            return new Proxy(Proxy.Type.HTTP, InetSocketAddress.createUnresolved(uri.getHost(), port));
+        } catch (Exception ignore) {
+            return null;
+        }
+    }
+
+    private static Proxy environmentProxy() {
+        String[] names = {"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"};
+        for (String name : names) {
+            Proxy proxy = parseProxy(System.getenv(name));
+            if (proxy != null) return proxy;
+        }
+        return null;
+    }
+
+    static boolean isRedirectCode(int code) {
+        return code == HttpURLConnection.HTTP_MOVED_PERM
+                || code == HttpURLConnection.HTTP_MOVED_TEMP
+                || code == HttpURLConnection.HTTP_SEE_OTHER
+                || code == 307 || code == 308;
+    }
+
+    private static HttpURLConnection openFollowingRedirects(String url, long rangeStart,
+                                                             NetworkRoute route) throws IOException {
+        URL current = new URL(url);
+        if (!"https".equalsIgnoreCase(current.getProtocol()))
+            throw new IOException("拒绝非 HTTPS 更新地址。");
+        for (int redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
+            HttpURLConnection c = route.open(current);
+            c.setInstanceFollowRedirects(false);
+            c.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            c.setReadTimeout(READ_TIMEOUT_MS);
+            c.setRequestProperty("User-Agent", "LicenseRecover-Updater");
+            c.setRequestProperty("Accept", "application/vnd.github+json, application/octet-stream;q=0.9, */*;q=0.8");
+            c.setRequestProperty("Accept-Encoding", "identity");
+            c.setRequestProperty("Connection", "close");
+            if (rangeStart >= 0L) c.setRequestProperty("Range", "bytes=" + rangeStart + "-");
+            int code = c.getResponseCode();
+            if (isRedirectCode(code)) {
+                String location = c.getHeaderField("Location");
+                c.disconnect();
+                if (location == null || location.trim().isEmpty())
+                    throw new IOException("GitHub 重定向缺少 Location。");
+                URL next = new URL(current, location);
+                if (!"https".equalsIgnoreCase(next.getProtocol()))
+                    throw new IOException("更新下载被重定向到非 HTTPS 地址，已拒绝。");
+                current = next;
+                continue;
+            }
+            if (code < 200 || code >= 300) {
+                c.disconnect();
+                throw new IOException("GitHub 请求失败，HTTP " + code + "。");
+            }
+            if (!"https".equalsIgnoreCase(c.getURL().getProtocol())) {
+                c.disconnect();
+                throw new IOException("更新下载最终地址不是 HTTPS，已拒绝。");
+            }
+            return c;
+        }
+        throw new IOException("GitHub 重定向次数超过 " + MAX_REDIRECTS + " 次。");
     }
 
     private static HttpURLConnection connection(String url) throws IOException {
@@ -567,26 +687,91 @@ final class LicenseRecoverModernGUIGitHubUpdateService {
     }
 
     private static HttpURLConnection connection(String url, long rangeStart) throws IOException {
-        URL u = new URL(url);
-        if (!"https".equalsIgnoreCase(u.getProtocol())) throw new IOException("拒绝非 HTTPS 更新地址。");
-        HttpURLConnection c = (HttpURLConnection) u.openConnection();
-        c.setInstanceFollowRedirects(true);
-        c.setConnectTimeout(CONNECT_TIMEOUT_MS);
-        c.setReadTimeout(READ_TIMEOUT_MS);
-        c.setRequestProperty("User-Agent", "LicenseRecover-Updater");
-        c.setRequestProperty("Accept", "application/vnd.github+json, application/octet-stream;q=0.9, */*;q=0.8");
-        c.setRequestProperty("Accept-Encoding", "identity");
-        if (rangeStart >= 0L) c.setRequestProperty("Range", "bytes=" + rangeStart + "-");
-        int code = c.getResponseCode();
-        if (code < 200 || code >= 300) {
-            c.disconnect();
-            throw new IOException("GitHub 请求失败，HTTP " + code + "。仓库需为公开状态。");
+        IOException last = null;
+        for (NetworkRoute route : networkRoutes()) {
+            try { return openFollowingRedirects(url, rangeStart, route); }
+            catch (IOException ex) { last = ex; }
         }
-        if (!"https".equalsIgnoreCase(c.getURL().getProtocol())) {
-            c.disconnect();
-            throw new IOException("更新下载被重定向到非 HTTPS 地址，已拒绝。");
+        throw new IOException("GitHub Java 网络线路均不可用: "
+                + (last == null ? "未知" : safeNetworkMessage(last)), last);
+    }
+
+    private static boolean nativeDownload(String url, File target, long expectedTotal,
+                                          LicenseRecoverModernGUIUpdateProgress progress,
+                                          Consumer<String> log) {
+        if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")) return false;
+        File launcher = new File(runtimeDir(), "LicenseRecoverGUI.exe");
+        if (!launcher.isFile()) return false;
+        if (target.exists() && !target.delete()) return false;
+        Process process = null;
+        try {
+            ProcessBuilder pb = new ProcessBuilder(launcher.getAbsolutePath(), "--native-download",
+                    url, target.getAbsolutePath());
+            pb.directory(runtimeDir());
+            pb.redirectErrorStream(true);
+            process = pb.start();
+            final Process p = process;
+            Thread drainer = new Thread(() -> {
+                try (InputStream in = p.getInputStream()) {
+                    byte[] buffer = new byte[1024];
+                    while (in.read(buffer) >= 0) { }
+                } catch (IOException ignore) { }
+            }, "LicenseRecover-NativeDownload-Drain");
+            drainer.setDaemon(true);
+            drainer.start();
+
+            long started = System.currentTimeMillis();
+            for (;;) {
+                try {
+                    int rc = process.exitValue();
+                    long size = target.isFile() ? target.length() : 0L;
+                    progress.bytes(size, expectedTotal);
+                    if (rc == 0 && target.isFile() && size > 0L) {
+                        log.accept("[更新] Windows WinINet 下载成功。\n");
+                        return true;
+                    }
+                    if (target.exists()) target.delete();
+                    log.accept("[更新] Windows WinINet 下载失败，退出码 " + rc + "。\n");
+                    return false;
+                } catch (IllegalThreadStateException stillRunning) {
+                    long size = target.isFile() ? target.length() : 0L;
+                    progress.status("正在使用 Windows 系统网络栈下载 " + target.getName() + "...");
+                    progress.bytes(size, expectedTotal);
+                    if (System.currentTimeMillis() - started > NATIVE_DOWNLOAD_TIMEOUT_MS) {
+                        process.destroy();
+                        if (target.exists()) target.delete();
+                        log.accept("[更新] Windows WinINet 下载超时。\n");
+                        return false;
+                    }
+                    try { Thread.sleep(250L); }
+                    catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                        process.destroy();
+                        return false;
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            if (target.exists()) target.delete();
+            log.accept("[更新] 无法启动 Windows WinINet 兜底下载: " + safeNetworkMessage(ex) + "\n");
+            return false;
         }
-        return c;
+    }
+
+    private static File runtimeDir() {
+        try {
+            File location = new File(LicenseRecoverModernGUIGitHubUpdateService.class
+                    .getProtectionDomain().getCodeSource().getLocation().toURI());
+            return location.isFile() ? location.getParentFile() : location;
+        } catch (Exception ignore) {
+            return new File(".").getAbsoluteFile();
+        }
+    }
+
+    private static String safeNetworkMessage(Throwable ex) {
+        String value = ex == null ? "未知错误" : ex.getMessage();
+        if (value == null || value.trim().isEmpty()) value = ex == null ? "未知错误" : ex.toString();
+        return value.length() > 300 ? value.substring(0, 300) + "..." : value;
     }
 
     static long parseAssetSize(String json, String fileName) {

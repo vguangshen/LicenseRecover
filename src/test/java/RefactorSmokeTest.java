@@ -625,6 +625,14 @@ public final class RefactorSmokeTest {
         check(LicenseRecoverModernGUIGitHubUpdateService.parseContentRangeTotal(
                         "bytes 1024-2047/4416823") == 4416823L,
                 "GitHub updater parses resumable download total");
+        check(LicenseRecoverModernGUIGitHubUpdateService.parseProxy("http://127.0.0.1:7890") != null,
+                "GitHub updater accepts explicit HTTPS_PROXY-style HTTP proxy");
+        check(LicenseRecoverModernGUIGitHubUpdateService.parseProxy("http://user:pass@127.0.0.1:7890") == null,
+                "GitHub updater does not silently mishandle authenticated proxy URLs");
+        check(LicenseRecoverModernGUIGitHubUpdateService.isRedirectCode(302)
+                        && LicenseRecoverModernGUIGitHubUpdateService.isRedirectCode(307)
+                        && !LicenseRecoverModernGUIGitHubUpdateService.isRedirectCode(200),
+                "GitHub updater recognizes manual HTTPS redirect statuses");
 
         Path updateInstall = base.resolve("update-install");
         Files.createDirectories(updateInstall);

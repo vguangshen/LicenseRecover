@@ -88,7 +88,7 @@ try {
     Invoke-Checked $gcc @(
         '-std=c99', '-Os', '-s', '-fno-ident', '-municode', '-mwindows', '-static-libgcc',
         'src/native/LicenseRecoverGUI.c', $resourceObj,
-        '-o', $launcher, '-lshell32', '-luser32'
+        '-o', $launcher, '-lshell32', '-luser32', '-lwininet'
     )
 } finally {
     Pop-Location
@@ -113,7 +113,9 @@ foreach ($required in @(
     'LicenseRecoverModernGUILauncherUiPatch',
     'LicenseRecoverOverlay.jar',
     'LicenseRecoverGUI.jar',
-    'jre\bin\javaw.exe'
+    'jre\bin\javaw.exe',
+    '--native-download',
+    '-Djava.net.preferIPv4Stack=true'
 )) {
     if ($wideStrings.IndexOf($required, [StringComparison]::Ordinal) -lt 0) {
         throw "Native launcher binary is missing required runtime reference: $required"
