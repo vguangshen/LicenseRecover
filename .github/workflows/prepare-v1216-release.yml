@@ -1,0 +1,36 @@
+name: Prepare v1.2.16 release
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Prepare release metadata
+        run: python3 scripts/prepare-v1216-release.py
+      - name: Validate metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          test "$(cat VERSION.txt)" = "1.2.16"
+          grep -q '当前稳定版本：\*\*v1.2.16\*\*' README.md
+          test -f release-notes/v1.2.16.md
+      - name: Commit release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add VERSION.txt README.md release-notes/v1.2.16.md
+          git commit -m 'release: prepare LicenseRecover v1.2.16'
+          git push origin HEAD:main
