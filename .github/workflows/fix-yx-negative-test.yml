@@ -1,0 +1,35 @@
+name: Fix YX negative smoke test
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/fix-yx-negative-test.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Fix test
+        run: python3 scripts/fix-yx-negative-test.py
+      - name: Validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          grep -Fq 'yx0102WrongRegStr == null || yx0102WrongRegStr.trim().isEmpty()' src/test/java/RefactorSmokeTest.java
+      - name: Commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/test/java/RefactorSmokeTest.java
+          git commit -m 'test: 接受.NET无RegStr的空结果约定'
+          git push origin HEAD:main
