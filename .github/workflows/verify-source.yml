@@ -5,6 +5,10 @@ on:
     branches: [ main, "refactor/**" ]
   pull_request:
 
+concurrency:
+  group: verify-source-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   compile-java:
     permissions:
@@ -21,8 +25,8 @@ jobs:
         run: |
           set -euo pipefail
           if ! command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1 || ! command -v x86_64-w64-mingw32-windres >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64
+            timeout 120s sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+            timeout 180s sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64
           fi
           x86_64-w64-mingw32-gcc --version | head -n 1
       - name: Prepare Java sample compatibility
