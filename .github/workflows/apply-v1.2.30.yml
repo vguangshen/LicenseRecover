@@ -22,6 +22,26 @@ jobs:
         with:
           python-version: '3.x'
 
+      - name: Repair staged import match
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/apply-v1.2.30.py')
+          s = p.read_text(encoding='utf-8')
+          old = "'import java.io.File;\\nimport java.util.ArrayList;'"
+          new = "'import java.io.File;\\nimport java.text.SimpleDateFormat;\\nimport java.util.ArrayList;'"
+          if old not in s:
+              raise SystemExit('staged import-match expression not found')
+          s = s.replace(old, new, 1)
+          old = "'import java.io.File;\\nimport java.nio.charset.StandardCharsets;\\nimport java.nio.file.Files;\\nimport java.nio.file.StandardOpenOption;\\nimport java.text.SimpleDateFormat;\\nimport java.util.Date;\\nimport java.util.ArrayList;'"
+          new = "'import java.io.File;\\nimport java.nio.charset.StandardCharsets;\\nimport java.nio.file.Files;\\nimport java.nio.file.StandardOpenOption;\\nimport java.text.SimpleDateFormat;\\nimport java.util.ArrayList;'"
+          if old not in s:
+              raise SystemExit('staged import replacement expression not found')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+
       - name: Apply staged v1.2.30 patch
         shell: bash
         run: |
