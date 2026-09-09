@@ -30,10 +30,17 @@ internal static class LicenseRecoverAspNetHost
     private static HttpContext CreateContext(string appRoot)
     {
         string physical = WithTrailingSeparator(appRoot);
+
+        // Publish the target application's virtual/physical root through the same
+        // AppDomain data keys used by classic ASP.NET. Once those keys are present,
+        // the five-argument SimpleWorkerRequest constructor is not legal because it
+        // attempts to override an already-established application path. Use the
+        // non-overriding constructor so Server.MapPath("~/...") resolves against the
+        // target web root without triggering HttpException on real .NET Framework.
         AppDomain.CurrentDomain.SetData(".appPath", physical);
         AppDomain.CurrentDomain.SetData(".appVPath", "/");
         SimpleWorkerRequest worker = new SimpleWorkerRequest(
-            "/", physical, "default.aspx", "", TextWriter.Null);
+            "default.aspx", "", TextWriter.Null);
         return new HttpContext(worker);
     }
 
