@@ -134,10 +134,14 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (targetRegedit == null)
             return Result.fail("[CHAIN] no target itmcRegedit.dll / ITMC.Regedit.dll registration assembly was found.", d);
         boolean lowercaseChain = "itmcRegedit.dll".equals(targetRegedit.getName());
-        File helper = lowercaseChain ? findDotNetAspNetHostHelper() : findDotNetModernNativeHelper();
+        // Both lowercase and uppercase registration components must execute inside the
+        // target web application's hosted AppDomain.  The two generations resolve
+        // paths differently (lowercase uses HttpContext.MapPath, uppercase uses
+        // AppDomain.BaseDirectory), but both expect the site root rather than the
+        // LicenseRecover tool directory or target bin as their application base.
+        File helper = findDotNetAspNetHostHelper();
         if (helper == null) {
-            String expected = lowercaseChain ? "LicenseRecover.NET.AspNetHost.exe" : "LicenseRecover.NET.Modern.exe";
-            return Result.fail("[HELPER] " + expected + " was not found; selected target registration chain cannot run.", d);
+            return Result.fail("[HELPER] LicenseRecover.NET.AspNetHost.exe was not found; selected target registration chain cannot run.", d);
         }
 
         String appProduct = d.productName;
@@ -153,7 +157,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             log.accept("[dotnet-chain] lowercase itmcRegedit.dll preferred via ASP.NET host; appProduct=" + appProduct
                     + " registrationProduct=" + registrationProduct + "\n");
         } else {
-            log.accept("[dotnet-chain] lowercase itmcRegedit.dll absent; uppercase ITMC.Regedit.dll fallback; product="
+            log.accept("[dotnet-chain] lowercase itmcRegedit.dll absent; uppercase ITMC.Regedit.dll fallback via hosted AppDomain; product="
                     + appProduct + "\n");
         }
 
