@@ -1,0 +1,26 @@
+name: Verify v1.2.33 target-bin resolver
+
+on:
+  push:
+    branches: [ fix/v1.2.33-target-bin-resolver ]
+    paths:
+      - src/dotnet/LicenseRecover.AspNetHost.cs
+      - .github/workflows/verify-v1.2.33-target-resolver.yml
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Compile ASP.NET host and inspect resolver markers
+        shell: powershell
+        run: |
+          $src = 'src/dotnet/LicenseRecover.AspNetHost.cs'
+          $text = Get-Content -LiteralPath $src -Raw
+          foreach ($marker in @('AssemblyResolve','ResolveFromTargetBin','PreloadLowercaseRegistrationAssembly','target-bin resolve','helperDispatch=RunDirect/same-AppDomain')) {
+            if (-not $text.Contains($marker)) { throw "missing marker: $marker" }
+          }
+          $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+          if (-not (Test-Path $csc)) { $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe' }
+          & $csc /nologo /target:exe /out:LicenseRecover.NET.AspNetHost.test.exe /reference:System.Web.dll $src
+          if ($LASTEXITCODE -ne 0) { throw "csc failed: $LASTEXITCODE" }
