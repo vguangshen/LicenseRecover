@@ -667,6 +667,32 @@ public final class RefactorSmokeTest {
         check(LicenseRecoverModernGUIAutoRecovery.readRegisterVersionEvidence(yx0102NoKeyDetection) == null,
                 "RegisterVersion.db compatibility evidence fails closed when its key is not proven by target DLL");
 
+
+        check("YX0302".equals(LicenseRecoverModernGUIAutoRecovery.detectLowercaseDotNetRegistrationProduct(
+                        new java.util.LinkedHashSet<String>(Arrays.asList(
+                                "itmcsoft", "itmcYX0302", "*ITMCYX0302OK*", "itmcRegedit")))),
+                "lowercase YX030101 registration family is target-owned YX0302, not app ProName YX0301");
+        check("market".equalsIgnoreCase(LicenseRecoverModernGUIAutoRecovery.detectLowercaseDotNetRegistrationProduct(
+                        new java.util.LinkedHashSet<String>(Arrays.asList(
+                                "itmcsoft", "itmcmarket", "*MarketOK*", "itmcRegedit")))),
+                "lowercase YX0102 registration family is target-owned market, not app ProName YS01");
+        check(LicenseRecoverModernGUIAutoRecovery.detectLowercaseDotNetRegistrationProduct(
+                        new java.util.LinkedHashSet<String>(Arrays.asList(
+                                "itmcsoft", "itmcRegedit", "itmcService"))) == null,
+                "lowercase registration family inference fails closed without a matching local-record key");
+
+        Path chainBin = base.resolve("dotnet-chain-selection");
+        Files.createDirectories(chainBin);
+        Files.write(chainBin.resolve("ITMC.Regedit.dll"), new byte[]{1});
+        Files.write(chainBin.resolve("itmcRegedit.dll"), new byte[]{2});
+        check("itmcRegedit.dll".equals(LicenseRecoverModernGUIAutoRecovery.selectDotNetRegeditAssembly(
+                        chainBin.toFile()).getName()),
+                ".NET registration chain prefers lowercase itmcRegedit.dll when both assemblies exist");
+        Files.delete(chainBin.resolve("itmcRegedit.dll"));
+        check("ITMC.Regedit.dll".equals(LicenseRecoverModernGUIAutoRecovery.selectDotNetRegeditAssembly(
+                        chainBin.toFile()).getName()),
+                ".NET registration chain falls back to uppercase ITMC.Regedit.dll only when lowercase is absent");
+
         Path yx302CrossFixture = base.resolve("YX030107-Web.dll");
         writeUtf16Fixture(yx302CrossFixture, "YX030107", "YX0302", "YX030201", "YX030204", "YX030219");
         check("YX0302".equals(LicenseRecoverModernGUIAutoRecovery.detectProduct(

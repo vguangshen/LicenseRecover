@@ -219,7 +219,9 @@ if (-not $legacyGuiSource.Contains('plan.authorizationFamily, plan.regStr')) { t
 if (-not $legacyGuiSource.Contains('目标 ITMC.Web.dll 未解析出 ProName')) { throw 'Legacy GUI .NET fail-closed product guard is missing.' }
 if (-not $coreSource.Contains('LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect')) { throw 'Java core is not using the fail-closed directory plan.' }
 if (-not $autoSource.Contains('VersionID/default-list fallback is disabled')) { throw '.NET fail-closed guard is missing.' }
-if (-not $autoSource.Contains('LicenseRecover.NET.Modern.exe')) { throw 'Modern .NET one-click is not using the uppercase helper adapter.' }
+if (-not $autoSource.Contains('LicenseRecover.NET.exe') -or -not $autoSource.Contains('LicenseRecover.NET.Modern.exe')) { throw '.NET one-click must retain lowercase native helper plus uppercase fallback adapter.' }
+if (-not $autoSource.Contains('selectDotNetRegeditAssembly') -or -not $autoSource.Contains('detectLowercaseDotNetRegistrationProduct')) { throw '.NET target-owned lowercase-first registration-chain policy is missing.' }
+if (-not $autoSource.Contains('registrationProduct')) { throw '.NET app product and lowercase registration crypto family are not separated.' }
 if (-not $autoSource.Contains('hasDotNetAuthorizationConfigStructure')) { throw 'Modern .NET pre-block cannot distinguish unrelated config.xml files.' }
 if ($autoSource.Contains('String updated = putElement(original, "Service", BLOCK_ENDPOINT);\n            validateXml(updated);') -and -not $autoSource.Contains('[pre-block-skip]')) { throw 'Modern .NET pre-block still aborts on unrelated config.xml files.' }
 if (-not $modernGuiSource.Contains('appendPersistentLog')) { throw 'Modern GUI persistent diagnostics are missing.' }

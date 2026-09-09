@@ -1,3 +1,16 @@
+## [1.2.28] - 2026-09-09
+
+### Fixed
+
+- 修复 `.NET` 批量结果全绿但部分网站重启 IIS 后仍进入激活页的“错误注册链假 OK”。真实 YX030101 样本同时包含 `itmcRegedit.dll` 与 `ITMC.Regedit.dll`；v1.2.27 统一走大写链，导致大写 `DoRegistry/CheckReInfo` 自己写、自己验通过，但网站实际优先使用的小写链无法读取该授权。
+- `.NET` 原生注册链改为目标文件优先级：存在小写 `itmcRegedit.dll` 时必须使用原始 `LicenseRecover.NET.exe`；只有小写文件不存在时才回退 `ITMC.Regedit.dll` + `LicenseRecover.NET.Modern.exe`。`gencode -> DoRegistry -> CheckReInfo` 三阶段始终绑定同一条链。
+- 小写链不再把 Web `ProName` 当作授权加密族。根据已恢复的目标组件常量，YX030101 的应用 `ProName=YX0301` 但注册族为 `YX0302`（`itmcYX0302` / `*ITMCYX0302OK*`）；YX0102 的应用 `ProName=YS01` 但注册族为 `market`（`itmcmarket` / `*MarketOK*`）。本版从目标小写 DLL 的成对常量自动证明 registrationProduct，无法唯一证明时 fail-closed。
+
+### Regression
+
+- 新增 YX030101/YX0302 与 YX0102/market 注册族回归、双 DLL 时小写优先、仅大写时回退、无法证明注册族时拒绝执行。
+- 保持 PRE-BLOCK FIRST、失败回滚、目录 RegStr 证据、目标原生 `CheckReInfo` 与持久日志不变。
+
 ## [1.2.27] - 2026-09-09
 
 ### Fixed

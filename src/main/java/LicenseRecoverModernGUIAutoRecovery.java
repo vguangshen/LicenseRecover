@@ -66,10 +66,10 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             // DS01xx uses the legacy funpublic protocol. Some deployments also carry an
             // uppercase ITMC.Regedit.dll compatibility assembly, which is not proof of the
             // modern JSON/DoRegistry protocol and must not override the version evidence.
+            File targetRegedit = selectDotNetRegeditAssembly(bin);
             Kind k = LegacyDotNetProtocol.isLegacyVersion(version)
                     ? Kind.DOTNET_LEGACY
-                    : (new File(bin,"ITMC.Regedit.dll").isFile()
-                    ? Kind.DOTNET_MODERN : Kind.DOTNET_LEGACY);
+                    : (targetRegedit != null ? Kind.DOTNET_MODERN : Kind.DOTNET_LEGACY);
             return new Detection(k,s,root,bin,version,product);
         }
         File lib = findJavaLib(s);
@@ -129,12 +129,34 @@ public final class LicenseRecoverModernGUIAutoRecovery {
 
     private static Result recoverDotNet(Detection d, boolean backup, boolean blockNet, boolean dryRun, Consumer<String> log) throws Exception {
         if (!isWindows()) return Result.fail(".NET native registration runs only on Windows.", d);
-        File helper = findDotNetModernNativeHelper();
-        if (helper == null) return Result.fail("[HELPER] LicenseRecover.NET.Modern.exe was not found; modern native registration cannot run.", d);
 
-        String product = d.productName;
-        if (blank(product))
+        File targetRegedit = selectDotNetRegeditAssembly(d.runtimeDir);
+        if (targetRegedit == null)
+            return Result.fail("[CHAIN] no target itmcRegedit.dll / ITMC.Regedit.dll registration assembly was found.", d);
+        boolean lowercaseChain = "itmcRegedit.dll".equals(targetRegedit.getName());
+        File helper = lowercaseChain ? findDotNetNativeHelper() : findDotNetModernNativeHelper();
+        if (helper == null) {
+            String expected = lowercaseChain ? "LicenseRecover.NET.exe" : "LicenseRecover.NET.Modern.exe";
+            return Result.fail("[HELPER] " + expected + " was not found; selected target registration chain cannot run.", d);
+        }
+
+        String appProduct = d.productName;
+        if (blank(appProduct))
             return Result.fail("Target ITMC.Web.dll did not prove a ProName; default product fallback is disabled.", d);
+
+        String registrationProduct = appProduct;
+        if (lowercaseChain) {
+            registrationProduct = detectLowercaseDotNetRegistrationProduct(targetRegedit);
+            if (blank(registrationProduct))
+                return Result.fail("[CHAIN] lowercase itmcRegedit.dll is authoritative, but its registration crypto family "
+                        + "could not be proven from matching itmc<family> + *<family>OK* constants.", d);
+            log.accept("[dotnet-chain] lowercase itmcRegedit.dll preferred; appProduct=" + appProduct
+                    + " registrationProduct=" + registrationProduct + "\n");
+        } else {
+            log.accept("[dotnet-chain] lowercase itmcRegedit.dll absent; uppercase ITMC.Regedit.dll fallback; product="
+                    + appProduct + "\n");
+        }
+
         String regStr = detectDotNetRegStr(d);
         if (blank(regStr))
             return Result.fail("Target application directory did not prove RegStr products; VersionID/default-list fallback is disabled.", d);
@@ -147,7 +169,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         String firewallRule = null;
         try {
             // Network isolation is established BEFORE any vendor registration code is invoked.
-            // The target ITMC.Regedit assembly is loaded inside LicenseRecover.NET.exe, so an
+            // The selected helper loads the selected target registration assembly; an
             // application-specific Windows Firewall rule blocks even hard-coded outbound URLs.
             firewallRule = installTemporaryDotNetNetworkGuard(helper, log);
             if (blank(firewallRule))
@@ -168,7 +190,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             generate.add(helper.getAbsolutePath());
             generate.add("gencode");
             generate.add(d.runtimeDir.getAbsolutePath());
-            generate.add("--product"); generate.add(product);
+            generate.add("--product"); generate.add(registrationProduct);
             generate.add("--regstr"); generate.add(regStr);
             log.accept("[dotnet-stage] GENCODE: start\n");
             NativeProcessResult generated = runNativeCapture(generate, d.appRoot, log);
@@ -190,8 +212,9 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             } catch (Throwable ignore) { }
 
             log.accept("[one-click] .NET native registration flow: PRE-BLOCK -> gencode -> DoRegistry -> CheckReInfo\n");
-            log.accept("[one-click] ProName=" + valueOrPending(product) + " products=" + valueOrPending(regStr)
-                    + " RegID=" + valueOrPending(machine) + "\n");
+            log.accept("[one-click] appProduct=" + valueOrPending(appProduct)
+                    + " registrationProduct=" + valueOrPending(registrationProduct)
+                    + " products=" + valueOrPending(regStr) + " RegID=" + valueOrPending(machine) + "\n");
             if (dryRun) {
                 log.accept("[dry-run] native request/auth codes generated under outbound isolation; no file was changed.\n");
                 return new Result(true, "Preview completed under temporary outbound isolation; no file was changed.",
@@ -204,7 +227,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             apply.add(d.runtimeDir.getAbsolutePath());
             apply.add("--seq"); apply.add(request);
             apply.add("--code"); apply.add(auth);
-            apply.add("--product"); apply.add(product);
+            apply.add("--product"); apply.add(registrationProduct);
             // Keep the helper from changing network settings itself; the outer coordinator
             // already established isolation before the first vendor-code call.
             apply.add("--no-block-net");
@@ -219,11 +242,11 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             verify.add(helper.getAbsolutePath());
             verify.add("verify");
             verify.add(d.runtimeDir.getAbsolutePath());
-            verify.add("--product"); verify.add(product);
+            verify.add("--product"); verify.add(registrationProduct);
             log.accept("[dotnet-stage] VERIFY: start\n");
             NativeProcessResult checked = runNativeCapture(verify, d.appRoot, log);
             if (checked.exitCode != 0)
-                throw nativeFailure("VERIFY", "target RegeditMain.CheckReInfo() did not confirm the native write-back", checked);
+                throw nativeFailure("VERIFY", "selected target RegeditMain.CheckReInfo() did not confirm the native write-back", checked);
             log.accept("[dotnet-stage] VERIFY: OK\n");
 
             if (blockNet) {
@@ -233,9 +256,9 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             } else {
                 restoreDotNetAuthorizationNetworkSettings(originals, d, log);
             }
-            log.accept("[verify] target-native DoRegistry + CheckReInfo passed while authorization outbound traffic was isolated.\n");
+            log.accept("[verify] selected target registration chain DoRegistry + CheckReInfo passed while outbound traffic was isolated.\n");
             return new Result(true,
-                    ".NET local authorization was applied and verified while authorization outbound traffic was isolated. Restart the IIS app pool/site.",
+                    ".NET local authorization was applied and verified through the target-preferred registration chain while outbound traffic was isolated. Restart the IIS app pool/site.",
                     d, machine, request, auth);
         } catch (Throwable ex) {
             if (!dryRun && originals != null) restoreDotNetRegistrationFiles(originals, log);
@@ -298,12 +321,64 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         return s.length() <= 600 ? s : "..." + s.substring(s.length() - 600);
     }
 
+    private static File findDotNetNativeHelper() {
+        File dir = toolDir();
+        File nested = new File(dir, "LicenseRecover.NET" + File.separator + "LicenseRecover.NET.exe");
+        if (nested.isFile()) return nested;
+        File flat = new File(dir, "LicenseRecover.NET.exe");
+        return flat.isFile() ? flat : null;
+    }
+
     private static File findDotNetModernNativeHelper() {
         File dir = toolDir();
         File nested = new File(dir, "LicenseRecover.NET" + File.separator + "LicenseRecover.NET.Modern.exe");
         if (nested.isFile()) return nested;
         File flat = new File(dir, "LicenseRecover.NET.Modern.exe");
         return flat.isFile() ? flat : null;
+    }
+
+    static File findExactChild(File dir, String exactName) {
+        if (dir == null || !dir.isDirectory() || exactName == null) return null;
+        File[] files = dir.listFiles();
+        if (files == null) return null;
+        for (File file : files) {
+            if (file.isFile() && exactName.equals(file.getName())) return file;
+        }
+        return null;
+    }
+
+    static File selectDotNetRegeditAssembly(File runtimeDir) {
+        File lower = findExactChild(runtimeDir, "itmcRegedit.dll");
+        if (lower != null) return lower;
+        return findExactChild(runtimeDir, "ITMC.Regedit.dll");
+    }
+
+    static String detectLowercaseDotNetRegistrationProduct(File lowerDll) {
+        return detectLowercaseDotNetRegistrationProduct(extractUtf16Ascii(lowerDll));
+    }
+
+    static String detectLowercaseDotNetRegistrationProduct(Set<String> strings) {
+        if (strings == null || strings.isEmpty()) return null;
+        LinkedHashSet<String> candidates = new LinkedHashSet<String>();
+        for (String raw : strings) {
+            if (raw == null) continue;
+            String key = raw.trim();
+            if (key.length() <= 4 || !key.regionMatches(true, 0, "itmc", 0, 4)) continue;
+            String family = key.substring(4).trim();
+            if (!validRegistrationToken(family) || "soft".equalsIgnoreCase(family)) continue;
+            String familyUpper = family.toUpperCase(Locale.ROOT);
+            boolean paired = false;
+            for (String markerRaw : strings) {
+                if (markerRaw == null) continue;
+                String marker = markerRaw.replaceAll("[^A-Za-z0-9._-]", "").toUpperCase(Locale.ROOT);
+                if (marker.endsWith(familyUpper + "OK")) {
+                    paired = true;
+                    break;
+                }
+            }
+            if (paired) candidates.add(family);
+        }
+        return candidates.size() == 1 ? candidates.iterator().next() : null;
     }
 
     private static LinkedHashMap<File, byte[]> snapshotDotNetRegistrationFiles(Detection d) throws IOException {
