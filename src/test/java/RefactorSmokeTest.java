@@ -697,6 +697,20 @@ public final class RefactorSmokeTest {
                         && autoRecoverySource.contains("127.0.0.1:9"),
                 ".NET native helper has application firewall guard plus proxy defense in depth");
 
+        String unrelatedDotNetConfig =
+                "<ROOT><SystemSoft><SoftVersionID>YX030204</SoftVersionID></SystemSoft></ROOT>";
+        check(!LicenseRecoverModernGUIAutoRecovery.hasDotNetAuthorizationConfigStructure(unrelatedDotNetConfig),
+                ".NET pre-block skips unrelated config.xml without authorization reg/Service structure");
+        String registrationDotNetConfig = "<ROOT><reg><regType>3</regType></reg></ROOT>";
+        check(LicenseRecoverModernGUIAutoRecovery.hasDotNetAuthorizationConfigStructure(registrationDotNetConfig),
+                ".NET pre-block recognizes registration config.xml before adding Service isolation");
+        String selfClosingReg = LicenseRecoverModernGUIAutoRecovery.updateLocalLicenseXml(
+                "<ROOT><reg/></ROOT>", "TEST", true);
+        check(selfClosingReg.contains("<reg>")
+                        && selfClosingReg.contains("<regName>TEST</regName>")
+                        && selfClosingReg.contains("<Service>http://127.0.0.1:9/Service.asmx</Service>"),
+                ".NET config writer expands self-closing reg containers safely");
+
         String nativeOut = "注册申请号     : A1B2C3D4\n离线授权码     : 001122AABB\n";
         check("A1B2C3D4".equals(LicenseRecoverModernGUIAutoRecovery.findLabeledHex(nativeOut, "注册申请号")),
                 "native .NET one-click parses target request code");

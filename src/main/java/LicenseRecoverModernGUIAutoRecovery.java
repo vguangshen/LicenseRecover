@@ -357,6 +357,12 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             String key = f.getCanonicalPath().toLowerCase(Locale.ROOT);
             if (!seen.add(key)) continue;
             String original = readUtf8(f);
+            if (!hasDotNetAuthorizationConfigStructure(original)) {
+                validateXml(original);
+                if (log != null) log.accept("[pre-block-skip] " + f.getAbsolutePath()
+                        + " has no authorization <reg>/Service node; process firewall guard remains active.\n");
+                continue;
+            }
             String updated = putElement(original, "Service", BLOCK_ENDPOINT);
             validateXml(updated);
             if (!original.equals(updated)) {
@@ -364,6 +370,13 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                 if (log != null) log.accept("[block-net] " + f.getAbsolutePath() + "\n");
             }
         }
+    }
+
+    static boolean hasDotNetAuthorizationConfigStructure(String xml) {
+        if (xml == null) return false;
+        if (Pattern.compile("(?is)<Service\\b[^>]*>.*?</Service\\s*>").matcher(xml).find()) return true;
+        if (Pattern.compile("(?is)<reg\\b[^>]*>.*?</reg\\s*>").matcher(xml).find()) return true;
+        return Pattern.compile("(?is)<reg\\b[^>]*/\\s*>").matcher(xml).find();
     }
 
     static String installTemporaryDotNetNetworkGuard(File helper, Consumer<String> log) throws Exception {
@@ -535,6 +548,12 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             String b=r.group(), sep=xml.contains("\r\n")?"\r\n":"\n"; int close=b.toLowerCase(Locale.ROOT).lastIndexOf("</reg");
             String rep=b.substring(0,close)+sep+"    <"+name+">"+xmlEscape(value)+"</"+name+">"+sep+b.substring(close);
             return xml.substring(0,r.start())+rep+xml.substring(r.end());
+        }
+        Pattern selfReg=Pattern.compile("(?is)<reg\\b([^>]*)/\\s*>"); Matcher sr=selfReg.matcher(xml);
+        if (sr.find()) {
+            String attrs=sr.group(1), sep=xml.contains("\r\n")?"\r\n":"\n";
+            String rep="<reg"+attrs+">"+sep+"    <"+name+">"+xmlEscape(value)+"</"+name+">"+sep+"</reg>";
+            return xml.substring(0,sr.start())+rep+xml.substring(sr.end());
         }
         throw new IOException("config.xml has no <reg> node");
     }

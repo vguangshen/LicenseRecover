@@ -1,3 +1,17 @@
+## [1.2.27] - 2026-09-09
+
+### Fixed
+
+- 根据 v1.2.26 的真实 43 项回归继续修复剩余 10 个 .NET Modern 失败：其中 7 个在防联网配置预处理阶段被无关 `config.xml` 的“无 `<reg>`”结构误伤，3 个在 `gencode` 阶段仍命中 helper 内未替换完整的小写 `itmcRegedit.dll` 引用。
+- `.NET Modern` 的进程级 Windows Firewall 出站规则继续作为调用目标注册组件前的强制隔离；根目录/`bin` 中不含授权 `<reg>`/`Service` 结构的普通 `config.xml` 现在只校验 XML 后跳过，不再中止原生恢复链。
+- modern-only helper 构建从“固定改 3 个 token 位置”改为“严格计数并替换全部可执行 `ldstr` 引用”：`itmcRegedit` 1 处、`itmcRegedit.dll` 4 处、`itmcRegedit.RegeditMain` 6 处；数量漂移或仍残留旧可执行引用时 CI 直接失败。
+- `putElement` 增加 `<reg/>` 自闭合节点兼容，避免合法但精简的授权配置无法注入本地字段。
+
+### Regression
+
+- 新增无授权结构 `config.xml` 跳过测试、授权 `<reg>` 识别测试和 `<reg/>` 展开写入测试。
+- 保持失败回滚、PRE-BLOCK FIRST、目录证据 fail-closed、写后原生 `CheckReInfo` 验证与 GUI 持久日志不变。
+
 ## [1.2.26] - 2026-09-09
 
 ### Fixed

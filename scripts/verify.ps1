@@ -220,6 +220,8 @@ if (-not $legacyGuiSource.Contains('目标 ITMC.Web.dll 未解析出 ProName')) 
 if (-not $coreSource.Contains('LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect')) { throw 'Java core is not using the fail-closed directory plan.' }
 if (-not $autoSource.Contains('VersionID/default-list fallback is disabled')) { throw '.NET fail-closed guard is missing.' }
 if (-not $autoSource.Contains('LicenseRecover.NET.Modern.exe')) { throw 'Modern .NET one-click is not using the uppercase helper adapter.' }
+if (-not $autoSource.Contains('hasDotNetAuthorizationConfigStructure')) { throw 'Modern .NET pre-block cannot distinguish unrelated config.xml files.' }
+if ($autoSource.Contains('String updated = putElement(original, "Service", BLOCK_ENDPOINT);\n            validateXml(updated);') -and -not $autoSource.Contains('[pre-block-skip]')) { throw 'Modern .NET pre-block still aborts on unrelated config.xml files.' }
 if (-not $modernGuiSource.Contains('appendPersistentLog')) { throw 'Modern GUI persistent diagnostics are missing.' }
 if (-not $planSource.Contains('hasDirectoryBinaryToken')) { throw 'Java target-binary identity proof is missing.' }
 if (-not $coreSource.Contains('probeTargetRegStr')) { throw 'Java target RegisterMain.getRegInfo RegStr probe is missing.' }

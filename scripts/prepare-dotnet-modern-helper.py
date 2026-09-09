@@ -3,8 +3,9 @@
 
 The historical helper reflects the lowercase itmcRegedit assembly/type. Modern
 applications use the uppercase ITMC.Regedit assembly/type. This script creates a
-separate modern-only copy by patching three AppReflection #US token operands after
-strictly verifying the source binary hash. The original helper is never modified.
+separate modern-only copy by patching every executable ldstr reference to the
+legacy assembly/dll/RegeditMain identifiers after strictly verifying the source
+binary hash. The original helper is never modified.
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ import hashlib
 from pathlib import Path
 
 SOURCE_SHA256 = "b83832e9be135d977a16b9faf8bea4f87e645734691ee0125480513116508d23"
-EXPECTED_OUTPUT_SHA256 = "aef8bcc41471de2ae361f3f8cd21978f498bd9f7ffa45c86db848dc8da096f36"
+EXPECTED_OUTPUT_SHA256 = "75becdebb3772c56ccd10b25537c1f72f6877def844041a6270a3f9e197d2bd4"
 
 DONORS = (
     (bytes([33]) + "not a FOAP table".encode("utf-16le") + b"\x00",
@@ -24,10 +25,12 @@ DONORS = (
      "ITMC.Regedit.RegeditMain"),
 )
 
-TOKEN_PATCHES = (
-    (0x04E9, bytes.fromhex("01000070"), bytes.fromhex("9d000070")),
-    (0x0503, bytes.fromhex("19000070"), bytes.fromhex("e9170070")),
-    (0x02CA, bytes.fromhex("39000070"), bytes.fromhex("db150070")),
+LDSTR_PATCHES = (
+    # Full IL instruction (0x72 = ldstr) + 4-byte #US token.  Counts are from the
+    # hash-pinned source helper and intentionally make layout drift a hard failure.
+    (bytes.fromhex("72 01 00 00 70"), bytes.fromhex("72 9d 00 00 70"), 1, "assembly itmcRegedit"),
+    (bytes.fromhex("72 19 00 00 70"), bytes.fromhex("72 e9 17 00 70"), 4, "dll itmcRegedit.dll"),
+    (bytes.fromhex("72 39 00 00 70"), bytes.fromhex("72 db 15 00 70"), 6, "type itmcRegedit.RegeditMain"),
 )
 
 
@@ -58,16 +61,20 @@ def patch(source: Path, destination: Path) -> None:
     for old_blob, new_blob, label in DONORS:
         replace_once(data, old_blob, new_blob, label)
 
-    for offset, before, after in TOKEN_PATCHES:
-        current = bytes(data[offset:offset + len(before)])
-        if current != before:
+    for before, after, expected_count, label in LDSTR_PATCHES:
+        if len(before) != len(after):
+            raise SystemExit(f"{label}: replacement changes PE size")
+        count = bytes(data).count(before)
+        if count != expected_count:
             raise SystemExit(
-                f"IL token precondition failed at 0x{offset:x}: "
-                f"expected {before.hex()}, found {current.hex()}"
+                f"{label}: expected {expected_count} executable ldstr reference(s), found {count}"
             )
-        data[offset:offset + len(before)] = after
+        data[:] = bytes(data).replace(before, after)
 
     out = bytes(data)
+    for before, _after, _expected_count, label in LDSTR_PATCHES:
+        if before in out:
+            raise SystemExit(f"{label}: legacy executable ldstr reference remains after patch")
     for required in ("ITMC.Regedit", "ITMC.Regedit.dll", "ITMC.Regedit.RegeditMain"):
         if required.encode("utf-16le") not in out:
             raise SystemExit(f"Patched helper is missing required user string: {required}")
