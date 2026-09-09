@@ -869,6 +869,19 @@ public final class RefactorSmokeTest {
         check(blocked && !Files.exists(base.resolve("escape.txt")),
                 "updater blocks zip-slip entries");
 
+        Path legacyDotNetRoot = base.resolve("dotnet-DS0101");
+        Path legacyDotNetBin = legacyDotNetRoot.resolve("bin");
+        Files.createDirectories(legacyDotNetBin);
+        Files.write(legacyDotNetRoot.resolve("config.xml"), Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>DS0101</SoftVersionID></SystemSoft></ROOT>"), StandardCharsets.UTF_8);
+        Files.write(legacyDotNetBin.resolve("ITMC.Web.dll"), new byte[]{1});
+        Files.write(legacyDotNetBin.resolve("itmcRegedit.dll"), new byte[]{1});
+        Files.write(legacyDotNetBin.resolve("ITMC.Regedit.dll"), new byte[]{1});
+        LicenseRecoverModernGUIAutoRecovery.Detection legacyDotNetDetection =
+                LicenseRecoverModernGUIAutoRecovery.detect(legacyDotNetRoot.toFile());
+        check(legacyDotNetDetection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY,
+                "DS01xx remains legacy even when an uppercase compatibility ITMC.Regedit.dll is present");
+
         Path toolCpDir = Files.createTempDirectory("lrc-toolcp-");
         Path legacyCore = toolCpDir.resolve("LicenseRecover.jar");
         Path overlayCore = toolCpDir.resolve("LicenseRecoverOverlay.jar");
@@ -881,6 +894,12 @@ public final class RefactorSmokeTest {
         check(toolCpWithOverlay.startsWith(overlayCore.toFile().getAbsolutePath() + File.pathSeparator)
                         && toolCpWithOverlay.endsWith(legacyCore.toFile().getAbsolutePath()),
                 "secondary JVM classpath must load LicenseRecoverOverlay.jar before LicenseRecover.jar");
+        Path targetRuntime = Files.createTempDirectory("lrc-target-lib-");
+        String recoveryCp = LicenseRecoverModernGUIAutoRecovery.buildJavaRecoveryClasspath(
+                toolCpDir.toFile(), targetRuntime.toFile());
+        check(recoveryCp.startsWith(toolCpWithOverlay + File.pathSeparator)
+                        && recoveryCp.endsWith(targetRuntime.toFile().getAbsolutePath() + File.separator + "*"),
+                "Java recovery child classpath keeps tool overlay/core ahead of target WEB-INF/lib");
 
         System.out.println("ALL REFACTOR SMOKE TESTS PASSED");
     }

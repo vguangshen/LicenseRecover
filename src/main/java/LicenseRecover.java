@@ -230,10 +230,10 @@ public class LicenseRecover {
                 tmp = Files.createTempDirectory("itmc_unpack");
                 int n = NetRemover.unpackPackedJar(jarFile, tmp.toFile());
                 System.out.println("[脱壳] " + jarFile.getName() + " 含 " + n + " 个 Virbox 保护类，自动脱壳后重跑 ...");
-                cp = tmp.toAbsolutePath() + File.pathSeparator + libDir + File.separator + "*"
-                        + File.pathSeparator + toolCp;
+                cp = toolCp + File.pathSeparator + tmp.toAbsolutePath()
+                        + File.pathSeparator + libDir + File.separator + "*";
             } else {
-                cp = libDir + File.separator + "*" + File.pathSeparator + toolCp;
+                cp = toolCp + File.pathSeparator + libDir + File.separator + "*";
             }
             java.util.List<String> cmd = new java.util.ArrayList<>();
             cmd.add(System.getProperty("java.home") + File.separator + "bin" + File.separator + "java");
@@ -1414,7 +1414,8 @@ public class LicenseRecover {
             // 方式三用最小 classpath（本工具已内嵌 javassist），不能带 lib/* 否则 ITMCReg.jar 被本进程占用无法替换
             cmd.add(toolCp);
         } else {
-            cmd.add(libDir + File.separator + "*" + File.pathSeparator + toolCp);
+            // Tool classes first: an application lib must never shadow LicenseRecover/overlay classes.
+            cmd.add(toolCp + File.pathSeparator + libDir + File.separator + "*");
         }
         cmd.add("LicenseRecover");
         if ("patch".equals(method)) cmd.add("--remove-net");

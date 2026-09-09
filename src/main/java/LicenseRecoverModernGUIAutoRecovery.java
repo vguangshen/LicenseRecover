@@ -63,7 +63,13 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             String configuredProduct = detectConfiguredDotNetProduct(root, bin, version);
             String product = !blank(configuredProduct)
                     ? configuredProduct : detectProduct(new File(bin,"ITMC.Web.dll"), version);
-            Kind k = new File(bin,"ITMC.Regedit.dll").isFile() ? Kind.DOTNET_MODERN : Kind.DOTNET_LEGACY;
+            // DS01xx uses the legacy funpublic protocol. Some deployments also carry an
+            // uppercase ITMC.Regedit.dll compatibility assembly, which is not proof of the
+            // modern JSON/DoRegistry protocol and must not override the version evidence.
+            Kind k = LegacyDotNetProtocol.isLegacyVersion(version)
+                    ? Kind.DOTNET_LEGACY
+                    : (new File(bin,"ITMC.Regedit.dll").isFile()
+                    ? Kind.DOTNET_MODERN : Kind.DOTNET_LEGACY);
             return new Detection(k,s,root,bin,version,product);
         }
         File lib = findJavaLib(s);
@@ -102,10 +108,8 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (!cli.isFile()) return Result.fail("LicenseRecover.jar was not found.",d);
         List<String> cmd=new ArrayList<String>();
         cmd.add(javaExe()); cmd.add("-Dfile.encoding=UTF-8"); cmd.add("-cp");
-        File overlay = new File(toolDir(), "LicenseRecoverOverlay.jar");
-        String childCp = d.runtimeDir.getAbsolutePath()+File.separator+"*";
-        if (overlay.isFile()) childCp += File.pathSeparator + overlay.getAbsolutePath();
-        childCp += File.pathSeparator + cli.getAbsolutePath();
+        String childCp = buildJavaRecoveryClasspath(toolDir(), d.runtimeDir);
+        log.accept("[java-plan] child classpath order=tool overlay/core -> target WEB-INF/lib\n");
         cmd.add(childCp);
         cmd.add("LicenseRecover"); cmd.add(d.appRoot.getAbsolutePath());
         if (dryRun) cmd.add("--dry-run"); if (!backup) cmd.add("--no-backup"); if (!blockNet) cmd.add("--no-block-net");
@@ -115,6 +119,12 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                 ? "[java-plan] native verify=PASS (RegisterMain.checkReInfo())\n"
                 : "[java-plan] native verify=FAILED (see CLI log)\n");
         return new Result(rc==0,rc==0?"Java local authorization recovery completed and native self-check passed.":"Java recovery failed; see log.",d,null,null,null);
+    }
+
+    static String buildJavaRecoveryClasspath(File toolDir, File runtimeDir) {
+        if (runtimeDir == null) throw new IllegalArgumentException("runtimeDir is required");
+        return LicenseRecover.toolRuntimeClasspath(toolDir)
+                + File.pathSeparator + runtimeDir.getAbsolutePath() + File.separator + "*";
     }
 
     private static Result recoverDotNet(Detection d, boolean backup, boolean blockNet, boolean dryRun, Consumer<String> log) throws Exception {
@@ -141,7 +151,8 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             // application-specific Windows Firewall rule blocks even hard-coded outbound URLs.
             firewallRule = installTemporaryDotNetNetworkGuard(helper, log);
             if (blank(firewallRule))
-                throw new IOException("failed to establish the temporary .NET outbound firewall guard; refusing to call vendor registration code");
+                throw new IOException("无法建立 .NET 临时出站防火墙隔离。请从 LicenseRecoverGUI.exe 启动并通过管理员权限(UAC)，"
+                        + "同时确认 Windows Firewall 服务可用；为避免联网校验，已拒绝调用目标注册组件。");
 
             if (!dryRun) {
                 if (backup) backupDotNetRegistrationFiles(originals, log);

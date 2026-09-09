@@ -9,6 +9,7 @@ $buildRoot = Join-Path $repoRoot 'build'
 $nativeDir = Join-Path $buildRoot 'native-launcher'
 $source = Join-Path $repoRoot 'src/native/LicenseRecoverGUI.c'
 $resource = Join-Path $repoRoot 'src/native/LicenseRecoverGUI.rc'
+$manifest = Join-Path $repoRoot 'src/native/LicenseRecoverGUI.manifest'
 $launcher = Join-Path $nativeDir 'LicenseRecoverGUI.exe'
 $resourceObj = Join-Path $nativeDir 'LicenseRecoverGUI-res.o'
 $portableZip = Join-Path $buildRoot 'LicenseRecover-latest.zip'
@@ -71,6 +72,11 @@ function Repack-WithLauncher([string]$Archive, [string]$Label) {
 
 if (-not (Test-Path -LiteralPath $source)) { throw "Missing native launcher source: $source" }
 if (-not (Test-Path -LiteralPath $resource)) { throw "Missing native launcher resource: $resource" }
+if (-not (Test-Path -LiteralPath $manifest)) { throw "Missing native launcher manifest: $manifest" }
+$manifestText = Get-Content -LiteralPath $manifest -Raw
+if ($manifestText.IndexOf('level="requireAdministrator"', [StringComparison]::Ordinal) -lt 0) {
+    throw 'Native launcher manifest must require administrator privileges for fail-closed .NET firewall isolation.'
+}
 if (-not (Test-Path -LiteralPath (Join-Path $repoRoot 'LicenseRecoverGUI.ico'))) { throw 'Missing LicenseRecoverGUI.ico.' }
 
 $gcc = Require-Command 'x86_64-w64-mingw32-gcc'

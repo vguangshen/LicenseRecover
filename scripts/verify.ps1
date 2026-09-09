@@ -282,6 +282,12 @@ if ($overlayEntries -notcontains 'LegacyJavaRegistrationMetadata.class') {
 if ($overlayEntries -notcontains 'LicenseRecover.class') {
     throw 'Overlay is missing updated LicenseRecover.class.'
 }
+if ($overlayEntries -notcontains 'LicenseRecoverModernGUIJavaPlan.class') {
+    throw 'Overlay is missing LicenseRecoverModernGUIJavaPlan.class; Virbox/recovery child JVMs would fail.'
+}
+if ($overlayEntries -notcontains 'LicenseRecoverModernGUIAutoRecovery.class') {
+    throw 'Overlay is missing LicenseRecoverModernGUIAutoRecovery.class.'
+}
 
 Write-Host 'Assembling application-only distribution...'
 $distributionFiles = @(

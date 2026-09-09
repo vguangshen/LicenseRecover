@@ -796,6 +796,9 @@ public final class LicenseRecoverModernGUI {
                     if (isCancelled()) break;
                     final String textResult = result.isSuccess() ? (result.status == OperationResult.Status.PREVIEW ? "PREVIEW" : "OK")
                             : (result.status == OperationResult.Status.CANCELLED ? "取消" : "FAILED");
+                    if (!result.isSuccess() && result.message != null && !result.message.trim().isEmpty()) {
+                        appendLog("[batch] " + target.name + " " + textResult + ": " + result.message.trim() + "\n");
+                    }
                     final String verify = batchVerification(target, usePatch, preview, result);
                     SwingUtilities.invokeLater(() -> {
                         batchModel.setValueAt(verify, currentRow, BATCH_COL_VERIFY);
