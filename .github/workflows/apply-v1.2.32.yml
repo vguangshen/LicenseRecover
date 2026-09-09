@@ -1,0 +1,107 @@
+name: Apply v1.2.32 same-domain helper fix
+
+on:
+  push:
+    branches: [ patch/v1.2.32-direct-helper ]
+    paths:
+      - .github/workflows/apply-v1.2.32.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Apply metadata and regression updates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def read(p): return Path(p).read_text(encoding='utf-8')
+          def write(p, s):
+              q=Path(p); q.parent.mkdir(parents=True, exist_ok=True); q.write_text(s, encoding='utf-8')
+          def replace_once(p, old, new):
+              s=read(p); n=s.count(old)
+              if n != 1: raise SystemExit(f'{p}: expected one match, got {n}: {old[:100]!r}')
+              write(p, s.replace(old,new,1))
+
+          if read('VERSION.txt').strip() != '1.2.31':
+              raise SystemExit('Expected VERSION.txt=1.2.31')
+          write('VERSION.txt','1.2.32\n')
+
+          replace_once('README.md','当前稳定版本：**v1.2.31**','当前稳定版本：**v1.2.32**')
+          # README.txt mirrors the stable-version line but may use slightly different markdown/plain formatting.
+          s=read('README.txt')
+          if 'v1.2.31' not in s: raise SystemExit('README.txt does not mention v1.2.31')
+          write('README.txt', s.replace('v1.2.31','v1.2.32',1))
+
+          entry='''## [1.2.32] - 2026-09-09
+
+          ### Fixed
+
+          - 修复 v1.2.31 在真实 YX030101 上进入 ASP.NET host 后的下一层 `DomainRunner` 子域错误。原 `LicenseRecover.NET.exe` 的 `Program.Run()` 对小写 `itmcRegedit.dll` 会创建独立 AppDomain，并用 `Assembly.GetEntryAssembly()` 定位 `LicenseRecoverNet.DomainRunner`；被 ASP.NET host 反射调用时 EntryAssembly 实际是 `LicenseRecover.NET.AspNetHost.exe`，因此子域错误地从 host 程序集中查找 `DomainRunner`。
+          - ASP.NET host 不再调用 helper EntryPoint。它仍加载未修改的原 `LicenseRecover.NET.exe`，使用 helper 自己的私有 `ParseArgs()` 解析完全相同的命令行，然后调用公开 `RunDirect()`，让 `gencode / doreg / verify` 与目标小写注册组件在当前 ASP.NET AppDomain 内执行。
+          - 该设计同时避免了另一个隐患：新建子 AppDomain 不会继承父域的 `HttpContext.Current`；同域执行可让目标 `itmcRegedit.dll` 的 `Server.MapPath("~/Register.xml")` / `MapPath("~/config.xml")` 持续看到 v1.2.30/31 建立的 ASP.NET 上下文。
+          - 不修改目标 `itmcRegedit.dll`，不替换目标申请号、离线授权码、`DoRegistry()` 或 `CheckReInfo()` 算法；大写 `ITMC.Regedit.dll` 回退链保持不变。
+
+          ### Regression
+
+          - CI 要求 ASP.NET host 明确包含 `ParseArgs` + `RunDirect` 同域派发，并禁止重新通过 `assembly.EntryPoint` 进入 helper 的 `RunInBinDomain` 路径。
+          - 保持小写优先、大写回退、PRE-BLOCK FIRST、失败回滚与结构化错误日志不变。
+
+          '''
+          ch=read('CHANGELOG.md')
+          if not ch.startswith('## [1.2.31]'):
+              raise SystemExit('Unexpected CHANGELOG head')
+          write('CHANGELOG.md',entry+ch)
+
+          notes='''# LicenseRecover v1.2.32
+
+          本版根据真实 Windows / .NET Framework 上 YX030101 的 v1.2.31 回归继续修复小写 `itmcRegedit.dll` 注册链。
+
+          ## 根因
+
+          v1.2.31 已成功创建 ASP.NET `HttpContext`，但随后反射调用原 `LicenseRecover.NET.exe` EntryPoint。原 helper 的 `Program.Run()` 在检测到小写 `itmcRegedit.dll` 时会创建子 AppDomain，并用 `Assembly.GetEntryAssembly().Location` 去 `CreateInstanceFromAndUnwrap(..., "LicenseRecoverNet.DomainRunner")`。在 host 场景下 EntryAssembly 是 `LicenseRecover.NET.AspNetHost.exe`，不是 `LicenseRecover.NET.exe`，因此真实机报“未能从程序集 LicenseRecover.NET.AspNetHost 中加载类型 LicenseRecoverNet.DomainRunner”。
+
+          即使只把程序集名修正，子 AppDomain 也不会继承父域的 `HttpContext.Current`，目标注册组件仍会失去它依赖的 ASP.NET `Server.MapPath` 上下文。
+
+          ## 修复
+
+          - ASP.NET host 继续加载原始、未修改的 `LicenseRecover.NET.exe`。
+          - host 通过反射调用 helper 自己的 `ParseArgs()`，保留原命令行解析语义。
+          - 随后直接调用 helper 的公开 `RunDirect()`，在同一个 ASP.NET AppDomain 内执行目标注册流程，不再进入 helper 的 `RunInBinDomain()`。
+          - `HttpContext.Current` 因此在 `gencode -> doreg -> verify` 期间保持有效；目标 `itmcRegedit.dll` 仍负责动态申请号、离线授权码写入与原生校验。
+          - 大写 `ITMC.Regedit.dll` / `LicenseRecover.NET.Modern.exe` 路线不变。
+
+          ## 验证重点
+
+          YX030101 的日志应出现 `[ASPNET_HOST] helperDispatch=RunDirect/same-AppDomain`，并且不再出现 `LicenseRecoverNet.DomainRunner` 子域加载错误。之后如果目标组件内部还有异常，结构化弹窗和当天持久日志会继续显示真实内层错误。
+          '''
+          write('release-notes/v1.2.32.md',notes)
+
+          test='src/test/java/RefactorSmokeTest.java'
+          old='''        check(hostSource230.contains("Assembly.LoadFrom(helper)"), "ASP.NET host forwards to existing helper assembly");\n        check(hostSource230.contains("ResolveAppRoot(runtimeDir)"), "ASP.NET host resolves target web root from runtime dir");'''
+          new='''        check(hostSource230.contains("Assembly.LoadFrom(helper)"), "ASP.NET host loads the existing helper assembly");\n        check(hostSource230.contains("ParseArgs") && hostSource230.contains("RunDirect"),\n                "ASP.NET host dispatches helper commands directly in the current AppDomain");\n        check(!hostSource230.contains("assembly.EntryPoint"),\n                "ASP.NET host does not re-enter helper child-AppDomain dispatch through EntryPoint");\n        check(hostSource230.contains("helperDispatch=RunDirect/same-AppDomain"),\n                "ASP.NET host emits same-AppDomain dispatch diagnostics");\n        check(hostSource230.contains("ResolveAppRoot(runtimeDir)"), "ASP.NET host resolves target web root from runtime dir");'''
+          replace_once(test,old,new)
+
+          verify='scripts/verify.ps1'
+          old="""foreach ($marker in @('SimpleWorkerRequest','HttpContext','LicenseRecover.NET.exe','ASPNET_HOST')) {\n    if (($aspHostAscii.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -lt 0) -and\n        ($aspHostUnicode.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -lt 0)) {\n        throw \"ASP.NET host helper is missing marker: $marker\"\n    }\n}\n\nWrite-Host 'Verifying directory-only registration identity policy...'"""
+          new="""foreach ($marker in @('SimpleWorkerRequest','HttpContext','LicenseRecover.NET.exe','ASPNET_HOST','ParseArgs','RunDirect')) {\n    if (($aspHostAscii.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -lt 0) -and\n        ($aspHostUnicode.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -lt 0)) {\n        throw \"ASP.NET host helper is missing marker: $marker\"\n    }\n}\n$aspHostSourceText = Get-Content -LiteralPath $aspNetHostSource -Raw\nif ($aspHostSourceText.Contains('assembly.EntryPoint')) { throw 'ASP.NET host must not re-enter helper EntryPoint/child-AppDomain dispatch.' }\nif (-not $aspHostSourceText.Contains('helperDispatch=RunDirect/same-AppDomain')) { throw 'ASP.NET host same-AppDomain dispatch marker is missing.' }\n\nWrite-Host 'Verifying directory-only registration identity policy...'"""
+          replace_once(verify,old,new)
+          PY
+          git diff --check
+      - name: Commit staged release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add VERSION.txt README.md README.txt CHANGELOG.md release-notes/v1.2.32.md src/test/java/RefactorSmokeTest.java scripts/verify.ps1
+          git commit -m 'fix: keep lowercase helper in ASP.NET host AppDomain'
+          git push origin HEAD:patch/v1.2.32-direct-helper
