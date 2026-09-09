@@ -82,7 +82,7 @@ core = core.replace(old, new, 1)
 core_path.write_text(core, encoding='utf-8')
 
 test = test_path.read_text(encoding='utf-8')
-anchor = '''        System.out.println("RefactorSmokeTest OK");
+anchor = '''        System.out.println("ALL REFACTOR SMOKE TESTS PASSED");
 '''
 insert = '''        Path toolCpDir = Files.createTempDirectory("lrc-toolcp-");
         Path legacyCore = toolCpDir.resolve("LicenseRecover.jar");
