@@ -134,9 +134,9 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (targetRegedit == null)
             return Result.fail("[CHAIN] no target itmcRegedit.dll / ITMC.Regedit.dll registration assembly was found.", d);
         boolean lowercaseChain = "itmcRegedit.dll".equals(targetRegedit.getName());
-        File helper = lowercaseChain ? findDotNetNativeHelper() : findDotNetModernNativeHelper();
+        File helper = lowercaseChain ? findDotNetAspNetHostHelper() : findDotNetModernNativeHelper();
         if (helper == null) {
-            String expected = lowercaseChain ? "LicenseRecover.NET.exe" : "LicenseRecover.NET.Modern.exe";
+            String expected = lowercaseChain ? "LicenseRecover.NET.AspNetHost.exe" : "LicenseRecover.NET.Modern.exe";
             return Result.fail("[HELPER] " + expected + " was not found; selected target registration chain cannot run.", d);
         }
 
@@ -150,7 +150,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             if (blank(registrationProduct))
                 return Result.fail("[CHAIN] lowercase itmcRegedit.dll is authoritative, but its registration crypto family "
                         + "could not be proven from matching itmc<family> + *<family>OK* constants.", d);
-            log.accept("[dotnet-chain] lowercase itmcRegedit.dll preferred; appProduct=" + appProduct
+            log.accept("[dotnet-chain] lowercase itmcRegedit.dll preferred via ASP.NET host; appProduct=" + appProduct
                     + " registrationProduct=" + registrationProduct + "\n");
         } else {
             log.accept("[dotnet-chain] lowercase itmcRegedit.dll absent; uppercase ITMC.Regedit.dll fallback; product="
@@ -326,6 +326,14 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         File nested = new File(dir, "LicenseRecover.NET" + File.separator + "LicenseRecover.NET.exe");
         if (nested.isFile()) return nested;
         File flat = new File(dir, "LicenseRecover.NET.exe");
+        return flat.isFile() ? flat : null;
+    }
+
+    private static File findDotNetAspNetHostHelper() {
+        File dir = toolDir();
+        File nested = new File(dir, "LicenseRecover.NET" + File.separator + "LicenseRecover.NET.AspNetHost.exe");
+        if (nested.isFile()) return nested;
+        File flat = new File(dir, "LicenseRecover.NET.AspNetHost.exe");
         return flat.isFile() ? flat : null;
     }
 

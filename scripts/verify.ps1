@@ -194,12 +194,31 @@ foreach ($commandName in @('gencode','doreg','verify')) {
 
 Write-Host 'Building uppercase ITMC.Regedit modern native helper adapter...'
 $modernNativeHelper = Join-Path $buildRoot 'LicenseRecover.NET.Modern.exe'
+$aspNetHostSource = Join-Path $repoRoot 'src/dotnet/LicenseRecover.AspNetHost.cs'
+$aspNetHostHelper = Join-Path $buildRoot 'LicenseRecover.NET.AspNetHost.exe'
 Invoke-External -Command 'python3' -ArgumentList @(
     (Join-Path $repoRoot 'scripts/prepare-dotnet-modern-helper.py'),
     $nativeHelper,
     $modernNativeHelper
 )
 if (-not (Test-Path -LiteralPath $modernNativeHelper)) { throw 'Modern .NET helper adapter was not created.' }
+
+Write-Host 'Building lowercase itmcRegedit ASP.NET host helper...'
+if (-not (Test-Path -LiteralPath $aspNetHostSource)) { throw 'Missing src/dotnet/LicenseRecover.AspNetHost.cs.' }
+$mcs = Get-Command mcs -ErrorAction SilentlyContinue
+if ($null -eq $mcs) { throw 'Mono mcs compiler is required to build the ASP.NET host helper.' }
+Invoke-External -Command $mcs.Source -ArgumentList @(
+    '-nologo', '-target:exe', '-optimize+', '-r:System.Web.dll',
+    ('-out:' + $aspNetHostHelper), $aspNetHostSource
+)
+if (-not (Test-Path -LiteralPath $aspNetHostHelper)) { throw 'ASP.NET host helper was not created.' }
+$aspHostBytes = [IO.File]::ReadAllBytes($aspNetHostHelper)
+$aspHostUnicode = [Text.Encoding]::Unicode.GetString($aspHostBytes)
+foreach ($marker in @('SimpleWorkerRequest','HttpContext','LicenseRecover.NET.exe','ASPNET_HOST')) {
+    if ($aspHostUnicode.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+        throw "ASP.NET host helper is missing marker: $marker"
+    }
+}
 
 Write-Host 'Verifying directory-only registration identity policy...'
 $coreSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecover.java') -Raw
@@ -208,6 +227,7 @@ $autoSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecover
 $legacyNetSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LegacyDotNetProtocol.java') -Raw
 $legacyGuiSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverGUI.java') -Raw
 $modernGuiSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUI.java') -Raw
+$uiPatchSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUIUiPatchLauncher.java') -Raw
 if ($coreSource.Contains('genRegisterCode(seq, registerPid)')) { throw 'Java gencode can still omit directory-derived RegStr.' }
 if ($coreSource.Contains('+ ALL_NUMS')) { throw 'Java authorization generation still uses catch-all RegStr.' }
 if ($autoSource.Contains('if (blank(regStr)) regStr = d.versionId')) { throw '.NET one-click still falls back to VersionID for RegStr.' }
@@ -219,13 +239,13 @@ if (-not $legacyGuiSource.Contains('plan.authorizationFamily, plan.regStr')) { t
 if (-not $legacyGuiSource.Contains('目标 ITMC.Web.dll 未解析出 ProName')) { throw 'Legacy GUI .NET fail-closed product guard is missing.' }
 if (-not $coreSource.Contains('LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect')) { throw 'Java core is not using the fail-closed directory plan.' }
 if (-not $autoSource.Contains('VersionID/default-list fallback is disabled')) { throw '.NET fail-closed guard is missing.' }
-if (-not $autoSource.Contains('LicenseRecover.NET.exe') -or -not $autoSource.Contains('LicenseRecover.NET.Modern.exe')) { throw '.NET one-click must retain lowercase native helper plus uppercase fallback adapter.' }
+if (-not $autoSource.Contains('LicenseRecover.NET.AspNetHost.exe') -or -not $autoSource.Contains('LicenseRecover.NET.Modern.exe')) { throw '.NET one-click must use the ASP.NET host for lowercase chain plus uppercase fallback adapter.' }
 if (-not $autoSource.Contains('selectDotNetRegeditAssembly') -or -not $autoSource.Contains('detectLowercaseDotNetRegistrationProduct')) { throw '.NET target-owned lowercase-first registration-chain policy is missing.' }
 if (-not $autoSource.Contains('registrationProduct')) { throw '.NET app product and lowercase registration crypto family are not separated.' }
 if (-not $autoSource.Contains('hasDotNetAuthorizationConfigStructure')) { throw 'Modern .NET pre-block cannot distinguish unrelated config.xml files.' }
 if ($autoSource.Contains('String updated = putElement(original, "Service", BLOCK_ENDPOINT);\n            validateXml(updated);') -and -not $autoSource.Contains('[pre-block-skip]')) { throw 'Modern .NET pre-block still aborts on unrelated config.xml files.' }
 if (-not $modernGuiSource.Contains('appendPersistentLog')) { throw 'Modern GUI persistent diagnostics are missing.' }
-$uiPatchSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUIUiPatchLauncher.java') -Raw
+if (-not $uiPatchSource.Contains('appendPersistentOneClickLog')) { throw 'One-click overlay persistent diagnostics are missing.' }
 if (-not $uiPatchSource.Contains('showOneClickFailureDialog')) { throw 'Structured one-click failure dialog is missing.' }
 if (-not $uiPatchSource.Contains('复制详情') -or -not $uiPatchSource.Contains('打开日志')) { throw 'One-click failure dialog diagnostic actions are missing.' }
 if ($uiPatchSource.Contains('JOptionPane.showMessageDialog(frame, result.message')) { throw 'One-click failure still renders the raw native message in a one-line JOptionPane.' }
@@ -335,9 +355,11 @@ Copy-Item -LiteralPath $overlayJar -Destination $distDir -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LicenseRecover.NET') -Destination $distDir -Recurse -Force
 $distNativeDir = Join-Path $distDir 'LicenseRecover.NET'
 Copy-Item -LiteralPath $modernNativeHelper -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.Modern.exe') -Force
+Copy-Item -LiteralPath $aspNetHostHelper -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.AspNetHost.exe') -Force
 $nativeConfig = Join-Path $repoRoot 'LicenseRecover.NET/LicenseRecover.NET.exe.config'
 if (Test-Path -LiteralPath $nativeConfig) {
     Copy-Item -LiteralPath $nativeConfig -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.Modern.exe.config') -Force
+    Copy-Item -LiteralPath $nativeConfig -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.AspNetHost.exe.config') -Force
 }
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LicenseRecoverGUI.exe') -Destination (Join-Path $distDir 'LicenseRecoverGUI-legacy.exe') -Force
 

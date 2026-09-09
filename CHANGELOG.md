@@ -1,3 +1,17 @@
+## [1.2.30] - 2026-09-09
+
+### Fixed
+
+- 修复小写 `itmcRegedit.dll` 注册链在独立 helper 进程中调用 `NewRegistry/getRegNo/DoRegistry/CheckReInfo` 时缺少 ASP.NET `HttpContext`，导致真实 YX030101 在 `GENCODE` 阶段以 `TargetInvocationException`（“调用的目标发生了异常”）失败。
+- 新增 `LicenseRecover.NET.AspNetHost.exe`：只为小写 `itmcRegedit.dll` 链建立最小 `System.Web` 宿主上下文，使用目标站点物理根目录初始化 `SimpleWorkerRequest`，再在同一 AppDomain 内转交原 `LicenseRecover.NET.exe`。目标 DLL 不修改，申请号/授权码/DoRegistry/CheckReInfo 仍全部由目标注册组件执行。
+- `.NET` 选择规则保持“小写优先、大写回退”：小写链改用 ASP.NET host helper；仅大写 `ITMC.Regedit.dll` 时继续使用 `LicenseRecover.NET.Modern.exe`。
+- 修复一键恢复 UI 覆盖层日志只写屏幕、不写 `logs/LicenseRecoverGUI-YYYYMMDD.log` 的问题；v1.2.29 新增的“打开日志”现在能看到完整 one-click 原生日志。
+
+### Regression
+
+- CI 新增 ASP.NET host 源码与产物检查，要求 `SimpleWorkerRequest`、`HttpContext.Current`、目标站点物理根目录以及 helper EntryPoint 转交链都存在。
+- 保持 PRE-BLOCK FIRST：防火墙规则现在绑定真正承载目标 DLL 的 `LicenseRecover.NET.AspNetHost.exe` 进程；失败仍回滚配置文件。
+
 ## [1.2.29] - 2026-09-09
 
 ### Changed

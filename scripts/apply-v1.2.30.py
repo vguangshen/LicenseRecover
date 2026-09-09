@@ -203,8 +203,8 @@ replace_once(
 # LicenseRecoverModernGUI.appendPersistentLog. Persist that stream here too.
 replace_once(
     "src/main/java/LicenseRecoverModernGUIUiPatchLauncher.java",
-    'import java.io.File;\nimport java.util.ArrayList;',
-    'import java.io.File;\nimport java.nio.charset.StandardCharsets;\nimport java.nio.file.Files;\nimport java.nio.file.StandardOpenOption;\nimport java.text.SimpleDateFormat;\nimport java.util.Date;\nimport java.util.ArrayList;'
+    'import java.io.File;\nimport java.text.SimpleDateFormat;\nimport java.util.ArrayList;',
+    'import java.io.File;\nimport java.nio.charset.StandardCharsets;\nimport java.nio.file.Files;\nimport java.nio.file.StandardOpenOption;\nimport java.text.SimpleDateFormat;\nimport java.util.ArrayList;'
 )
 replace_once(
     "src/main/java/LicenseRecoverModernGUIUiPatchLauncher.java",
@@ -212,12 +212,7 @@ replace_once(
     '''    private static void append(final JTextArea area, final String text) {\n        if (area == null || text == null || text.isEmpty()) return;\n        appendPersistentOneClickLog(text);\n        SwingUtilities.invokeLater(() -> {\n            area.append(text);\n            area.setCaretPosition(area.getDocument().getLength());\n        });\n    }\n\n    private static final Object ONE_CLICK_LOG_LOCK = new Object();\n\n    private static void appendPersistentOneClickLog(String text) {\n        try {\n            synchronized (ONE_CLICK_LOG_LOCK) {\n                File dir = new File(toolDir(), "logs");\n                Files.createDirectories(dir.toPath());\n                String day = new SimpleDateFormat("yyyyMMdd").format(new Date());\n                File file = new File(dir, "LicenseRecoverGUI-" + day + ".log");\n                String stamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());\n                String entry = "[" + stamp + "] " + text;\n                Files.write(file.toPath(), entry.getBytes(StandardCharsets.UTF_8),\n                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);\n            }\n        } catch (Throwable ignore) {\n            // Diagnostic persistence must never turn recovery into a failure.\n        }\n    }'''
 )
 
-# CI/toolchain: ensure Mono C# compiler + System.Web reference assembly are present.
-replace_once(
-    ".github/workflows/verify-source.yml",
-    '''      - name: Prepare Windows native launcher toolchain\n        shell: bash\n        run: |\n          set -euo pipefail\n          if ! command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1 || ! command -v x86_64-w64-mingw32-windres >/dev/null 2>&1; then\n            timeout 120s sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update\n            timeout 180s sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64\n          fi\n          x86_64-w64-mingw32-gcc --version | head -n 1''',
-    '''      - name: Prepare Windows native and .NET helper toolchains\n        shell: bash\n        run: |\n          set -euo pipefail\n          if ! command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1 \\\n             || ! command -v x86_64-w64-mingw32-windres >/dev/null 2>&1 \\\n             || ! command -v mcs >/dev/null 2>&1; then\n            timeout 120s sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update\n            timeout 240s sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends \\\n              gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 mono-mcs libmono-system-web4.0-cil\n          fi\n          x86_64-w64-mingw32-gcc --version | head -n 1\n          mcs --version'''
-)
+# CI/toolchain is already present on main.
 
 # verify.ps1: build/package/check ASP.NET host.
 replace_once(
