@@ -114,7 +114,9 @@ jobs:
 
           & $csc /nologo /target:library /r:System.Web.dll /out:$bin\itmcRegedit.dll (Join-Path $test 'FakeRegedit.cs')
           if ($LASTEXITCODE -ne 0) { throw "fake itmcRegedit compile failed: $LASTEXITCODE" }
-          & $csc /nologo /target:exe /out:$tool\LicenseRecover.NET.exe (Join-Path $test 'FakeHelper.cs')
+          # Production only loads LicenseRecover.NET.exe as an assembly; the fixture
+          # intentionally uses a library PE with the same filename so no fake Main is needed.
+          & $csc /nologo /target:library /out:$tool\LicenseRecover.NET.exe (Join-Path $test 'FakeHelper.cs')
           if ($LASTEXITCODE -ne 0) { throw "fake helper compile failed: $LASTEXITCODE" }
           & $csc /nologo /target:library /r:System.Web.dll /out:$tool\LicenseRecover.NET.AspNetBridge.dll src\dotnet\LicenseRecover.AspNetBridge.cs
           if ($LASTEXITCODE -ne 0) { throw "ASP.NET bridge compile failed: $LASTEXITCODE" }
