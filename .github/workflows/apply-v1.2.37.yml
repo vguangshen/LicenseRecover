@@ -1,0 +1,32 @@
+name: Apply v1.2.37 production patch
+
+on:
+  push:
+    branches: [ "fix/v1.2.37-real-aspnet-host" ]
+    paths:
+      - "scripts/apply-v1.2.37.py"
+      - ".github/workflows/apply-v1.2.37.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Apply patch
+        run: python3 scripts/apply-v1.2.37.py
+      - name: Commit staged v1.2.37
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add VERSION.txt README.md CHANGELOG.md release-notes/v1.2.37.md scripts/verify.ps1 src/test/java/RefactorSmokeTest.java .github/workflows/aspnet-host-windows-integration.yml
+          if git diff --cached --quiet; then
+            echo 'No patch changes to commit.'
+            exit 0
+          fi
+          git commit -m 'fix: use real ASP.NET hosted AppDomain for lowercase .NET chain'
+          git push origin HEAD:fix/v1.2.37-real-aspnet-host
