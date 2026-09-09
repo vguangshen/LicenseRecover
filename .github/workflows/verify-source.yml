@@ -27,10 +27,19 @@ jobs:
           if ! command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1 \
              || ! command -v x86_64-w64-mingw32-windres >/dev/null 2>&1 \
              || ! command -v mcs >/dev/null 2>&1; then
-            # The hosted image may carry a Chrome apt source whose index can rotate
-            # independently and transiently fail Hash Sum validation. None of the
-            # toolchains below come from that repository, so exclude it here.
-            sudo rm -f /etc/apt/sources.list.d/google-chrome.list
+            # The hosted image may carry Chrome apt metadata in either .list or
+            # deb822 .sources form. Its index rotates independently and can cause
+            # a transient Hash Sum mismatch; none of the toolchains below use it.
+            shopt -s nullglob
+            for source in /etc/apt/sources.list.d/*; do
+              if grep -q 'dl.google.com/linux/chrome' "$source" 2>/dev/null; then
+                echo "Disabling unrelated Chrome apt source: $source"
+                sudo mv "$source" "$source.disabled"
+              fi
+            done
+            if [ -f /etc/apt/sources.list ] && grep -q 'dl.google.com/linux/chrome' /etc/apt/sources.list; then
+              sudo sed -i '\|dl.google.com/linux/chrome|s|^|# disabled by LicenseRecover CI: |' /etc/apt/sources.list
+            fi
             timeout 120s sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
             timeout 240s sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends \
               gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 mono-mcs libmono-system-web4.0-cil
