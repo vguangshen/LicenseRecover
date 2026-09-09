@@ -20,10 +20,10 @@ jobs:
           set -euo pipefail
           sudo apt-get update >/dev/null
           sudo apt-get install -y --no-install-recommends mono-utils >/dev/null
-          echo '=== typedefs matching DomainRunner/AppReflection ==='
-          monodis --typedef LicenseRecover.NET/LicenseRecover.NET.exe | grep -i -E 'DomainRunner|AppReflection|Program' || true
-          echo '=== methods matching DomainRunner/AppReflection ==='
-          monodis --method LicenseRecover.NET/LicenseRecover.NET.exe | grep -i -E 'DomainRunner|AppReflection|RunInDomain|GetEntryAssembly' || true
-          echo '=== relevant IL ==='
           monodis LicenseRecover.NET/LicenseRecover.NET.exe > helper.il
-          grep -n -B 18 -A 35 -E 'DomainRunner|GetEntryAssembly|CreateInstance|CreateDomain|EntryAssembly' helper.il | head -n 500 || true
+          echo '=== Program method table ==='
+          monodis --method LicenseRecover.NET/LicenseRecover.NET.exe | sed -n '/########## LicenseRecoverNet.Program/,/########## LicenseRecoverNet.Program\/TeeWriter/p' | head -n 120
+          echo '=== isolation method IL ==='
+          sed -n '11120,11390p' helper.il
+          echo '=== Program Main / RunDirect references ==='
+          grep -n -B 12 -A 35 -E 'Program::RunDirect|Program::RunIsolated|Program::RunIn|DomainRunner::Run|CreateDomain' helper.il | tail -n 700
