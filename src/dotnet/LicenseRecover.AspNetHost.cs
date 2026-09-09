@@ -31,17 +31,52 @@ internal static class LicenseRecoverAspNetHost
     {
         string physical = WithTrailingSeparator(appRoot);
 
-        // Publish the target application's virtual/physical root through the same
-        // AppDomain data keys used by classic ASP.NET. Once those keys are present,
-        // the five-argument SimpleWorkerRequest constructor is not legal because it
-        // attempts to override an already-established application path. Use the
-        // non-overriding constructor so Server.MapPath("~/...") resolves against the
-        // target web root without triggering HttpException on real .NET Framework.
+        // Classic ASP.NET uses these AppDomain data keys as the application root.
+        // The non-overriding SimpleWorkerRequest constructor is required after the
+        // application path is established; otherwise .NET Framework rejects an
+        // attempt to replace the application path.
         AppDomain.CurrentDomain.SetData(".appPath", physical);
         AppDomain.CurrentDomain.SetData(".appVPath", "/");
         SimpleWorkerRequest worker = new SimpleWorkerRequest(
             "default.aspx", "", TextWriter.Null);
         return new HttpContext(worker);
+    }
+
+    private static Exception Unwrap(Exception ex)
+    {
+        Exception current = ex;
+        while (current is TargetInvocationException && current.InnerException != null)
+            current = current.InnerException;
+        return current;
+    }
+
+    private static int InvokeHelperDirect(string helper, string[] args)
+    {
+        Assembly assembly = Assembly.LoadFrom(helper);
+        Type program = assembly.GetType("LicenseRecoverNet.Program", true);
+
+        // Program.Main -> Program.Run normally creates a child AppDomain for the
+        // lowercase itmcRegedit.dll path. A child AppDomain cannot inherit the
+        // HttpContext created above, and Program.RunInBinDomain also resolves its
+        // DomainRunner from Assembly.GetEntryAssembly(), which is this host EXE.
+        // Parse the helper's own arguments, then call its public RunDirect method
+        // in this same AppDomain so the target registration component keeps the
+        // ASP.NET HttpContext required by Server.MapPath("~/...").
+        MethodInfo parseArgs = program.GetMethod(
+            "ParseArgs", BindingFlags.Static | BindingFlags.NonPublic);
+        MethodInfo runDirect = program.GetMethod(
+            "RunDirect", BindingFlags.Static | BindingFlags.Public);
+        if (parseArgs == null || runDirect == null)
+            throw new MissingMethodException(
+                "LicenseRecover.NET helper is missing ParseArgs/RunDirect.");
+
+        object options = parseArgs.Invoke(null, new object[] { args });
+        if (options == null)
+            throw new ArgumentException("LicenseRecover.NET helper rejected the command line.");
+
+        Console.WriteLine("[ASPNET_HOST] helperDispatch=RunDirect/same-AppDomain");
+        object value = runDirect.Invoke(null, new object[] { options });
+        return value == null ? 0 : Convert.ToInt32(value);
     }
 
     public static int Main(string[] args)
@@ -74,34 +109,14 @@ internal static class LicenseRecoverAspNetHost
             HttpContext.Current = CreateContext(appRoot);
             Console.WriteLine("[ASPNET_HOST] appRoot=" + appRoot);
             Console.WriteLine("[ASPNET_HOST] runtimeDir=" + runtimeDir);
-
-            Assembly assembly = Assembly.LoadFrom(helper);
-            MethodInfo entry = assembly.EntryPoint;
-            if (entry == null)
-                throw new InvalidOperationException("LicenseRecover.NET.exe has no EntryPoint.");
-
-            object[] invokeArgs = entry.GetParameters().Length == 0
-                ? null
-                : new object[] { args };
-            object value = entry.Invoke(null, invokeArgs);
-            if (entry.ReturnType == typeof(int) && value != null)
-                return (int)value;
-            return 0;
-        }
-        catch (TargetInvocationException ex)
-        {
-            Exception inner = ex.InnerException ?? ex;
-            Console.Error.WriteLine("[ASPNET_HOST] helper invocation failed: "
-                + inner.GetType().FullName + ": " + inner.Message);
-            if (!string.IsNullOrEmpty(inner.StackTrace))
-                Console.Error.WriteLine(inner.StackTrace);
-            return 1;
+            return InvokeHelperDirect(helper, args);
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine("[ASPNET_HOST] " + ex.GetType().FullName + ": " + ex.Message);
-            if (!string.IsNullOrEmpty(ex.StackTrace))
-                Console.Error.WriteLine(ex.StackTrace);
+            Exception inner = Unwrap(ex);
+            Console.Error.WriteLine("[ASPNET_HOST] " + inner.GetType().FullName + ": " + inner.Message);
+            if (!string.IsNullOrEmpty(inner.StackTrace))
+                Console.Error.WriteLine(inner.StackTrace);
             return 1;
         }
         finally
