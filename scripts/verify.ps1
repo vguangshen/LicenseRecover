@@ -215,7 +215,7 @@ if (-not (Test-Path -LiteralPath $aspNetHostHelper)) { throw 'ASP.NET host helpe
 $aspHostBytes = [IO.File]::ReadAllBytes($aspNetHostHelper)
 $aspHostAscii = [Text.Encoding]::ASCII.GetString($aspHostBytes)
 $aspHostUnicode = [Text.Encoding]::Unicode.GetString($aspHostBytes)
-foreach ($marker in @('SimpleWorkerRequest','HttpContext','LicenseRecover.NET.exe','ASPNET_HOST','ParseArgs','RunDirect')) {
+foreach ($marker in @('SimpleWorkerRequest','HttpContext','LicenseRecover.NET.exe','ASPNET_HOST')) {
     if (($aspHostAscii.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -lt 0) -and
         ($aspHostUnicode.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -lt 0)) {
         throw "ASP.NET host helper is missing marker: $marker"
@@ -224,6 +224,9 @@ foreach ($marker in @('SimpleWorkerRequest','HttpContext','LicenseRecover.NET.ex
 $aspHostSourceText = Get-Content -LiteralPath $aspNetHostSource -Raw
 if ($aspHostSourceText.Contains('assembly.EntryPoint')) { throw 'ASP.NET host must not re-enter helper EntryPoint/child-AppDomain dispatch.' }
 if (-not $aspHostSourceText.Contains('helperDispatch=RunDirect/target-AppDomain')) { throw 'ASP.NET host target-AppDomain dispatch marker is missing.' }
+if (-not $aspHostSourceText.Contains('MethodInfo parseArgs') -or -not $aspHostSourceText.Contains('MethodInfo runDirect')) { throw 'ASP.NET host ParseArgs/RunDirect reflection dispatch is missing from source.' }
+if (-not $aspHostSourceText.Contains('ValidateMapPaths(HttpContext.Current, appRoot)')) { throw 'ASP.NET host MapPath validation is missing.' }
+if (-not $aspHostSourceText.Contains('ProbeNativeRequestPath(assembly, args)')) { throw 'ASP.NET host native request-code probe is missing.' }
 
 Write-Host 'Verifying directory-only registration identity policy...'
 $coreSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecover.java') -Raw
