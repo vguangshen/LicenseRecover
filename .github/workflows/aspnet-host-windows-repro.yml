@@ -1,0 +1,96 @@
+name: ASP.NET host Windows repro
+
+on:
+  push:
+    branches: [ "test/v1.2.36-aspnet-repro" ]
+
+jobs:
+  reproduce:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Reproduce v1.2.36 synthetic-host MapPath failure
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $PWD 'build\aspnet-repro\YX030101'
+          $bin = Join-Path $root 'bin'
+          New-Item -ItemType Directory -Force -Path $bin | Out-Null
+          Set-Content -LiteralPath (Join-Path $root 'Register.xml') -Value '<ROOT />' -Encoding UTF8
+          Set-Content -LiteralPath (Join-Path $root 'config.xml') -Value '<ROOT><reg /></ROOT>' -Encoding UTF8
+          @'
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <system.web>
+              <httpRuntime targetFramework="4.5" />
+              <compilation targetFramework="4.5" />
+              <identity impersonate="true" />
+            </system.web>
+          </configuration>
+          '@ | Set-Content -LiteralPath (Join-Path $root 'web.config') -Encoding UTF8
+
+          @'
+          using System;
+          using System.IO;
+          using System.Reflection;
+          using System.Web;
+
+          public sealed class MapPathProbeRunner : MarshalByRefObject
+          {
+              public override object InitializeLifetimeService() { return null; }
+              public int Run(string appRoot)
+              {
+                  Directory.SetCurrentDirectory(appRoot);
+                  HttpContext.Current = LicenseRecoverAspNetHost.CreateContext(appRoot);
+                  LicenseRecoverAspNetHost.ValidateMapPaths(HttpContext.Current, appRoot);
+                  return 0;
+              }
+          }
+
+          public static class MapPathHarness
+          {
+              public static int Main(string[] args)
+              {
+                  string appRoot = Path.GetFullPath(args[0]);
+                  AppDomain domain = null;
+                  try
+                  {
+                      AppDomainSetup setup = new AppDomainSetup();
+                      setup.ApplicationBase = LicenseRecoverAspNetHost.WithTrailingSeparator(appRoot);
+                      setup.PrivateBinPath = "bin";
+                      setup.ShadowCopyFiles = "false";
+                      setup.ConfigurationFile = Path.Combine(appRoot, "web.config");
+                      domain = AppDomain.CreateDomain("Lrc.Repro." + Guid.NewGuid().ToString("N"), null, setup);
+                      MapPathProbeRunner runner = (MapPathProbeRunner)domain.CreateInstanceFromAndUnwrap(
+                          Assembly.GetExecutingAssembly().Location,
+                          typeof(MapPathProbeRunner).FullName);
+                      runner.Run(appRoot);
+                      Console.WriteLine("UNEXPECTED_PASS: v1.2.36 synthetic host mapped ~/ paths successfully.");
+                      return 10;
+                  }
+                  catch (Exception ex)
+                  {
+                      string text = ex.ToString();
+                      Console.WriteLine("EXPECTED_REPRO_EXCEPTION_BEGIN");
+                      Console.WriteLine(text);
+                      Console.WriteLine("EXPECTED_REPRO_EXCEPTION_END");
+                      if (text.IndexOf("FileIOPermission", StringComparison.OrdinalIgnoreCase) >= 0
+                          || text.IndexOf("MapPath", StringComparison.OrdinalIgnoreCase) >= 0
+                          || text.IndexOf("PathDiscovery", StringComparison.OrdinalIgnoreCase) >= 0)
+                          return 0;
+                      return 11;
+                  }
+                  finally
+                  {
+                      if (domain != null) try { AppDomain.Unload(domain); } catch { }
+                  }
+              }
+          }
+          '@ | Set-Content -LiteralPath 'build\aspnet-repro\MapPathHarness.cs' -Encoding UTF8
+
+          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          if (-not (Test-Path $csc)) { $csc = "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe" }
+          & $csc /nologo /target:exe /r:System.Web.dll /main:MapPathHarness /out:build\aspnet-repro\MapPathHarness.exe src\dotnet\LicenseRecover.AspNetHost.cs build\aspnet-repro\MapPathHarness.cs
+          if ($LASTEXITCODE -ne 0) { throw "csc failed: $LASTEXITCODE" }
+          & build\aspnet-repro\MapPathHarness.exe $root
+          if ($LASTEXITCODE -ne 0) { throw "repro harness did not match the real failure; exit=$LASTEXITCODE" }
