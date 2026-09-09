@@ -14,16 +14,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Inspect LicenseRecover.NET IL
+      - name: Inspect LicenseRecover.NET Run dispatch
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update >/dev/null
           sudo apt-get install -y --no-install-recommends mono-utils >/dev/null
           monodis LicenseRecover.NET/LicenseRecover.NET.exe > helper.il
-          echo '=== Program method table ==='
-          monodis --method LicenseRecover.NET/LicenseRecover.NET.exe | sed -n '/########## LicenseRecoverNet.Program/,/########## LicenseRecoverNet.Program\/TeeWriter/p' | head -n 120
-          echo '=== isolation method IL ==='
-          sed -n '11120,11390p' helper.il
-          echo '=== Program Main / RunDirect references ==='
-          grep -n -B 12 -A 35 -E 'Program::RunDirect|Program::RunIsolated|Program::RunIn|DomainRunner::Run|CreateDomain' helper.il | tail -n 700
+          sed -n '10980,11150p' helper.il
