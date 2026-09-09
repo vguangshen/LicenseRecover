@@ -1,0 +1,6 @@
+v1.2.33 regression target:
+- lowercase itmcRegedit.dll remains in the application bin directory
+- ASP.NET host preloads bin\itmcRegedit.dll
+- AssemblyResolve searches the same target runtimeDir for missing .dll/.exe dependencies
+- helper RunDirect remains in the ASP.NET AppDomain so HttpContext.Current stays valid
+- no target DLL is copied into LicenseRecover.NET
