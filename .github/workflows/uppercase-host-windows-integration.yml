@@ -1,0 +1,198 @@
+name: Uppercase ITMC.Regedit Windows integration
+
+on:
+  push:
+    branches: [ "fix/v1.2.38-uppercase-host" ]
+  pull_request:
+
+jobs:
+  uppercase-hosted-chain:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build uppercase-only YX030308-style fixture
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $test = Join-Path $PWD 'build\uppercase-host-integration'
+          $app = Join-Path $test 'YX030308'
+          $bin = Join-Path $app 'bin'
+          $tool = Join-Path $test 'tool'
+          New-Item -ItemType Directory -Force -Path $bin,$tool | Out-Null
+
+          Set-Content -LiteralPath (Join-Path $app 'Register.xml') -Value '<ROOT />' -Encoding UTF8
+          Set-Content -LiteralPath (Join-Path $app 'config.xml') -Value '<ROOT><reg><regType>1</regType><Service>http://127.0.0.1:9/Service.asmx</Service></reg><SystemSoft><SoftVersionID>YX030308</SoftVersionID></SystemSoft></ROOT>' -Encoding UTF8
+          @'
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <appSettings>
+              <add key="productName" value="YX0303" />
+            </appSettings>
+            <system.web>
+              <httpRuntime targetFramework="4.5" />
+              <compilation targetFramework="4.5" />
+            </system.web>
+          </configuration>
+          '@ | Set-Content -LiteralPath (Join-Path $app 'web.config') -Encoding UTF8
+
+          @'
+          using System;
+          using System.IO;
+
+          namespace ITMC.Regedit
+          {
+              public sealed class RegeditMain
+              {
+                  private readonly string product;
+
+                  public RegeditMain(string productName, string encryptedCheck)
+                  {
+                      product = productName;
+                      AssertRoot("ctor");
+                      if (string.IsNullOrEmpty(encryptedCheck))
+                          throw new InvalidOperationException("encrypted constructor check missing");
+                  }
+
+                  private static string ExpectedRoot()
+                  {
+                      string root = Environment.GetEnvironmentVariable("LR_EXPECTED_APP_ROOT");
+                      if (string.IsNullOrEmpty(root))
+                          throw new InvalidOperationException("LR_EXPECTED_APP_ROOT missing");
+                      return Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                  }
+
+                  private static void AssertRoot(string stage)
+                  {
+                      string expected = ExpectedRoot();
+                      string actual = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory)
+                          .TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                      Console.WriteLine("[FAKE_UPPER] " + stage + " BaseDirectory=" + actual);
+                      if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+                          throw new InvalidOperationException(stage + " wrong AppDomain.BaseDirectory: " + actual + " expected=" + expected);
+
+                      string rootConfig = Path.Combine(actual, "config.xml");
+                      string rootRegister = Path.Combine(actual, "Register.xml");
+                      string binConfig = Path.Combine(actual, "bin", "config.xml");
+                      if (!File.Exists(rootConfig) || !File.Exists(rootRegister))
+                          throw new FileNotFoundException(stage + " did not resolve site-root config/Register files");
+                      if (File.Exists(binConfig))
+                          throw new InvalidOperationException(stage + " fixture unexpectedly contains bin\\config.xml");
+                  }
+
+                  public string getRegNo()
+                  {
+                      AssertRoot("getRegNo");
+                      if (!string.Equals(product, "YX0303", StringComparison.Ordinal))
+                          throw new InvalidOperationException("wrong product=" + product);
+                      return "F000606A59904719";
+                  }
+
+                  public bool DoRegistry(string seq, string code)
+                  {
+                      AssertRoot("DoRegistry");
+                      if (string.IsNullOrEmpty(seq) || string.IsNullOrEmpty(code)) return false;
+                      File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "uppercase-doreg.marker"), product + "|" + seq.Length + "|" + code.Length);
+                      return true;
+                  }
+
+                  public bool CheckReInfo()
+                  {
+                      AssertRoot("CheckReInfo");
+                      if (!File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "uppercase-doreg.marker")))
+                          throw new InvalidOperationException("DoRegistry root marker missing");
+                      return false; // vendor convention: false means local registration is valid
+                  }
+              }
+          }
+          '@ | Set-Content -LiteralPath (Join-Path $test 'FakeUpperRegedit.cs') -Encoding UTF8
+
+          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          if (-not (Test-Path -LiteralPath $csc)) { $csc = "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe" }
+          if (-not (Test-Path -LiteralPath $csc)) { throw 'Full .NET Framework csc.exe not found.' }
+
+          & $csc /nologo /target:library /out:$bin\ITMC.Regedit.dll (Join-Path $test 'FakeUpperRegedit.cs')
+          if ($LASTEXITCODE -ne 0) { throw "fake uppercase ITMC.Regedit compile failed: $LASTEXITCODE" }
+          if (Test-Path -LiteralPath (Join-Path $bin 'itmcRegedit.dll')) { throw 'fixture must be uppercase-only' }
+
+          & $csc /nologo /target:library /r:System.Web.dll /out:$tool\LicenseRecover.NET.AspNetBridge.dll src\dotnet\LicenseRecover.AspNetBridge.cs
+          if ($LASTEXITCODE -ne 0) { throw "ASP.NET bridge compile failed: $LASTEXITCODE" }
+          & $csc /nologo /target:exe /r:System.Web.dll /out:$tool\LicenseRecover.NET.AspNetHost.exe src\dotnet\LicenseRecover.AspNetHost.cs
+          if ($LASTEXITCODE -ne 0) { throw "ASP.NET host compile failed: $LASTEXITCODE" }
+
+          python scripts\prepare-dotnet-modern-helper.py LicenseRecover.NET\LicenseRecover.NET.exe $tool\LicenseRecover.NET.Modern.exe
+          if ($LASTEXITCODE -ne 0) { throw "modern helper generation failed: $LASTEXITCODE" }
+
+          "LR_EXPECTED_APP_ROOT=$app" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "APP_ROOT=$app" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "APP_BIN=$bin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "TOOL_DIR=$tool" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Run uppercase gencode in real hosted AppDomain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $outputFile = Join-Path $env:RUNNER_TEMP 'uppercase-gencode.txt'
+          $all = & "$env:TOOL_DIR\LicenseRecover.NET.AspNetHost.exe" gencode "$env:APP_BIN" --product YX0303 --regstr YX030308 2>&1 | Tee-Object -FilePath $outputFile
+          $exit = $LASTEXITCODE
+          $text = Get-Content -LiteralPath $outputFile -Raw
+          Write-Host $text
+          if ($exit -ne 0) { throw "uppercase gencode failed with exit=$exit" }
+
+          foreach ($needle in @(
+              '[ASPNET_HOST] target registration chain=uppercase-ITMC.Regedit; helper=LicenseRecover.NET.Modern.exe',
+              '[ASPNET_HOST] hosted AppDomain created; appId=',
+              '[ASPNET_HOST] preload target registration assembly=',
+              'ITMC.Regedit.dll; chain=uppercase-ITMC.Regedit',
+              '[FAKE_UPPER] getRegNo BaseDirectory=',
+              '[ASPNET_HOST] target request-code probe=OK; hostIdLength=16',
+              '[ASPNET_HOST] helperDispatch=RunDirect/hosted-AppDomain; helper=LicenseRecover.NET.Modern.exe',
+              'RESULT: OK'
+          )) {
+              if ($text.IndexOf($needle, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+                  throw "missing uppercase integration marker: $needle"
+              }
+          }
+
+          $seq = [regex]::Match($text, '注册申请号\s*[:：]\s*([0-9A-Fa-f]+)').Groups[1].Value
+          $code = [regex]::Match($text, '离线授权码\s*[:：]\s*([0-9A-Fa-f]+)').Groups[1].Value
+          if ([string]::IsNullOrWhiteSpace($seq) -or [string]::IsNullOrWhiteSpace($code)) {
+              throw 'could not parse request/auth code from uppercase gencode output'
+          }
+          "UPPER_SEQ=$seq" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "UPPER_CODE=$code" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Run uppercase DoRegistry and CheckReInfo in same site-root model
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $doreg = & "$env:TOOL_DIR\LicenseRecover.NET.AspNetHost.exe" doreg "$env:APP_BIN" --seq "$env:UPPER_SEQ" --code "$env:UPPER_CODE" --product YX0303 --no-block-net 2>&1
+          $doregExit = $LASTEXITCODE
+          $doregText = ($doreg -join "`n")
+          Write-Host $doregText
+          if ($doregExit -ne 0) { throw "uppercase doreg failed with exit=$doregExit" }
+          if ($doregText.IndexOf('[FAKE_UPPER] DoRegistry BaseDirectory=', [StringComparison]::OrdinalIgnoreCase) -lt 0 -or
+              $doregText.IndexOf('RESULT: OK', [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+              throw 'uppercase doreg did not execute target DoRegistry in site-root AppDomain'
+          }
+
+          $verify = & "$env:TOOL_DIR\LicenseRecover.NET.AspNetHost.exe" verify "$env:APP_BIN" --product YX0303 2>&1
+          $verifyExit = $LASTEXITCODE
+          $verifyText = ($verify -join "`n")
+          Write-Host $verifyText
+          if ($verifyExit -ne 0) { throw "uppercase verify failed with exit=$verifyExit" }
+          if ($verifyText.IndexOf('[FAKE_UPPER] CheckReInfo BaseDirectory=', [StringComparison]::OrdinalIgnoreCase) -lt 0 -or
+              $verifyText.IndexOf('RESULT: OK', [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+              throw 'uppercase verify did not execute target CheckReInfo in site-root AppDomain'
+          }
+
+          if (-not (Test-Path -LiteralPath (Join-Path $env:APP_ROOT 'uppercase-doreg.marker'))) {
+              throw 'uppercase DoRegistry marker was not written to site root'
+          }
+          if (Test-Path -LiteralPath (Join-Path $env:APP_BIN 'config.xml')) {
+              throw 'uppercase chain incorrectly created/read bin\\config.xml'
+          }
+          if (Test-Path -LiteralPath (Join-Path $env:APP_BIN 'LicenseRecover.NET.AspNetBridge.dll')) {
+              throw 'temporary hosted bridge was not cleaned up'
+          }
+          Write-Host 'UPPERCASE REAL ASP.NET HOST WINDOWS INTEGRATION PASSED'
