@@ -259,13 +259,13 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
     static String formatOneClickFailureDetails(String nativeOutput) {
         String text = nativeOutput == null ? "" : nativeOutput.replace('\r', ' ').trim();
         if (text.isEmpty()) return "没有返回更多错误信息。";
-        text = text.replaceAll("={8,}", "\\n");
-        text = text.replaceAll("\\s+(产品号\\s*[:：])", "\\n$1");
-        text = text.replaceAll("\\s+(\\[错误\\])", "\\n$1");
-        text = text.replaceAll("\\s+(RESULT\\s*[:：])", "\\n$1");
+        text = text.replaceAll("={8,}", "\n");
+        text = text.replaceAll("\\s+(产品号\\s*[:：])", "\n$1");
+        text = text.replaceAll("\\s+(\\[错误\\])", "\n$1");
+        text = text.replaceAll("\\s+(RESULT\\s*[:：])", "\n$1");
         text = text.replaceAll("[ \\t]+", " ");
-        text = text.replaceAll("\\n[ \\t]+", "\\n");
-        text = text.replaceAll("\\n{3,}", "\\n\\n");
+        text = text.replaceAll("\n[ \\t]+", "\n");
+        text = text.replaceAll("\n{3,}", "\n\n");
         return text.trim();
     }
 
@@ -273,13 +273,13 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
             LicenseRecoverModernGUIAutoRecovery.Result result,
             OneClickFailurePresentation p) {
         StringBuilder b = new StringBuilder();
-        b.append("LicenseRecover 一键恢复错误\\n");
+        b.append("LicenseRecover 一键恢复错误\n");
         if (result != null && result.detection != null && result.detection.versionId != null)
-            b.append("应用: ").append(result.detection.versionId).append('\\n');
-        b.append("阶段: ").append(p.stage).append('\\n');
-        if (p.product != null) b.append("注册产品: ").append(p.product).append('\\n');
-        if (p.exitCode != null) b.append("退出码: ").append(p.exitCode).append('\\n');
-        b.append("摘要: ").append(p.summary).append("\\n\\n详细信息:\\n").append(p.details);
+            b.append("应用: ").append(result.detection.versionId).append('\n');
+        b.append("阶段: ").append(p.stage).append('\n');
+        if (p.product != null) b.append("注册产品: ").append(p.product).append('\n');
+        if (p.exitCode != null) b.append("退出码: ").append(p.exitCode).append('\n');
+        b.append("摘要: ").append(p.summary).append("\n\n详细信息:\n").append(p.details);
         return b.toString();
     }
 
