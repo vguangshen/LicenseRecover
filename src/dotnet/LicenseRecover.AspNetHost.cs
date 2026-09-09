@@ -5,9 +5,56 @@ using System.Text;
 using System.Web;
 using System.Web.Hosting;
 
+public sealed class LicenseRecoverTargetDomainRunner : MarshalByRefObject
+{
+    public override object InitializeLifetimeService()
+    {
+        return null;
+    }
+
+    public int Run(string appRoot, string runtimeDir, string helper, string[] args)
+    {
+        HttpContext previous = HttpContext.Current;
+        string previousDirectory = Directory.GetCurrentDirectory();
+        ResolveEventHandler resolver = delegate(object sender, ResolveEventArgs resolveArgs)
+        {
+            return LicenseRecoverAspNetHost.ResolveFromTargetBin(runtimeDir, resolveArgs);
+        };
+
+        try
+        {
+            Directory.SetCurrentDirectory(appRoot);
+            HttpContext.Current = LicenseRecoverAspNetHost.CreateContext(appRoot);
+            AppDomain.CurrentDomain.AssemblyResolve += resolver;
+
+            Console.WriteLine("[ASPNET_HOST] appRoot=" + appRoot);
+            Console.WriteLine("[ASPNET_HOST] runtimeDir=" + runtimeDir);
+            Console.WriteLine("[ASPNET_HOST] appDomainBase=" + AppDomain.CurrentDomain.BaseDirectory);
+            Console.WriteLine("[ASPNET_HOST] appDomainConfig=" + AppDomain.CurrentDomain.SetupInformation.ConfigurationFile);
+
+            LicenseRecoverAspNetHost.PreloadLowercaseRegistrationAssembly(runtimeDir);
+            return LicenseRecoverAspNetHost.InvokeHelperDirect(helper, args);
+        }
+        catch (Exception ex)
+        {
+            Exception inner = LicenseRecoverAspNetHost.Unwrap(ex);
+            Console.Error.WriteLine("[ASPNET_HOST] " + inner.GetType().FullName + ": " + inner.Message);
+            if (!string.IsNullOrEmpty(inner.StackTrace))
+                Console.Error.WriteLine(inner.StackTrace);
+            return 1;
+        }
+        finally
+        {
+            AppDomain.CurrentDomain.AssemblyResolve -= resolver;
+            HttpContext.Current = previous;
+            try { Directory.SetCurrentDirectory(previousDirectory); } catch { }
+        }
+    }
+}
+
 internal static class LicenseRecoverAspNetHost
 {
-    private static string WithTrailingSeparator(string path)
+    internal static string WithTrailingSeparator(string path)
     {
         string full = Path.GetFullPath(path);
         if (!full.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal))
@@ -15,7 +62,7 @@ internal static class LicenseRecoverAspNetHost
         return full;
     }
 
-    private static string ResolveAppRoot(string runtimeDir)
+    internal static string ResolveAppRoot(string runtimeDir)
     {
         string full = Path.GetFullPath(runtimeDir);
         string leaf = new DirectoryInfo(full).Name;
@@ -27,14 +74,9 @@ internal static class LicenseRecoverAspNetHost
         return full;
     }
 
-    private static HttpContext CreateContext(string appRoot)
+    internal static HttpContext CreateContext(string appRoot)
     {
         string physical = WithTrailingSeparator(appRoot);
-
-        // Classic ASP.NET uses these AppDomain data keys as the application root.
-        // The non-overriding SimpleWorkerRequest constructor is required after the
-        // application path is established; otherwise .NET Framework rejects an
-        // attempt to replace the application path.
         AppDomain.CurrentDomain.SetData(".appPath", physical);
         AppDomain.CurrentDomain.SetData(".appVPath", "/");
         SimpleWorkerRequest worker = new SimpleWorkerRequest(
@@ -42,7 +84,7 @@ internal static class LicenseRecoverAspNetHost
         return new HttpContext(worker);
     }
 
-    private static Exception Unwrap(Exception ex)
+    internal static Exception Unwrap(Exception ex)
     {
         Exception current = ex;
         while (current is TargetInvocationException && current.InnerException != null)
@@ -50,7 +92,7 @@ internal static class LicenseRecoverAspNetHost
         return current;
     }
 
-    private static Assembly ResolveFromTargetBin(string runtimeDir, ResolveEventArgs args)
+    internal static Assembly ResolveFromTargetBin(string runtimeDir, ResolveEventArgs args)
     {
         try
         {
@@ -76,7 +118,7 @@ internal static class LicenseRecoverAspNetHost
         return null;
     }
 
-    private static void PreloadLowercaseRegistrationAssembly(string runtimeDir)
+    internal static void PreloadLowercaseRegistrationAssembly(string runtimeDir)
     {
         string target = Path.Combine(runtimeDir, "itmcRegedit.dll");
         if (!File.Exists(target)) return;
@@ -85,18 +127,11 @@ internal static class LicenseRecoverAspNetHost
         Assembly.LoadFrom(target);
     }
 
-    private static int InvokeHelperDirect(string helper, string[] args)
+    internal static int InvokeHelperDirect(string helper, string[] args)
     {
         Assembly assembly = Assembly.LoadFrom(helper);
         Type program = assembly.GetType("LicenseRecoverNet.Program", true);
 
-        // Program.Main -> Program.Run normally creates a child AppDomain for the
-        // lowercase itmcRegedit.dll path. A child AppDomain cannot inherit the
-        // HttpContext created above, and Program.RunInBinDomain also resolves its
-        // DomainRunner from Assembly.GetEntryAssembly(), which is this host EXE.
-        // Parse the helper's own arguments, then call its public RunDirect method
-        // in this same AppDomain so the target registration component keeps the
-        // ASP.NET HttpContext required by Server.MapPath("~/...").
         MethodInfo parseArgs = program.GetMethod(
             "ParseArgs", BindingFlags.Static | BindingFlags.NonPublic);
         MethodInfo runDirect = program.GetMethod(
@@ -109,9 +144,17 @@ internal static class LicenseRecoverAspNetHost
         if (options == null)
             throw new ArgumentException("LicenseRecover.NET helper rejected the command line.");
 
-        Console.WriteLine("[ASPNET_HOST] helperDispatch=RunDirect/same-AppDomain");
+        Console.WriteLine("[ASPNET_HOST] helperDispatch=RunDirect/target-AppDomain");
         object value = runDirect.Invoke(null, new object[] { options });
         return value == null ? 0 : Convert.ToInt32(value);
+    }
+
+    private static string FindWebConfig(string appRoot)
+    {
+        string lower = Path.Combine(appRoot, "web.config");
+        if (File.Exists(lower)) return lower;
+        string upper = Path.Combine(appRoot, "Web.config");
+        return File.Exists(upper) ? upper : null;
     }
 
     public static int Main(string[] args)
@@ -131,34 +174,39 @@ internal static class LicenseRecoverAspNetHost
             return 2;
         }
 
-        string helper = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "LicenseRecover.NET.exe");
+        string hostAssembly = Assembly.GetExecutingAssembly().Location;
+        string helper = Path.Combine(Path.GetDirectoryName(hostAssembly), "LicenseRecover.NET.exe");
         if (!File.Exists(helper))
         {
             Console.Error.WriteLine("[ASPNET_HOST] LicenseRecover.NET.exe not found beside host executable.");
             return 2;
         }
 
-        HttpContext previous = HttpContext.Current;
-        ResolveEventHandler resolver = delegate(object sender, ResolveEventArgs resolveArgs)
-        {
-            return ResolveFromTargetBin(runtimeDir, resolveArgs);
-        };
-
+        AppDomain targetDomain = null;
         try
         {
-            HttpContext.Current = CreateContext(appRoot);
-            Console.WriteLine("[ASPNET_HOST] appRoot=" + appRoot);
-            Console.WriteLine("[ASPNET_HOST] runtimeDir=" + runtimeDir);
+            AppDomainSetup setup = new AppDomainSetup();
+            setup.ApplicationBase = WithTrailingSeparator(appRoot);
+            setup.PrivateBinPath = "bin";
+            setup.ShadowCopyFiles = "false";
 
-            // RunDirect executes inside the tool AppDomain, whose BaseDirectory is
-            // LicenseRecover.NET. The legacy helper therefore otherwise probes its
-            // own directory for itmcRegedit.dll. Redirect missing target assemblies
-            // and their dependencies to the application's real bin directory, and
-            // preload the lowercase registration component so Assembly.Load by name
-            // resolves the same assembly used by the web application.
-            AppDomain.CurrentDomain.AssemblyResolve += resolver;
-            PreloadLowercaseRegistrationAssembly(runtimeDir);
-            return InvokeHelperDirect(helper, args);
+            string webConfig = FindWebConfig(appRoot);
+            if (!string.IsNullOrEmpty(webConfig))
+                setup.ConfigurationFile = webConfig;
+
+            Console.WriteLine("[ASPNET_HOST] creating target AppDomain; base=" + setup.ApplicationBase
+                + " config=" + (setup.ConfigurationFile ?? "<default>"));
+
+            targetDomain = AppDomain.CreateDomain(
+                "LicenseRecover.Target." + Guid.NewGuid().ToString("N"),
+                null,
+                setup);
+
+            LicenseRecoverTargetDomainRunner runner =
+                (LicenseRecoverTargetDomainRunner)targetDomain.CreateInstanceFromAndUnwrap(
+                    hostAssembly,
+                    typeof(LicenseRecoverTargetDomainRunner).FullName);
+            return runner.Run(appRoot, runtimeDir, helper, args);
         }
         catch (Exception ex)
         {
@@ -170,8 +218,10 @@ internal static class LicenseRecoverAspNetHost
         }
         finally
         {
-            AppDomain.CurrentDomain.AssemblyResolve -= resolver;
-            HttpContext.Current = previous;
+            if (targetDomain != null)
+            {
+                try { AppDomain.Unload(targetDomain); } catch { }
+            }
         }
     }
 }
