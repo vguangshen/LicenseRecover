@@ -39,9 +39,30 @@ jobs:
           @'
           using System;
           using System.IO;
+          using System.Security.Cryptography;
+          using System.Text;
+          using System.Web.Security;
 
           namespace ITMC.Regedit
           {
+              // Matches the public surface used by the recovered uppercase sample:
+              // CheckReInfo(ref RegeditInfo), not the lowercase parameterless convention.
+              public sealed class RegeditInfo
+              {
+                  public string RegStr { get; set; }
+                  public int ClassNum { get; set; }
+                  public string RegID { get; set; }
+                  public string UserID { get; set; }
+                  public string ProName { get; set; }
+                  public DateTime BeginDate { get; set; }
+                  public DateTime EndDate { get; set; }
+                  public int TotalTimes { get; set; }
+                  public int UserTimes { get; set; }
+                  public bool Net { get; set; }
+                  public int MaxCon { get; set; }
+                  public int CountDay { get; set; }
+              }
+
               public sealed class RegeditMain
               {
                   private readonly string product;
@@ -80,12 +101,44 @@ jobs:
                           throw new InvalidOperationException(stage + " fixture unexpectedly contains bin\\config.xml");
                   }
 
+                  private static string DesEncrypt(string plain, string password)
+                  {
+                      using (DESCryptoServiceProvider des = new DESCryptoServiceProvider())
+                      {
+                          string md5 = FormsAuthentication.HashPasswordForStoringInConfigFile(password, "md5");
+                          byte[] key = Encoding.ASCII.GetBytes(md5.Substring(0, 8));
+                          des.Key = key;
+                          des.IV = key;
+                          byte[] input = Encoding.Default.GetBytes(plain);
+                          using (MemoryStream ms = new MemoryStream())
+                          using (CryptoStream cs = new CryptoStream(ms, des.CreateEncryptor(), CryptoStreamMode.Write))
+                          {
+                              cs.Write(input, 0, input.Length);
+                              cs.FlushFinalBlock();
+                              StringBuilder sb = new StringBuilder();
+                              foreach (byte value in ms.ToArray()) sb.AppendFormat("{0:X2}", value);
+                              return sb.ToString();
+                          }
+                      }
+                  }
+
                   public string getRegNo()
                   {
                       AssertRoot("getRegNo");
                       if (!string.Equals(product, "YX0303", StringComparison.Ordinal))
                           throw new InvalidOperationException("wrong product=" + product);
                       return "F000606A59904719";
+                  }
+
+                  // Exact recovered uppercase signature: instance string NewRegistry().
+                  // The real implementation is 4 random digits + RegID + 4 random digits
+                  // + timestamp + 4 random digits, DES/CBC encrypted with itmcsoft.
+                  public string NewRegistry()
+                  {
+                      AssertRoot("NewRegistry");
+                      string plain = "1234" + getRegNo() + "5678"
+                          + DateTime.Now.ToString("yyyy-MM-dd HH-mm-ss") + "9012";
+                      return DesEncrypt(plain, "itmcsoft");
                   }
 
                   public bool DoRegistry(string seq, string code)
@@ -96,11 +149,26 @@ jobs:
                       return true;
                   }
 
-                  public bool CheckReInfo()
+                  // Exact recovered uppercase signature: bool CheckReInfo(ref RegeditInfo).
+                  public bool CheckReInfo(ref RegeditInfo info)
                   {
                       AssertRoot("CheckReInfo");
                       if (!File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "uppercase-doreg.marker")))
                           throw new InvalidOperationException("DoRegistry root marker missing");
+                      info = new RegeditInfo {
+                          RegStr = "YX030308",
+                          ClassNum = -1,
+                          RegID = "F000606A59904719",
+                          UserID = "fwq",
+                          ProName = product,
+                          BeginDate = DateTime.Today,
+                          EndDate = new DateTime(2099, 12, 31),
+                          TotalTimes = -1,
+                          UserTimes = 1,
+                          Net = true,
+                          MaxCon = -1,
+                          CountDay = 10
+                      };
                       return false; // vendor convention: false means local registration is valid
                   }
               }
@@ -111,7 +179,7 @@ jobs:
           if (-not (Test-Path -LiteralPath $csc)) { $csc = "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe" }
           if (-not (Test-Path -LiteralPath $csc)) { throw 'Full .NET Framework csc.exe not found.' }
 
-          & $csc /nologo /target:library /out:$bin\ITMC.Regedit.dll (Join-Path $test 'FakeUpperRegedit.cs')
+          & $csc /nologo /target:library /r:System.Web.dll /out:$bin\ITMC.Regedit.dll (Join-Path $test 'FakeUpperRegedit.cs')
           if ($LASTEXITCODE -ne 0) { throw "fake uppercase ITMC.Regedit compile failed: $LASTEXITCODE" }
           if (Test-Path -LiteralPath (Join-Path $bin 'itmcRegedit.dll')) { throw 'fixture must be uppercase-only' }
 
@@ -144,8 +212,8 @@ jobs:
               '[ASPNET_HOST] hosted AppDomain created; appId=',
               '[ASPNET_HOST] preload target registration assembly=',
               'ITMC.Regedit.dll; chain=uppercase-ITMC.Regedit',
-              '[FAKE_UPPER] getRegNo BaseDirectory=',
-              '[ASPNET_HOST] target request-code probe=OK; hostIdLength=16',
+              '[FAKE_UPPER] NewRegistry BaseDirectory=',
+              '[ASPNET_HOST] target request-code probe=OK; hostIdLength=',
               '[ASPNET_HOST] helperDispatch=RunDirect/hosted-AppDomain; helper=LicenseRecover.NET.Modern.exe',
               'RESULT: OK'
           )) {
