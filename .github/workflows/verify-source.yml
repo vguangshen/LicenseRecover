@@ -27,6 +27,10 @@ jobs:
           if ! command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1 \
              || ! command -v x86_64-w64-mingw32-windres >/dev/null 2>&1 \
              || ! command -v mcs >/dev/null 2>&1; then
+            # The hosted image may carry a Chrome apt source whose index can rotate
+            # independently and transiently fail Hash Sum validation. None of the
+            # toolchains below come from that repository, so exclude it here.
+            sudo rm -f /etc/apt/sources.list.d/google-chrome.list
             timeout 120s sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
             timeout 240s sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends \
               gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64 mono-mcs libmono-system-web4.0-cil
