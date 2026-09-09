@@ -46,7 +46,7 @@ public sealed class LicenseRecoverAspNetBridgeRunner : MarshalByRefObject, IRegi
             Console.WriteLine("[ASPNET_HOST] appDomainBase=" + AppDomain.CurrentDomain.BaseDirectory);
             Console.WriteLine("[ASPNET_HOST] appDomainConfig=" + AppDomain.CurrentDomain.SetupInformation.ConfigurationFile);
 
-            PreloadLowercaseRegistrationAssembly(runtimeDir);
+            PreloadTargetRegistrationAssembly(runtimeDir);
             return InvokeHelperDirect(helper, args);
         }
         catch (Exception ex)
@@ -79,23 +79,28 @@ public sealed class LicenseRecoverAspNetBridgeRunner : MarshalByRefObject, IRegi
         string physical = HostingEnvironment.ApplicationPhysicalPath;
         string runtimePath = HttpRuntime.AppDomainAppPath;
         string virtualPath = HostingEnvironment.ApplicationVirtualPath;
+        string baseDirectory = AppDomain.CurrentDomain.BaseDirectory;
 
         Console.WriteLine("[ASPNET_HOST] hostingEnvironment appVirtualPath="
             + (virtualPath ?? "<null>")
             + " appPhysicalPath=" + (physical ?? "<null>")
-            + " runtimeAppPath=" + (runtimePath ?? "<null>"));
+            + " runtimeAppPath=" + (runtimePath ?? "<null>")
+            + " appDomainBase=" + (baseDirectory ?? "<null>"));
 
         if (!HostingEnvironment.IsHosted)
             throw new InvalidOperationException("System.Web HostingEnvironment is not hosted.");
         if (string.IsNullOrEmpty(physical)
             || string.IsNullOrEmpty(runtimePath)
+            || string.IsNullOrEmpty(baseDirectory)
             || !string.Equals(WithTrailingSeparator(physical), expected, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(WithTrailingSeparator(runtimePath), expected, StringComparison.OrdinalIgnoreCase))
+            || !string.Equals(WithTrailingSeparator(runtimePath), expected, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(WithTrailingSeparator(baseDirectory), expected, StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
                 "ASP.NET hosted application path does not match target root. "
                 + "HostingEnvironment=" + (physical ?? "<null>")
                 + "; HttpRuntime=" + (runtimePath ?? "<null>")
+                + "; AppDomain.BaseDirectory=" + (baseDirectory ?? "<null>")
                 + "; expected=" + expected);
         }
     }
@@ -160,13 +165,32 @@ public sealed class LicenseRecoverAspNetBridgeRunner : MarshalByRefObject, IRegi
         return null;
     }
 
-    private static void PreloadLowercaseRegistrationAssembly(string runtimeDir)
+    private static void PreloadTargetRegistrationAssembly(string runtimeDir)
     {
-        string target = Path.Combine(runtimeDir, "itmcRegedit.dll");
-        if (!File.Exists(target)) return;
+        string lower = Path.Combine(runtimeDir, "itmcRegedit.dll");
+        string upper = Path.Combine(runtimeDir, "ITMC.Regedit.dll");
+        string target = null;
+        string chain = null;
 
-        Console.WriteLine("[ASPNET_HOST] preload target registration assembly=" + target);
-        Assembly.LoadFrom(target);
+        if (File.Exists(lower))
+        {
+            target = lower;
+            chain = "lowercase-itmcRegedit";
+        }
+        else if (File.Exists(upper))
+        {
+            target = upper;
+            chain = "uppercase-ITMC.Regedit";
+        }
+
+        if (target == null)
+            throw new FileNotFoundException(
+                "Target registration assembly was not found in target bin.");
+
+        Console.WriteLine("[ASPNET_HOST] preload target registration assembly=" + target
+            + "; chain=" + chain);
+        Assembly loaded = Assembly.LoadFrom(target);
+        Console.WriteLine("[ASPNET_HOST] target registration assembly location=" + loaded.Location);
     }
 
     private static bool IsGenCodeWithoutExplicitRequest(string[] args)
@@ -242,7 +266,8 @@ public sealed class LicenseRecoverAspNetBridgeRunner : MarshalByRefObject, IRegi
 
         ProbeNativeRequestPath(assembly, args);
 
-        Console.WriteLine("[ASPNET_HOST] helperDispatch=RunDirect/hosted-AppDomain");
+        Console.WriteLine("[ASPNET_HOST] helperDispatch=RunDirect/hosted-AppDomain; helper="
+            + Path.GetFileName(helper));
         object value = runDirect.Invoke(null, new object[] { options });
         return value == null ? 0 : Convert.ToInt32(value);
     }
