@@ -75,19 +75,38 @@ internal static class LicenseRecoverAspNetHost
         return full;
     }
 
-    internal static HttpContext CreateContext(string appRoot)
+    internal static void SeedAspNetAppDomainBindings(string appRoot)
     {
         string physical = WithTrailingSeparator(appRoot);
+        string domainId = "LicenseRecover.Target." + AppDomain.CurrentDomain.Id;
 
-        // The target lowercase registration component calls
-        // HttpContext.Current.Server.MapPath("~/Register.xml") and
-        // MapPath("~/config.xml").  The three-argument SimpleWorkerRequest used
-        // in v1.2.31-v1.2.34 depended on pre-seeded .appPath/.appVPath data and
-        // could still leave MapPath unusable in a manually-created target
-        // AppDomain.  In the fresh target AppDomain we can use the constructor
-        // that explicitly owns the virtual and physical application roots.
+        // System.Web.HttpRuntime only consumes .appPath/.appVPath when the
+        // AppDomain is marked as an ASP.NET application via .appDomain.
+        // v1.2.34 set only the paths, so HttpRuntime still treated the target
+        // domain as unhosted.  v1.2.35 switched to the five-argument worker
+        // request, but that constructor alone does not populate
+        // HttpRuntime.AppDomainAppVirtualPath in a manually-created domain.
+        AppDomain.CurrentDomain.SetData(".appDomain", domainId);
+        AppDomain.CurrentDomain.SetData(".appId", domainId);
+        AppDomain.CurrentDomain.SetData(".domainId", domainId);
+        AppDomain.CurrentDomain.SetData(".appPath", physical);
+        AppDomain.CurrentDomain.SetData(".appVPath", "/");
+
+        Console.WriteLine("[ASPNET_HOST] aspnet-bindings appDomain=" + domainId
+            + " appVPath=/ appPath=" + physical);
+    }
+
+    internal static HttpContext CreateContext(string appRoot)
+    {
+        SeedAspNetAppDomainBindings(appRoot);
+
+        // Once the AppDomain has the complete ASP.NET bindings, use the
+        // constructor intended for an already-known application path.  This
+        // avoids both failure modes seen on real .NET Framework:
+        //   - five-argument ctor + pre-seeded path => invalid override;
+        //   - five-argument ctor without .appDomain => '~/' path unknown.
         SimpleWorkerRequest worker = new SimpleWorkerRequest(
-            "/", physical, "default.aspx", "", TextWriter.Null);
+            "default.aspx", "", TextWriter.Null);
         return new HttpContext(worker);
     }
 
