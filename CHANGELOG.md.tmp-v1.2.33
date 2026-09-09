@@ -1,7 +1,0 @@
-## [1.2.33] - 2026-09-09
-
-### Fixed
-
-- 修复 v1.2.32 在真实 YX030101 上已进入 `RunDirect/same-AppDomain` 后仍从 LicenseRecover 自身目录查找 `itmcRegedit.dll`，导致 `GENCODE` 报程序集不存在。
-- ASP.NET host 现在预加载目标 `bin\itmcRegedit.dll`，并在当前 AppDomain 的 `AssemblyResolve` 中从目标 `bin` 加载注册组件依赖。
-- 保持目标 DLL 原样、小写优先/大写回退以及原生申请号、离线授权码、`DoRegistry()`、`CheckReInfo()` 流程不变。
