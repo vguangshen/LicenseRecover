@@ -1,0 +1,45 @@
+name: Fix v1.2.30 smoke assertion helper
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - .github/workflows/apply-v1.2.30-smoke-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Use existing check assertion helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/test/java/RefactorSmokeTest.java')
+          s = p.read_text(encoding='utf-8')
+          start = s.index('        String autoSource230 = ')
+          end = s.index('        System.out.println("ALL REFACTOR SMOKE TESTS PASSED");', start)
+          block = s[start:end]
+          if block.count('require(') != 7:
+              raise SystemExit('expected exactly seven staged require() calls')
+          block = block.replace('require(', 'check(')
+          p.write_text(s[:start] + block + s[end:], encoding='utf-8')
+          PY
+          git diff --check
+          grep -Fq 'check(autoSource230.contains("LicenseRecover.NET.AspNetHost.exe")' src/test/java/RefactorSmokeTest.java
+      - name: Commit smoke-test fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/test/java/RefactorSmokeTest.java
+          git commit -m 'test: use existing assertion helper for ASP.NET host checks'
+          git push origin HEAD:main
