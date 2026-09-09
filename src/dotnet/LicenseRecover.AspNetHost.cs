@@ -50,6 +50,41 @@ internal static class LicenseRecoverAspNetHost
         return current;
     }
 
+    private static Assembly ResolveFromTargetBin(string runtimeDir, ResolveEventArgs args)
+    {
+        try
+        {
+            string simpleName = new AssemblyName(args.Name).Name;
+            if (string.IsNullOrEmpty(simpleName)) return null;
+
+            string[] extensions = new[] { ".dll", ".exe" };
+            foreach (string extension in extensions)
+            {
+                string candidate = Path.Combine(runtimeDir, simpleName + extension);
+                if (!File.Exists(candidate)) continue;
+
+                Console.WriteLine("[ASPNET_HOST] target-bin resolve: "
+                    + simpleName + " -> " + candidate);
+                return Assembly.LoadFrom(candidate);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("[ASPNET_HOST] target-bin resolve failed: "
+                + ex.GetType().FullName + ": " + ex.Message);
+        }
+        return null;
+    }
+
+    private static void PreloadLowercaseRegistrationAssembly(string runtimeDir)
+    {
+        string target = Path.Combine(runtimeDir, "itmcRegedit.dll");
+        if (!File.Exists(target)) return;
+
+        Console.WriteLine("[ASPNET_HOST] preload target registration assembly=" + target);
+        Assembly.LoadFrom(target);
+    }
+
     private static int InvokeHelperDirect(string helper, string[] args)
     {
         Assembly assembly = Assembly.LoadFrom(helper);
@@ -104,11 +139,25 @@ internal static class LicenseRecoverAspNetHost
         }
 
         HttpContext previous = HttpContext.Current;
+        ResolveEventHandler resolver = delegate(object sender, ResolveEventArgs resolveArgs)
+        {
+            return ResolveFromTargetBin(runtimeDir, resolveArgs);
+        };
+
         try
         {
             HttpContext.Current = CreateContext(appRoot);
             Console.WriteLine("[ASPNET_HOST] appRoot=" + appRoot);
             Console.WriteLine("[ASPNET_HOST] runtimeDir=" + runtimeDir);
+
+            // RunDirect executes inside the tool AppDomain, whose BaseDirectory is
+            // LicenseRecover.NET. The legacy helper therefore otherwise probes its
+            // own directory for itmcRegedit.dll. Redirect missing target assemblies
+            // and their dependencies to the application's real bin directory, and
+            // preload the lowercase registration component so Assembly.Load by name
+            // resolves the same assembly used by the web application.
+            AppDomain.CurrentDomain.AssemblyResolve += resolver;
+            PreloadLowercaseRegistrationAssembly(runtimeDir);
             return InvokeHelperDirect(helper, args);
         }
         catch (Exception ex)
@@ -121,6 +170,7 @@ internal static class LicenseRecoverAspNetHost
         }
         finally
         {
+            AppDomain.CurrentDomain.AssemblyResolve -= resolver;
             HttpContext.Current = previous;
         }
     }
