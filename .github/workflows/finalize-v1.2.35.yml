@@ -47,20 +47,16 @@ jobs:
           c = changelog.read_text(encoding='utf-8')
           if not c.startswith('## [1.2.34]'):
               raise SystemExit('unexpected CHANGELOG head')
-          head = '''## [1.2.35] - 2026-09-09
-
-### Fixed
-
-- 继续修复真实 YX030101 小写 `itmcRegedit.dll` 链在 v1.2.34 中仍停留于 `GENCODE / TargetInvocationException`：目标 `getRegNo()` 首先依赖 `HttpContext.Current.Server.MapPath("~/Register.xml")`，旧三参数 `SimpleWorkerRequest` 在手工目标 AppDomain 中仍可能无法提供可用的站点物理路径映射。
-- ASP.NET Host 改为在全新的目标 AppDomain 中使用显式虚拟根 `/` + 目标物理根的五参数 `SimpleWorkerRequest`，并在调用目标注册组件前强制校验 `~/Register.xml` 与 `~/config.xml` 必须精确映射到目标网站根目录。
-- `gencode` 无显式申请号时新增只读 request-code probe：直接调用 helper 的 `AppReflection.GetRegNo()` 并递归拆开 `TargetInvocationException` / `TypeInitializationException`。若目标组件仍失败，日志会给出真实内部异常，不再只显示“调用的目标发生了异常”。
-- 正常 `gencode -> doreg -> verify` 算法不变；不修改目标 DLL，大写 `ITMC.Regedit.dll` 回退链保持不变。
-
-### Regression
-
-- 二进制产物检查只验证稳定的 Host 运行时标志；`ParseArgs/RunDirect`、MapPath 自检与 request-code probe 改由源码级断言验证，避免 UTF-16 metadata 偏移变化造成二进制字符串误报。
-
-'''
+          head = (
+              '## [1.2.35] - 2026-09-09\n\n'
+              '### Fixed\n\n'
+              '- 继续修复真实 YX030101 小写 `itmcRegedit.dll` 链在 v1.2.34 中仍停留于 `GENCODE / TargetInvocationException`：目标 `getRegNo()` 首先依赖 `HttpContext.Current.Server.MapPath("~/Register.xml")`，旧三参数 `SimpleWorkerRequest` 在手工目标 AppDomain 中仍可能无法提供可用的站点物理路径映射。\n'
+              '- ASP.NET Host 改为在全新的目标 AppDomain 中使用显式虚拟根 `/` + 目标物理根的五参数 `SimpleWorkerRequest`，并在调用目标注册组件前强制校验 `~/Register.xml` 与 `~/config.xml` 必须精确映射到目标网站根目录。\n'
+              '- `gencode` 无显式申请号时新增只读 request-code probe：直接调用 helper 的 `AppReflection.GetRegNo()` 并递归拆开 `TargetInvocationException` / `TypeInitializationException`。若目标组件仍失败，日志会给出真实内部异常，不再只显示“调用的目标发生了异常”。\n'
+              '- 正常 `gencode -> doreg -> verify` 算法不变；不修改目标 DLL，大写 `ITMC.Regedit.dll` 回退链保持不变。\n\n'
+              '### Regression\n\n'
+              '- 二进制产物检查只验证稳定的 Host 运行时标志；`ParseArgs/RunDirect`、MapPath 自检与 request-code probe 改由源码级断言验证，避免 UTF-16 metadata 偏移变化造成二进制字符串误报。\n\n'
+          )
           changelog.write_text(head + c, encoding='utf-8')
           PY
       - name: Commit final v1.2.35 metadata
