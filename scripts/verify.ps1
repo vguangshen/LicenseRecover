@@ -192,12 +192,22 @@ foreach ($commandName in @('gencode','doreg','verify')) {
     }
 }
 
+Write-Host 'Building uppercase ITMC.Regedit modern native helper adapter...'
+$modernNativeHelper = Join-Path $buildRoot 'LicenseRecover.NET.Modern.exe'
+Invoke-External -Command 'python3' -ArgumentList @(
+    (Join-Path $repoRoot 'scripts/prepare-dotnet-modern-helper.py'),
+    $nativeHelper,
+    $modernNativeHelper
+)
+if (-not (Test-Path -LiteralPath $modernNativeHelper)) { throw 'Modern .NET helper adapter was not created.' }
+
 Write-Host 'Verifying directory-only registration identity policy...'
 $coreSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecover.java') -Raw
 $planSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUIJavaPlan.java') -Raw
 $autoSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUIAutoRecovery.java') -Raw
 $legacyNetSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LegacyDotNetProtocol.java') -Raw
 $legacyGuiSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverGUI.java') -Raw
+$modernGuiSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUI.java') -Raw
 if ($coreSource.Contains('genRegisterCode(seq, registerPid)')) { throw 'Java gencode can still omit directory-derived RegStr.' }
 if ($coreSource.Contains('+ ALL_NUMS')) { throw 'Java authorization generation still uses catch-all RegStr.' }
 if ($autoSource.Contains('if (blank(regStr)) regStr = d.versionId')) { throw '.NET one-click still falls back to VersionID for RegStr.' }
@@ -209,6 +219,8 @@ if (-not $legacyGuiSource.Contains('plan.authorizationFamily, plan.regStr')) { t
 if (-not $legacyGuiSource.Contains('目标 ITMC.Web.dll 未解析出 ProName')) { throw 'Legacy GUI .NET fail-closed product guard is missing.' }
 if (-not $coreSource.Contains('LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect')) { throw 'Java core is not using the fail-closed directory plan.' }
 if (-not $autoSource.Contains('VersionID/default-list fallback is disabled')) { throw '.NET fail-closed guard is missing.' }
+if (-not $autoSource.Contains('LicenseRecover.NET.Modern.exe')) { throw 'Modern .NET one-click is not using the uppercase helper adapter.' }
+if (-not $modernGuiSource.Contains('appendPersistentLog')) { throw 'Modern GUI persistent diagnostics are missing.' }
 if (-not $planSource.Contains('hasDirectoryBinaryToken')) { throw 'Java target-binary identity proof is missing.' }
 if (-not $coreSource.Contains('probeTargetRegStr')) { throw 'Java target RegisterMain.getRegInfo RegStr probe is missing.' }
 if (-not $coreSource.Contains('static String toolRuntimeClasspath()')) { throw 'Shared secondary-JVM tool classpath helper is missing.' }
@@ -313,6 +325,12 @@ foreach ($file in $distributionFiles) {
 Copy-Item -LiteralPath $releaseNotesPath -Destination (Join-Path $distDir 'RELEASE_NOTES.md') -Force
 Copy-Item -LiteralPath $overlayJar -Destination $distDir -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LicenseRecover.NET') -Destination $distDir -Recurse -Force
+$distNativeDir = Join-Path $distDir 'LicenseRecover.NET'
+Copy-Item -LiteralPath $modernNativeHelper -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.Modern.exe') -Force
+$nativeConfig = Join-Path $repoRoot 'LicenseRecover.NET/LicenseRecover.NET.exe.config'
+if (Test-Path -LiteralPath $nativeConfig) {
+    Copy-Item -LiteralPath $nativeConfig -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.Modern.exe.config') -Force
+}
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LicenseRecoverGUI.exe') -Destination (Join-Path $distDir 'LicenseRecoverGUI-legacy.exe') -Force
 
 Write-Host 'Verifying version metadata and launchers...'

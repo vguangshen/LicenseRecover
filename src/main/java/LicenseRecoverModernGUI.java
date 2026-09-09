@@ -5,6 +5,11 @@ import java.awt.*;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.StandardOpenOption;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -37,6 +42,7 @@ public final class LicenseRecoverModernGUI {
     private final JLabel recommendationValue = new JLabel("请选择应用目录并检测");
     private final JLabel statusLabel = new JLabel("就绪");
     private final JTextArea logArea = new JTextArea();
+    private final Object persistentLogLock = new Object();
     private final JButton detectButton = new JButton("检测环境");
     private final JButton way1Button = new JButton("执行推荐的方式一");
     private final JButton genButton = new JButton("生成离线授权码");
@@ -875,7 +881,17 @@ public final class LicenseRecoverModernGUI {
         LicenseRecoverModernGUIAutoRecovery.Detection d = LicenseRecoverModernGUIAutoRecovery.detect(target.binDir);
         if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY) return "兼容方式一: 不适用";
         if (preview) return "预览: 未执行写回校验";
-        return result.isSuccess() ? "DoRegistry + CheckReInfo: OK" : "DoRegistry + CheckReInfo: FAILED";
+        if (!result.isSuccess()) {
+            String reason = result.message == null ? "" : result.message;
+            if (reason.startsWith("[HELPER]")) return "Helper: FAILED";
+            if (reason.startsWith("[PRE_BLOCK]")) return "PRE-BLOCK: FAILED";
+            if (reason.startsWith("[GENCODE]")) return "gencode: FAILED";
+            if (reason.startsWith("[GENCODE_PARSE]")) return "gencode parse: FAILED";
+            if (reason.startsWith("[DOREG]")) return "DoRegistry: FAILED";
+            if (reason.startsWith("[VERIFY]")) return "CheckReInfo: FAILED";
+            return "Native flow: FAILED";
+        }
+        return "DoRegistry + CheckReInfo: OK";
     }
 
     private void cancelBatch() {
@@ -946,10 +962,28 @@ public final class LicenseRecoverModernGUI {
 
     private void appendLog(String text) {
         if (text == null || text.isEmpty()) return;
+        appendPersistentLog(text);
         SwingUtilities.invokeLater(() -> {
             logArea.append(text);
             logArea.setCaretPosition(logArea.getDocument().getLength());
         });
+    }
+
+    private void appendPersistentLog(String text) {
+        try {
+            synchronized (persistentLogLock) {
+                File dir = new File(toolDir(), "logs");
+                Files.createDirectories(dir.toPath());
+                String day = new SimpleDateFormat("yyyyMMdd").format(new Date());
+                File file = new File(dir, "LicenseRecoverGUI-" + day + ".log");
+                String stamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
+                String entry = "[" + stamp + "] " + text;
+                Files.write(file.toPath(), entry.getBytes(StandardCharsets.UTF_8),
+                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            }
+        } catch (Throwable ignore) {
+            // Diagnostics must never turn a recovery result into a failure.
+        }
     }
 
     private File cliJar() {

@@ -129,8 +129,8 @@ public final class LicenseRecoverModernGUIAutoRecovery {
 
     private static Result recoverDotNet(Detection d, boolean backup, boolean blockNet, boolean dryRun, Consumer<String> log) throws Exception {
         if (!isWindows()) return Result.fail(".NET native registration runs only on Windows.", d);
-        File helper = findDotNetNativeHelper();
-        if (helper == null) return Result.fail("LicenseRecover.NET.exe was not found; native IIS registration cannot run.", d);
+        File helper = findDotNetModernNativeHelper();
+        if (helper == null) return Result.fail("[HELPER] LicenseRecover.NET.Modern.exe was not found; modern native registration cannot run.", d);
 
         String product = d.productName;
         if (blank(product))
@@ -151,8 +151,9 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             // application-specific Windows Firewall rule blocks even hard-coded outbound URLs.
             firewallRule = installTemporaryDotNetNetworkGuard(helper, log);
             if (blank(firewallRule))
-                throw new IOException("无法建立 .NET 临时出站防火墙隔离。请从 LicenseRecoverGUI.exe 启动并通过管理员权限(UAC)，"
+                throw new IOException("[PRE_BLOCK] 无法建立 .NET 临时出站防火墙隔离。请从 LicenseRecoverGUI.exe 启动并通过管理员权限(UAC)，"
                         + "同时确认 Windows Firewall 服务可用；为避免联网校验，已拒绝调用目标注册组件。");
+            log.accept("[dotnet-stage] PRE_BLOCK: OK (" + helper.getName() + ")\n");
 
             if (!dryRun) {
                 if (backup) backupDotNetRegistrationFiles(originals, log);
@@ -169,14 +170,18 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             generate.add(d.runtimeDir.getAbsolutePath());
             generate.add("--product"); generate.add(product);
             generate.add("--regstr"); generate.add(regStr);
+            log.accept("[dotnet-stage] GENCODE: start\n");
             NativeProcessResult generated = runNativeCapture(generate, d.appRoot, log);
             if (generated.exitCode != 0)
-                throw new IOException("Target-native .NET request-code generation failed under network isolation");
+                throw nativeFailure("GENCODE", "target-native request-code generation failed", generated);
+            log.accept("[dotnet-stage] GENCODE: OK\n");
 
             String request = findLabeledHex(generated.output, "注册申请号", "申请号");
             String auth = findLabeledHex(generated.output, "离线授权码", "授权码");
             if (blank(request) || blank(auth))
-                throw new IOException("Native helper did not return both request code and authorization code under network isolation");
+                throw new IOException("[GENCODE_PARSE] helper returned success but request/auth fields were not parsed; output="
+                        + compactNativeOutput(generated.output));
+            log.accept("[dotnet-stage] GENCODE_PARSE: OK\n");
 
             String machine = null;
             try {
@@ -204,16 +209,22 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             // already established isolation before the first vendor-code call.
             apply.add("--no-block-net");
             if (!backup) apply.add("--no-backup");
+            log.accept("[dotnet-stage] DOREG: start\n");
             NativeProcessResult applied = runNativeCapture(apply, d.appRoot, log);
-            if (applied.exitCode != 0) throw new IOException("target RegeditMain.DoRegistry() rejected the generated code");
+            if (applied.exitCode != 0)
+                throw nativeFailure("DOREG", "target RegeditMain.DoRegistry() rejected the generated code", applied);
+            log.accept("[dotnet-stage] DOREG: OK\n");
 
             List<String> verify = new ArrayList<String>();
             verify.add(helper.getAbsolutePath());
             verify.add("verify");
             verify.add(d.runtimeDir.getAbsolutePath());
             verify.add("--product"); verify.add(product);
+            log.accept("[dotnet-stage] VERIFY: start\n");
             NativeProcessResult checked = runNativeCapture(verify, d.appRoot, log);
-            if (checked.exitCode != 0) throw new IOException("target RegeditMain.CheckReInfo() did not confirm the native write-back");
+            if (checked.exitCode != 0)
+                throw nativeFailure("VERIFY", "target RegeditMain.CheckReInfo() did not confirm the native write-back", checked);
+            log.accept("[dotnet-stage] VERIFY: OK\n");
 
             if (blockNet) {
                 // Re-assert in case the native writer rewrote config.xml while registering.
@@ -273,11 +284,25 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         return null;
     }
 
-    private static File findDotNetNativeHelper() {
+    private static IOException nativeFailure(String stage, String action, NativeProcessResult result) {
+        return new IOException("[" + stage + "] " + action + "; exit=" + result.exitCode
+                + "; output=" + compactNativeOutput(result.output));
+    }
+
+    static String compactNativeOutput(String output) {
+        if (output == null) return "<empty>";
+        String s = output.replace('\r', ' ').replace('\n', ' ');
+        s = s.replaceAll("(?i)(注册申请号|申请号|离线授权码|授权码)\\s*[:：]\\s*[0-9a-f]{32,}", "$1:<redacted>");
+        s = s.replaceAll("\\s+", " ").trim();
+        if (s.isEmpty()) return "<empty>";
+        return s.length() <= 600 ? s : "..." + s.substring(s.length() - 600);
+    }
+
+    private static File findDotNetModernNativeHelper() {
         File dir = toolDir();
-        File nested = new File(dir, "LicenseRecover.NET" + File.separator + "LicenseRecover.NET.exe");
+        File nested = new File(dir, "LicenseRecover.NET" + File.separator + "LicenseRecover.NET.Modern.exe");
         if (nested.isFile()) return nested;
-        File flat = new File(dir, "LicenseRecover.NET.exe");
+        File flat = new File(dir, "LicenseRecover.NET.Modern.exe");
         return flat.isFile() ? flat : null;
     }
 

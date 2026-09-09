@@ -1,3 +1,17 @@
+## [1.2.26] - 2026-09-09
+
+### Fixed
+
+- 修复 .NET Modern 一键恢复公共链：旧 `LicenseRecover.NET.exe` 的 `gencode/doreg/verify` 仍反射小写 `itmcRegedit.RegeditMain`，而现代 YX0301/YX0302/YX0303/GM004 样本使用大写 `ITMC.Regedit.RegeditMain`。构建时现在从已校验原始 helper 生成独立 `LicenseRecover.NET.Modern.exe` 适配副本；旧 helper 保持不变。
+- YX030308/YX030322 这类没有小写 `itmcRegedit.dll` 的目标不再从错误程序集入口失败。
+- .NET Modern 批量失败现在区分 `PRE-BLOCK / gencode / gencode parse / DoRegistry / CheckReInfo` 阶段，不再统一显示 `DoRegistry + CheckReInfo: FAILED`。
+- 现代 GUI 运行日志同步持久化到 `logs/LicenseRecoverGUI-YYYYMMDD.log`，便于下一轮真实机回归定位。
+
+### Safety
+
+- 现代 helper 仅在构建时对固定 SHA-256 的内部兼容组件做三处受校验的元数据字符串 token 适配；源 helper 二进制不修改，hash 或 IL 前置条件不一致时 CI 直接失败。
+- PRE-BLOCK FIRST、目录证据 fail-closed、失败回滚与写后 `CheckReInfo` 校验保持不变。
+
 ## v1.2.12 — 修复旧版 ITMCReg 两参数 RegisterMain 路径传参
 
 - 根据 DS2406 真实 `ITMCReg-1.0.2.jar` 核对：其 `RegisterMain(String, String)` 第二参数是 `ConfigPath`。
