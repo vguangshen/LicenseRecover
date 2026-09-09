@@ -5,6 +5,7 @@ on:
     branches: [ main ]
     paths:
       - scripts/apply-v1.2.29.py
+      - scripts/fix-v1.2.29-dialog-newlines.py
       - .github/workflows/apply-v1.2.29.yml
 
 permissions:
@@ -27,6 +28,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/apply-v1.2.29.py
+          python3 scripts/fix-v1.2.29-dialog-newlines.py
 
       - name: Review generated changes
         shell: bash
