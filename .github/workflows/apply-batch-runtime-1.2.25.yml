@@ -1,0 +1,56 @@
+name: Apply batch runtime fixes 1.2.25
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/apply-batch-runtime-1.2.25.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+      - name: Apply v1.2.25 fixes
+        run: python3 scripts/fix-batch-runtime-1.2.25.py
+      - name: Validate patch anchors and generated metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          grep -F 'toolCp + File.pathSeparator + libDir' src/main/java/LicenseRecover.java
+          grep -F 'LegacyDotNetProtocol.isLegacyVersion(version)' src/main/java/LicenseRecoverModernGUIAutoRecovery.java
+          grep -F 'buildJavaRecoveryClasspath(toolDir(), d.runtimeDir)' src/main/java/LicenseRecoverModernGUIAutoRecovery.java
+          grep -F 'requireAdministrator' src/native/LicenseRecoverGUI.manifest
+          grep -F 'LicenseRecoverModernGUIJavaPlan.class' scripts/verify.ps1
+          test "$(tr -d '\r\n[:space:]' < VERSION.txt)" = '1.2.25'
+          test -f release-notes/v1.2.25.md
+      - name: Commit and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain)" ]; then
+            echo 'Patch already applied.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            src/main/java/LicenseRecover.java \
+            src/main/java/LicenseRecoverModernGUI.java \
+            src/main/java/LicenseRecoverModernGUIAutoRecovery.java \
+            src/native/LicenseRecoverGUI.rc \
+            src/native/LicenseRecoverGUI.manifest \
+            src/test/java/RefactorSmokeTest.java \
+            scripts/verify.ps1 \
+            scripts/package-native-launcher.ps1 \
+            README.md VERSION.txt release-notes/v1.2.25.md
+          git commit -m 'fix: 修复批量.NET权限与DS01代际并发布v1.2.25'
+          git push origin HEAD:main
