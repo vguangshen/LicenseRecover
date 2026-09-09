@@ -1,0 +1,29 @@
+name: Debug helper DomainRunner
+
+on:
+  push:
+    branches: [ debug-helper-domainrunner ]
+    paths:
+      - .github/workflows/debug-domainrunner.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Inspect LicenseRecover.NET IL
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update >/dev/null
+          sudo apt-get install -y --no-install-recommends mono-utils >/dev/null
+          echo '=== typedefs matching DomainRunner/AppReflection ==='
+          monodis --typedef LicenseRecover.NET/LicenseRecover.NET.exe | grep -i -E 'DomainRunner|AppReflection|Program' || true
+          echo '=== methods matching DomainRunner/AppReflection ==='
+          monodis --method LicenseRecover.NET/LicenseRecover.NET.exe | grep -i -E 'DomainRunner|AppReflection|RunInDomain|GetEntryAssembly' || true
+          echo '=== relevant IL ==='
+          monodis LicenseRecover.NET/LicenseRecover.NET.exe > helper.il
+          grep -n -B 18 -A 35 -E 'DomainRunner|GetEntryAssembly|CreateInstance|CreateDomain|EntryAssembly' helper.il | head -n 500 || true
