@@ -213,9 +213,11 @@ Invoke-External -Command $mcs.Source -ArgumentList @(
 )
 if (-not (Test-Path -LiteralPath $aspNetHostHelper)) { throw 'ASP.NET host helper was not created.' }
 $aspHostBytes = [IO.File]::ReadAllBytes($aspNetHostHelper)
+$aspHostAscii = [Text.Encoding]::ASCII.GetString($aspHostBytes)
 $aspHostUnicode = [Text.Encoding]::Unicode.GetString($aspHostBytes)
 foreach ($marker in @('SimpleWorkerRequest','HttpContext','LicenseRecover.NET.exe','ASPNET_HOST')) {
-    if ($aspHostUnicode.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -lt 0) {
+    if (($aspHostAscii.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -lt 0) -and
+        ($aspHostUnicode.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -lt 0)) {
         throw "ASP.NET host helper is missing marker: $marker"
     }
 }
