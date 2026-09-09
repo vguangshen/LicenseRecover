@@ -960,19 +960,30 @@ public final class RefactorSmokeTest {
         check(autoSource230.contains("LicenseRecover.NET.AspNetHost.exe"), "lowercase .NET chain uses ASP.NET host helper");
         check(autoSource230.contains("findDotNetAspNetHostHelper"), "ASP.NET host helper lookup is present");
         String hostSource230 = new String(Files.readAllBytes(Paths.get("src/dotnet/LicenseRecover.AspNetHost.cs")), StandardCharsets.UTF_8);
-        check(hostSource230.contains("SimpleWorkerRequest"), "ASP.NET host creates SimpleWorkerRequest");
-        check(hostSource230.contains("LicenseRecoverTargetDomainRunner"), "ASP.NET host defines target AppDomain runner");
-        check(hostSource230.contains("setup.ApplicationBase = WithTrailingSeparator(appRoot)"), "ASP.NET host target AppDomain uses target web root");
-        check(hostSource230.contains("setup.PrivateBinPath = \"bin\""), "ASP.NET host target AppDomain probes target bin");
-        check(hostSource230.contains("setup.ConfigurationFile = webConfig"), "ASP.NET host target AppDomain uses target web.config");
-        check(hostSource230.contains("HttpContext.Current = LicenseRecoverAspNetHost.CreateContext(appRoot)"), "ASP.NET host installs HttpContext.Current inside the target AppDomain");
-        check(hostSource230.contains("Assembly.LoadFrom(helper)"), "ASP.NET host loads the existing helper assembly");
-        check(hostSource230.contains("ParseArgs") && hostSource230.contains("RunDirect"),
-                "ASP.NET host dispatches helper commands directly inside the target AppDomain");
-        check(!hostSource230.contains("assembly.EntryPoint"),
-                "ASP.NET host does not re-enter helper child-AppDomain dispatch through EntryPoint");
-        check(hostSource230.contains("helperDispatch=RunDirect/target-AppDomain"),
-                "ASP.NET host emits target-AppDomain dispatch diagnostics");
+        String bridgeSource237 = new String(Files.readAllBytes(Paths.get("src/dotnet/LicenseRecover.AspNetBridge.cs")), StandardCharsets.UTF_8);
+        check(hostSource230.contains("ApplicationManager.GetApplicationManager()"),
+                "ASP.NET host uses the real System.Web ApplicationManager");
+        check(hostSource230.contains("CreateObjectWithDefaultAppHostAndAppId"),
+                "ASP.NET host creates a real hosted application AppDomain");
+        check(hostSource230.contains("LicenseRecover.NET.AspNetBridge.dll")
+                        && hostSource230.contains("EnsureBridgeInTargetBin"),
+                "ASP.NET host stages the internal bridge safely into target bin");
+        check(hostSource230.contains("ShutdownApplication(appId)"),
+                "ASP.NET host shuts down the temporary hosted application");
+        check(bridgeSource237.contains("HostingEnvironment.IsHosted")
+                        && bridgeSource237.contains("HttpRuntime.AppDomainAppPath"),
+                "ASP.NET bridge verifies real hosted physical/runtime paths");
+        check(bridgeSource237.contains("SimpleWorkerRequest")
+                        && bridgeSource237.contains("ValidateMapPaths(HttpContext.Current, appRoot)"),
+                "ASP.NET bridge creates request context only inside the real hosted AppDomain");
+        check(bridgeSource237.contains("Assembly.LoadFrom(helper)"),
+                "ASP.NET bridge loads the existing helper assembly");
+        check(bridgeSource237.contains("ParseArgs") && bridgeSource237.contains("RunDirect"),
+                "ASP.NET bridge dispatches helper commands directly inside the hosted AppDomain");
+        check(!bridgeSource237.contains("assembly.EntryPoint"),
+                "ASP.NET bridge does not re-enter helper child-AppDomain dispatch through EntryPoint");
+        check(bridgeSource237.contains("helperDispatch=RunDirect/hosted-AppDomain"),
+                "ASP.NET bridge emits hosted-AppDomain dispatch diagnostics");
         check(hostSource230.contains("ResolveAppRoot(runtimeDir)"), "ASP.NET host resolves target web root from runtime dir");
         String uiPatch230 = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIUiPatchLauncher.java")), StandardCharsets.UTF_8);
         check(uiPatch230.contains("appendPersistentOneClickLog"), "one-click overlay writes persistent diagnostics");
