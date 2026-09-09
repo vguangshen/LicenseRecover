@@ -215,12 +215,15 @@ if (-not (Test-Path -LiteralPath $aspNetHostHelper)) { throw 'ASP.NET host helpe
 $aspHostBytes = [IO.File]::ReadAllBytes($aspNetHostHelper)
 $aspHostAscii = [Text.Encoding]::ASCII.GetString($aspHostBytes)
 $aspHostUnicode = [Text.Encoding]::Unicode.GetString($aspHostBytes)
-foreach ($marker in @('SimpleWorkerRequest','HttpContext','LicenseRecover.NET.exe','ASPNET_HOST')) {
+foreach ($marker in @('SimpleWorkerRequest','HttpContext','LicenseRecover.NET.exe','ASPNET_HOST','ParseArgs','RunDirect')) {
     if (($aspHostAscii.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -lt 0) -and
         ($aspHostUnicode.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -lt 0)) {
         throw "ASP.NET host helper is missing marker: $marker"
     }
 }
+$aspHostSourceText = Get-Content -LiteralPath $aspNetHostSource -Raw
+if ($aspHostSourceText.Contains('assembly.EntryPoint')) { throw 'ASP.NET host must not re-enter helper EntryPoint/child-AppDomain dispatch.' }
+if (-not $aspHostSourceText.Contains('helperDispatch=RunDirect/same-AppDomain')) { throw 'ASP.NET host same-AppDomain dispatch marker is missing.' }
 
 Write-Host 'Verifying directory-only registration identity policy...'
 $coreSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecover.java') -Raw

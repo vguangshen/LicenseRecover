@@ -1,3 +1,24 @@
+## [1.2.32] - 2026-09-09
+
+### Fixed
+
+- 修复 v1.2.31 在真实 YX030101 上进入 ASP.NET host 后的 `DomainRunner` 子域加载错误。原 `LicenseRecover.NET.exe` 的 `Program.Run()` 对小写 `itmcRegedit.dll` 会创建独立 AppDomain，并用 `Assembly.GetEntryAssembly()` 定位 `LicenseRecoverNet.DomainRunner`；被 ASP.NET host 反射调用时 EntryAssembly 实际是 `LicenseRecover.NET.AspNetHost.exe`，因此子域错误地从 host 程序集中查找 `DomainRunner`。
+- ASP.NET host 不再调用 helper EntryPoint。它仍加载未修改的原 `LicenseRecover.NET.exe`，使用 helper 自己的私有 `ParseArgs()` 解析完全相同的命令行，然后调用公开 `RunDirect()`，让 `gencode / doreg / verify` 与目标小写注册组件在当前 ASP.NET AppDomain 内执行。
+- 该设计同时避免了另一个隐患：新建子 AppDomain 不会继承父域的 `HttpContext.Current`；同域执行可让目标 `itmcRegedit.dll` 的 `Server.MapPath("~/Register.xml")` / `MapPath("~/config.xml")` 持续看到 v1.2.30/31 建立的 ASP.NET 上下文。
+- 不修改目标 `itmcRegedit.dll`，不替换目标申请号、离线授权码、`DoRegistry()` 或 `CheckReInfo()` 算法；大写 `ITMC.Regedit.dll` 回退链保持不变。
+
+### Regression
+
+- CI 要求 ASP.NET host 明确包含 `ParseArgs` + `RunDirect` 同域派发，并禁止重新通过 `assembly.EntryPoint` 进入 helper 的 `RunInBinDomain` 路径。
+- 保持小写优先、大写回退、PRE-BLOCK FIRST、失败回滚与结构化错误日志不变。
+
+## [1.2.31] - 2026-09-09
+
+### Fixed
+
+- 修复 v1.2.30 在设置 ASP.NET `.appPath/.appVPath` 后又使用五参数 `SimpleWorkerRequest` 覆盖应用路径，导致真实 .NET Framework 抛出“SimpleWorkerRequest 构造函数的无效使用”。
+- 改用不覆盖应用路径的三参数 `SimpleWorkerRequest`，继续让 `~/Register.xml` / `~/config.xml` 解析到目标 Web 根目录。
+
 ## [1.2.30] - 2026-09-09
 
 ### Fixed
