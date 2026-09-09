@@ -1,3 +1,11 @@
+## [1.2.34] - 2026-09-09
+
+### Fixed
+
+- 修复 v1.2.33 虽已从目标 `bin` 加载小写 `itmcRegedit.dll`，但目标组件仍在 LicenseRecover 自身 AppDomain 中执行，导致 `BaseDirectory` / `ConfigurationFile` 与真实站点环境不一致并在 `GENCODE` 抛出 `TargetInvocationException`。
+- 小写注册链改为目标 AppDomain：`ApplicationBase=站点根目录`、`PrivateBinPath=bin`、`ConfigurationFile=目标 web.config`，并在该目标域内重新建立 `HttpContext`、预加载目标 `itmcRegedit.dll`、调用 helper `ParseArgs -> RunDirect`。
+- 不复制、不修改目标 DLL，不改变申请号、离线授权码、`DoRegistry()`、`CheckReInfo()` 算法；大写 `ITMC.Regedit.dll` 回退链保持不变。
+
 ## [1.2.32] - 2026-09-09
 
 ### Fixed

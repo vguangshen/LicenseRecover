@@ -223,7 +223,7 @@ foreach ($marker in @('SimpleWorkerRequest','HttpContext','LicenseRecover.NET.ex
 }
 $aspHostSourceText = Get-Content -LiteralPath $aspNetHostSource -Raw
 if ($aspHostSourceText.Contains('assembly.EntryPoint')) { throw 'ASP.NET host must not re-enter helper EntryPoint/child-AppDomain dispatch.' }
-if (-not $aspHostSourceText.Contains('helperDispatch=RunDirect/same-AppDomain')) { throw 'ASP.NET host same-AppDomain dispatch marker is missing.' }
+if (-not $aspHostSourceText.Contains('helperDispatch=RunDirect/target-AppDomain')) { throw 'ASP.NET host target-AppDomain dispatch marker is missing.' }
 
 Write-Host 'Verifying directory-only registration identity policy...'
 $coreSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecover.java') -Raw
