@@ -1,0 +1,64 @@
+name: Fix v1.2.34 ASP.NET host smoke assertions
+
+on:
+  push:
+    branches: [ fix/v1.2.34-smoke ]
+    paths:
+      - .github/workflows/fix-v1.2.34-smoke.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/v1.2.34-smoke
+      - name: Patch RefactorSmokeTest for target AppDomain host
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/test/java/RefactorSmokeTest.java')
+          s = p.read_text(encoding='utf-8')
+          old = '''        check(hostSource230.contains("HttpContext.Current = CreateContext"), "ASP.NET host installs HttpContext.Current");
+        check(hostSource230.contains("Assembly.LoadFrom(helper)"), "ASP.NET host loads the existing helper assembly");
+        check(hostSource230.contains("ParseArgs") && hostSource230.contains("RunDirect"),
+                "ASP.NET host dispatches helper commands directly in the current AppDomain");
+        check(!hostSource230.contains("assembly.EntryPoint"),
+                "ASP.NET host does not re-enter helper child-AppDomain dispatch through EntryPoint");
+        check(hostSource230.contains("helperDispatch=RunDirect/same-AppDomain"),
+                "ASP.NET host emits same-AppDomain dispatch diagnostics");
+        check(hostSource230.contains("ResolveAppRoot(runtimeDir)"), "ASP.NET host resolves target web root from runtime dir");'''
+          new = '''        check(hostSource230.contains("LicenseRecoverTargetDomainRunner"),
+                "ASP.NET host defines a marshal-by-reference runner for the target AppDomain");
+        check(hostSource230.contains("setup.ApplicationBase = WithTrailingSeparator(appRoot)"),
+                "ASP.NET host target AppDomain uses the target web root as ApplicationBase");
+        check(hostSource230.contains("setup.PrivateBinPath = \"bin\""),
+                "ASP.NET host target AppDomain probes the target bin directory");
+        check(hostSource230.contains("setup.ConfigurationFile = webConfig"),
+                "ASP.NET host target AppDomain uses the target web.config when present");
+        check(hostSource230.contains("HttpContext.Current = LicenseRecoverAspNetHost.CreateContext(appRoot)"),
+                "ASP.NET host installs HttpContext.Current inside the target AppDomain");
+        check(hostSource230.contains("Assembly.LoadFrom(helper)"), "ASP.NET host loads the existing helper assembly");
+        check(hostSource230.contains("ParseArgs") && hostSource230.contains("RunDirect"),
+                "ASP.NET host dispatches helper commands directly inside the target AppDomain");
+        check(!hostSource230.contains("assembly.EntryPoint"),
+                "ASP.NET host does not re-enter helper child-AppDomain dispatch through EntryPoint");
+        check(hostSource230.contains("helperDispatch=RunDirect/target-AppDomain"),
+                "ASP.NET host emits target-AppDomain dispatch diagnostics");
+        check(hostSource230.contains("ResolveAppRoot(runtimeDir)"), "ASP.NET host resolves target web root from runtime dir");'''
+          if old not in s:
+              raise SystemExit('old ASP.NET smoke block not found')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+          PY
+      - name: Commit smoke-test update
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/test/java/RefactorSmokeTest.java
+          git commit -m 'test: align ASP.NET host smoke checks with target AppDomain'
+          git push origin HEAD:fix/v1.2.34-smoke
