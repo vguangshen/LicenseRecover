@@ -961,14 +961,18 @@ public final class RefactorSmokeTest {
         check(autoSource230.contains("findDotNetAspNetHostHelper"), "ASP.NET host helper lookup is present");
         String hostSource230 = new String(Files.readAllBytes(Paths.get("src/dotnet/LicenseRecover.AspNetHost.cs")), StandardCharsets.UTF_8);
         check(hostSource230.contains("SimpleWorkerRequest"), "ASP.NET host creates SimpleWorkerRequest");
-        check(hostSource230.contains("HttpContext.Current = CreateContext"), "ASP.NET host installs HttpContext.Current");
+        check(hostSource230.contains("LicenseRecoverTargetDomainRunner"), "ASP.NET host defines target AppDomain runner");
+        check(hostSource230.contains("setup.ApplicationBase = WithTrailingSeparator(appRoot)"), "ASP.NET host target AppDomain uses target web root");
+        check(hostSource230.contains("setup.PrivateBinPath = \"bin\""), "ASP.NET host target AppDomain probes target bin");
+        check(hostSource230.contains("setup.ConfigurationFile = webConfig"), "ASP.NET host target AppDomain uses target web.config");
+        check(hostSource230.contains("HttpContext.Current = LicenseRecoverAspNetHost.CreateContext(appRoot)"), "ASP.NET host installs HttpContext.Current inside the target AppDomain");
         check(hostSource230.contains("Assembly.LoadFrom(helper)"), "ASP.NET host loads the existing helper assembly");
         check(hostSource230.contains("ParseArgs") && hostSource230.contains("RunDirect"),
-                "ASP.NET host dispatches helper commands directly in the current AppDomain");
+                "ASP.NET host dispatches helper commands directly inside the target AppDomain");
         check(!hostSource230.contains("assembly.EntryPoint"),
                 "ASP.NET host does not re-enter helper child-AppDomain dispatch through EntryPoint");
-        check(hostSource230.contains("helperDispatch=RunDirect/same-AppDomain"),
-                "ASP.NET host emits same-AppDomain dispatch diagnostics");
+        check(hostSource230.contains("helperDispatch=RunDirect/target-AppDomain"),
+                "ASP.NET host emits target-AppDomain dispatch diagnostics");
         check(hostSource230.contains("ResolveAppRoot(runtimeDir)"), "ASP.NET host resolves target web root from runtime dir");
         String uiPatch230 = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIUiPatchLauncher.java")), StandardCharsets.UTF_8);
         check(uiPatch230.contains("appendPersistentOneClickLog"), "one-click overlay writes persistent diagnostics");
