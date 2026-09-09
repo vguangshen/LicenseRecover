@@ -957,15 +957,15 @@ public final class RefactorSmokeTest {
                 "Java recovery child classpath keeps tool overlay/core ahead of target WEB-INF/lib");
 
         String autoSource230 = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIAutoRecovery.java")), StandardCharsets.UTF_8);
-        require(autoSource230.contains("LicenseRecover.NET.AspNetHost.exe"), "lowercase .NET chain uses ASP.NET host helper");
-        require(autoSource230.contains("findDotNetAspNetHostHelper"), "ASP.NET host helper lookup is present");
+        check(autoSource230.contains("LicenseRecover.NET.AspNetHost.exe"), "lowercase .NET chain uses ASP.NET host helper");
+        check(autoSource230.contains("findDotNetAspNetHostHelper"), "ASP.NET host helper lookup is present");
         String hostSource230 = new String(Files.readAllBytes(Paths.get("src/dotnet/LicenseRecover.AspNetHost.cs")), StandardCharsets.UTF_8);
-        require(hostSource230.contains("SimpleWorkerRequest"), "ASP.NET host creates SimpleWorkerRequest");
-        require(hostSource230.contains("HttpContext.Current = CreateContext"), "ASP.NET host installs HttpContext.Current");
-        require(hostSource230.contains("Assembly.LoadFrom(helper)"), "ASP.NET host forwards to existing helper assembly");
-        require(hostSource230.contains("ResolveAppRoot(runtimeDir)"), "ASP.NET host resolves target web root from runtime dir");
+        check(hostSource230.contains("SimpleWorkerRequest"), "ASP.NET host creates SimpleWorkerRequest");
+        check(hostSource230.contains("HttpContext.Current = CreateContext"), "ASP.NET host installs HttpContext.Current");
+        check(hostSource230.contains("Assembly.LoadFrom(helper)"), "ASP.NET host forwards to existing helper assembly");
+        check(hostSource230.contains("ResolveAppRoot(runtimeDir)"), "ASP.NET host resolves target web root from runtime dir");
         String uiPatch230 = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIUiPatchLauncher.java")), StandardCharsets.UTF_8);
-        require(uiPatch230.contains("appendPersistentOneClickLog"), "one-click overlay writes persistent diagnostics");
+        check(uiPatch230.contains("appendPersistentOneClickLog"), "one-click overlay writes persistent diagnostics");
         System.out.println("ALL REFACTOR SMOKE TESTS PASSED");
     }
 
