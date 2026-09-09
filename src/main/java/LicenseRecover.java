@@ -224,15 +224,16 @@ public class LicenseRecover {
         try {
             File jarFile = findItmcRegJar(new File(libDir));
             String cp;
+            String toolCp = toolRuntimeClasspath();
             Path tmp = null;
             if (jarFile != null && NetRemover.jarIsPacked(jarFile)) {
                 tmp = Files.createTempDirectory("itmc_unpack");
                 int n = NetRemover.unpackPackedJar(jarFile, tmp.toFile());
                 System.out.println("[脱壳] " + jarFile.getName() + " 含 " + n + " 个 Virbox 保护类，自动脱壳后重跑 ...");
                 cp = tmp.toAbsolutePath() + File.pathSeparator + libDir + File.separator + "*"
-                        + File.pathSeparator + jarDir() + File.separator + "LicenseRecover.jar";
+                        + File.pathSeparator + toolCp;
             } else {
-                cp = libDir + File.separator + "*" + File.pathSeparator + jarDir() + File.separator + "LicenseRecover.jar";
+                cp = libDir + File.separator + "*" + File.pathSeparator + toolCp;
             }
             java.util.List<String> cmd = new java.util.ArrayList<>();
             cmd.add(System.getProperty("java.home") + File.separator + "bin" + File.separator + "java");
@@ -250,6 +251,22 @@ public class LicenseRecover {
             System.out.println("RESULT: FAILED");
             System.exit(1);
         }
+    }
+
+    /** Build the tool-side runtime classpath for every secondary JVM.
+     * New source lives in LicenseRecoverOverlay.jar, so it must precede the legacy core jar. */
+    static String toolRuntimeClasspath() {
+        return toolRuntimeClasspath(new File(jarDir()));
+    }
+
+    static String toolRuntimeClasspath(File toolDir) {
+        File dir = toolDir == null ? new File(".") : toolDir.getAbsoluteFile();
+        File core = new File(dir, "LicenseRecover.jar");
+        File overlay = new File(dir, "LicenseRecoverOverlay.jar");
+        if (overlay.isFile()) {
+            return overlay.getAbsolutePath() + File.pathSeparator + core.getAbsolutePath();
+        }
+        return core.getAbsolutePath();
     }
 
     static void deleteRecursive(File f) {
@@ -1392,11 +1409,12 @@ public class LicenseRecover {
         cmd.add("-Dfile.encoding=UTF-8");
         boolean patchMode = "patch".equals(method) || "scan".equals(method);
         cmd.add("-cp");
+        String toolCp = toolRuntimeClasspath();
         if (patchMode) {
             // 方式三用最小 classpath（本工具已内嵌 javassist），不能带 lib/* 否则 ITMCReg.jar 被本进程占用无法替换
-            cmd.add(jarDir() + File.separator + "LicenseRecover.jar");
+            cmd.add(toolCp);
         } else {
-            cmd.add(libDir + File.separator + "*" + File.pathSeparator + jarDir() + File.separator + "LicenseRecover.jar");
+            cmd.add(libDir + File.separator + "*" + File.pathSeparator + toolCp);
         }
         cmd.add("LicenseRecover");
         if ("patch".equals(method)) cmd.add("--remove-net");

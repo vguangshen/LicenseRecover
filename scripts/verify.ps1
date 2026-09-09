@@ -211,6 +211,8 @@ if (-not $coreSource.Contains('LicenseRecoverModernGUIJavaPlan plan = LicenseRec
 if (-not $autoSource.Contains('VersionID/default-list fallback is disabled')) { throw '.NET fail-closed guard is missing.' }
 if (-not $planSource.Contains('hasDirectoryBinaryToken')) { throw 'Java target-binary identity proof is missing.' }
 if (-not $coreSource.Contains('probeTargetRegStr')) { throw 'Java target RegisterMain.getRegInfo RegStr probe is missing.' }
+if (-not $coreSource.Contains('static String toolRuntimeClasspath()')) { throw 'Shared secondary-JVM tool classpath helper is missing.' }
+if (-not $coreSource.Contains('String toolCp = toolRuntimeClasspath();')) { throw 'Java secondary JVMs are not using the shared Overlay-first tool classpath.' }
 
 $javaPlanSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUIJavaPlan.java') -Raw
 if ($javaPlanSource.Contains('FALLBACK_ALL_NUMS')) { throw 'Java plan still contains catch-all fallback RegStr.' }

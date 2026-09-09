@@ -869,6 +869,19 @@ public final class RefactorSmokeTest {
         check(blocked && !Files.exists(base.resolve("escape.txt")),
                 "updater blocks zip-slip entries");
 
+        Path toolCpDir = Files.createTempDirectory("lrc-toolcp-");
+        Path legacyCore = toolCpDir.resolve("LicenseRecover.jar");
+        Path overlayCore = toolCpDir.resolve("LicenseRecoverOverlay.jar");
+        Files.write(legacyCore, new byte[]{0});
+        String toolCpWithoutOverlay = LicenseRecover.toolRuntimeClasspath(toolCpDir.toFile());
+        check(toolCpWithoutOverlay.equals(legacyCore.toFile().getAbsolutePath()),
+                "secondary JVM classpath falls back to legacy core when overlay is absent");
+        Files.write(overlayCore, new byte[]{0});
+        String toolCpWithOverlay = LicenseRecover.toolRuntimeClasspath(toolCpDir.toFile());
+        check(toolCpWithOverlay.startsWith(overlayCore.toFile().getAbsolutePath() + File.pathSeparator)
+                        && toolCpWithOverlay.endsWith(legacyCore.toFile().getAbsolutePath()),
+                "secondary JVM classpath must load LicenseRecoverOverlay.jar before LicenseRecover.jar");
+
         System.out.println("ALL REFACTOR SMOKE TESTS PASSED");
     }
 
