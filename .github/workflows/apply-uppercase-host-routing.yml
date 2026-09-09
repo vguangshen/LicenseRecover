@@ -1,0 +1,32 @@
+name: Apply uppercase hosted routing patch
+
+on:
+  push:
+    branches: [ "fix/v1.2.38-uppercase-host" ]
+    paths:
+      - "scripts/apply-uppercase-host-routing.py"
+      - ".github/workflows/apply-uppercase-host-routing.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Apply routing patch
+        run: python3 scripts/apply-uppercase-host-routing.py
+      - name: Commit routing patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main/java/LicenseRecoverModernGUIAutoRecovery.java
+          if git diff --cached --quiet; then
+            echo 'No routing changes to commit.'
+            exit 0
+          fi
+          git commit -m 'fix: route uppercase registration through hosted AppDomain'
+          git push origin HEAD:fix/v1.2.38-uppercase-host
