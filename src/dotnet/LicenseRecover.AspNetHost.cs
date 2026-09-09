@@ -1,60 +1,16 @@
 using System;
 using System.IO;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
-using System.Web;
+using System.Threading;
 using System.Web.Hosting;
-
-public sealed class LicenseRecoverTargetDomainRunner : MarshalByRefObject
-{
-    public override object InitializeLifetimeService()
-    {
-        return null;
-    }
-
-    public int Run(string appRoot, string runtimeDir, string helper, string[] args)
-    {
-        HttpContext previous = HttpContext.Current;
-        string previousDirectory = Directory.GetCurrentDirectory();
-        ResolveEventHandler resolver = delegate(object sender, ResolveEventArgs resolveArgs)
-        {
-            return LicenseRecoverAspNetHost.ResolveFromTargetBin(runtimeDir, resolveArgs);
-        };
-
-        try
-        {
-            Directory.SetCurrentDirectory(appRoot);
-            HttpContext.Current = LicenseRecoverAspNetHost.CreateContext(appRoot);
-            LicenseRecoverAspNetHost.ValidateMapPaths(HttpContext.Current, appRoot);
-            AppDomain.CurrentDomain.AssemblyResolve += resolver;
-
-            Console.WriteLine("[ASPNET_HOST] appRoot=" + appRoot);
-            Console.WriteLine("[ASPNET_HOST] runtimeDir=" + runtimeDir);
-            Console.WriteLine("[ASPNET_HOST] appDomainBase=" + AppDomain.CurrentDomain.BaseDirectory);
-            Console.WriteLine("[ASPNET_HOST] appDomainConfig=" + AppDomain.CurrentDomain.SetupInformation.ConfigurationFile);
-
-            LicenseRecoverAspNetHost.PreloadLowercaseRegistrationAssembly(runtimeDir);
-            return LicenseRecoverAspNetHost.InvokeHelperDirect(helper, args);
-        }
-        catch (Exception ex)
-        {
-            Exception inner = LicenseRecoverAspNetHost.Unwrap(ex);
-            Console.Error.WriteLine("[ASPNET_HOST] " + inner.GetType().FullName + ": " + inner.Message);
-            if (!string.IsNullOrEmpty(inner.StackTrace))
-                Console.Error.WriteLine(inner.StackTrace);
-            return 1;
-        }
-        finally
-        {
-            AppDomain.CurrentDomain.AssemblyResolve -= resolver;
-            HttpContext.Current = previous;
-            try { Directory.SetCurrentDirectory(previousDirectory); } catch { }
-        }
-    }
-}
 
 internal static class LicenseRecoverAspNetHost
 {
+    private const string BridgeFileName = "LicenseRecover.NET.AspNetBridge.dll";
+    private const string BridgeTypeName = "LicenseRecoverAspNetBridgeRunner";
+
     internal static string WithTrailingSeparator(string path)
     {
         string full = Path.GetFullPath(path);
@@ -75,198 +31,101 @@ internal static class LicenseRecoverAspNetHost
         return full;
     }
 
-    internal static void SeedAspNetAppDomainBindings(string appRoot)
+    private static string Sha256(string path)
     {
-        string physical = WithTrailingSeparator(appRoot);
-        string domainId = "LicenseRecover.Target." + AppDomain.CurrentDomain.Id;
-
-        // System.Web.HttpRuntime only consumes .appPath/.appVPath when the
-        // AppDomain is marked as an ASP.NET application via .appDomain.
-        // v1.2.34 set only the paths, so HttpRuntime still treated the target
-        // domain as unhosted.  v1.2.35 switched to the five-argument worker
-        // request, but that constructor alone does not populate
-        // HttpRuntime.AppDomainAppVirtualPath in a manually-created domain.
-        AppDomain.CurrentDomain.SetData(".appDomain", domainId);
-        AppDomain.CurrentDomain.SetData(".appId", domainId);
-        AppDomain.CurrentDomain.SetData(".domainId", domainId);
-        AppDomain.CurrentDomain.SetData(".appPath", physical);
-        AppDomain.CurrentDomain.SetData(".appVPath", "/");
-
-        Console.WriteLine("[ASPNET_HOST] aspnet-bindings appDomain=" + domainId
-            + " appVPath=/ appPath=" + physical);
-    }
-
-    internal static HttpContext CreateContext(string appRoot)
-    {
-        SeedAspNetAppDomainBindings(appRoot);
-
-        // Once the AppDomain has the complete ASP.NET bindings, use the
-        // constructor intended for an already-known application path.  This
-        // avoids both failure modes seen on real .NET Framework:
-        //   - five-argument ctor + pre-seeded path => invalid override;
-        //   - five-argument ctor without .appDomain => '~/' path unknown.
-        SimpleWorkerRequest worker = new SimpleWorkerRequest(
-            "default.aspx", "", TextWriter.Null);
-        return new HttpContext(worker);
-    }
-
-    internal static void ValidateMapPaths(HttpContext context, string appRoot)
-    {
-        if (context == null || context.Server == null)
-            throw new InvalidOperationException("ASP.NET HttpContext/Server is unavailable.");
-
-        string mappedRegister = context.Server.MapPath("~/Register.xml");
-        string mappedConfig = context.Server.MapPath("~/config.xml");
-        string expectedRegister = Path.GetFullPath(Path.Combine(appRoot, "Register.xml"));
-        string expectedConfig = Path.GetFullPath(Path.Combine(appRoot, "config.xml"));
-
-        Console.WriteLine("[ASPNET_HOST] mapPath Register.xml=" + (mappedRegister ?? "<null>"));
-        Console.WriteLine("[ASPNET_HOST] mapPath config.xml=" + (mappedConfig ?? "<null>"));
-
-        if (string.IsNullOrEmpty(mappedRegister)
-            || string.IsNullOrEmpty(mappedConfig)
-            || !string.Equals(Path.GetFullPath(mappedRegister), expectedRegister, StringComparison.OrdinalIgnoreCase)
-            || !string.Equals(Path.GetFullPath(mappedConfig), expectedConfig, StringComparison.OrdinalIgnoreCase))
+        using (SHA256 sha = SHA256.Create())
+        using (FileStream stream = File.OpenRead(path))
         {
-            throw new InvalidOperationException(
-                "ASP.NET MapPath does not resolve to the target web root. "
-                + "Register.xml=" + (mappedRegister ?? "<null>")
-                + "; config.xml=" + (mappedConfig ?? "<null>"));
+            byte[] hash = sha.ComputeHash(stream);
+            StringBuilder sb = new StringBuilder(hash.Length * 2);
+            for (int i = 0; i < hash.Length; i++)
+                sb.Append(hash[i].ToString("x2"));
+            return sb.ToString();
         }
     }
 
-    internal static Exception Unwrap(Exception ex)
+    private static bool EnsureBridgeInTargetBin(string source, string target)
+    {
+        if (File.Exists(target))
+        {
+            string sourceHash = Sha256(source);
+            string targetHash = Sha256(target);
+            if (!string.Equals(sourceHash, targetHash, StringComparison.OrdinalIgnoreCase))
+                throw new IOException(
+                    "Target bin already contains a different " + BridgeFileName
+                    + "; refusing to overwrite it: " + target);
+
+            Console.WriteLine("[ASPNET_HOST] bridge already present with matching hash=" + target);
+            return false;
+        }
+
+        File.Copy(source, target, false);
+        Console.WriteLine("[ASPNET_HOST] staged bridge=" + target);
+        return true;
+    }
+
+    private static void DeleteBridgeWithRetry(string path)
+    {
+        for (int i = 0; i < 20; i++)
+        {
+            try
+            {
+                if (!File.Exists(path)) return;
+                File.Delete(path);
+                if (!File.Exists(path)) return;
+            }
+            catch
+            {
+            }
+            Thread.Sleep(100);
+        }
+
+        if (File.Exists(path))
+            Console.Error.WriteLine("[ASPNET_HOST] warning: temporary bridge cleanup failed: " + path);
+    }
+
+    private static IRegisteredObject CreateHostedBridge(
+        ApplicationManager manager,
+        string appRoot,
+        Type bridgeType,
+        out string appId)
+    {
+        // Ask ASP.NET itself to create the application AppDomain. This internal
+        // compatibility entry point is used by non-IIS hosting scenarios and
+        // sets DontCallAppInitialize, so it establishes the real HostingEnvironment
+        // / virtual-to-physical mapping without running the target application's
+        // startup code.
+        MethodInfo create = typeof(ApplicationManager).GetMethod(
+            "CreateObjectWithDefaultAppHostAndAppId",
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            null,
+            new Type[] {
+                typeof(string), typeof(string), typeof(Type),
+                typeof(string).MakeByRefType(), typeof(IApplicationHost).MakeByRefType()
+            },
+            null);
+        if (create == null)
+            throw new MissingMethodException(
+                "System.Web.ApplicationManager.CreateObjectWithDefaultAppHostAndAppId is unavailable.");
+
+        object[] invokeArgs = new object[] {
+            WithTrailingSeparator(appRoot), "/", bridgeType, null, null
+        };
+        object value = create.Invoke(manager, invokeArgs);
+        appId = invokeArgs[3] as string;
+        IRegisteredObject registered = value as IRegisteredObject;
+        if (registered == null || string.IsNullOrEmpty(appId))
+            throw new InvalidOperationException("ASP.NET ApplicationManager did not create the hosted bridge.");
+        return registered;
+    }
+
+    private static Exception Unwrap(Exception ex)
     {
         Exception current = ex;
         while (current.InnerException != null
                && (current is TargetInvocationException || current is TypeInitializationException))
             current = current.InnerException;
         return current;
-    }
-
-    internal static Assembly ResolveFromTargetBin(string runtimeDir, ResolveEventArgs args)
-    {
-        try
-        {
-            string simpleName = new AssemblyName(args.Name).Name;
-            if (string.IsNullOrEmpty(simpleName)) return null;
-
-            string[] extensions = new[] { ".dll", ".exe" };
-            foreach (string extension in extensions)
-            {
-                string candidate = Path.Combine(runtimeDir, simpleName + extension);
-                if (!File.Exists(candidate)) continue;
-
-                Console.WriteLine("[ASPNET_HOST] target-bin resolve: "
-                    + simpleName + " -> " + candidate);
-                return Assembly.LoadFrom(candidate);
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine("[ASPNET_HOST] target-bin resolve failed: "
-                + ex.GetType().FullName + ": " + ex.Message);
-        }
-        return null;
-    }
-
-    internal static void PreloadLowercaseRegistrationAssembly(string runtimeDir)
-    {
-        string target = Path.Combine(runtimeDir, "itmcRegedit.dll");
-        if (!File.Exists(target)) return;
-
-        Console.WriteLine("[ASPNET_HOST] preload target registration assembly=" + target);
-        Assembly.LoadFrom(target);
-    }
-
-    private static bool IsGenCodeWithoutExplicitRequest(string[] args)
-    {
-        if (args == null || args.Length == 0
-            || !string.Equals(args[0], "gencode", StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        for (int i = 0; i < args.Length; i++)
-        {
-            if (string.Equals(args[i], "--seq", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(args[i], "-s", StringComparison.OrdinalIgnoreCase))
-                return false;
-        }
-        return true;
-    }
-
-    private static string FindProductArgument(string[] args)
-    {
-        if (args == null) return "YX0302";
-        for (int i = 0; i + 1 < args.Length; i++)
-        {
-            if (string.Equals(args[i], "--product", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(args[i], "-p", StringComparison.OrdinalIgnoreCase))
-                return args[i + 1];
-        }
-        return "YX0302";
-    }
-
-    internal static void ProbeNativeRequestPath(Assembly helperAssembly, string[] args)
-    {
-        if (!IsGenCodeWithoutExplicitRequest(args)) return;
-
-        string product = FindProductArgument(args);
-        Type appReflection = helperAssembly.GetType("LicenseRecoverNet.AppReflection", true);
-        MethodInfo getRegNo = appReflection.GetMethod(
-            "GetRegNo", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-        if (getRegNo == null)
-            throw new MissingMethodException("LicenseRecover.NET helper is missing AppReflection.GetRegNo.");
-
-        try
-        {
-            object value = getRegNo.Invoke(null, new object[] { product });
-            string hostId = value as string;
-            Console.WriteLine("[ASPNET_HOST] target request-code probe=OK; hostIdLength="
-                + (hostId == null ? 0 : hostId.Length));
-        }
-        catch (Exception ex)
-        {
-            Exception inner = Unwrap(ex);
-            throw new InvalidOperationException(
-                "target request-code probe failed: " + inner.GetType().FullName + ": " + inner.Message,
-                inner);
-        }
-    }
-
-    internal static int InvokeHelperDirect(string helper, string[] args)
-    {
-        Assembly assembly = Assembly.LoadFrom(helper);
-        Type program = assembly.GetType("LicenseRecoverNet.Program", true);
-
-        MethodInfo parseArgs = program.GetMethod(
-            "ParseArgs", BindingFlags.Static | BindingFlags.NonPublic);
-        MethodInfo runDirect = program.GetMethod(
-            "RunDirect", BindingFlags.Static | BindingFlags.Public);
-        if (parseArgs == null || runDirect == null)
-            throw new MissingMethodException(
-                "LicenseRecover.NET helper is missing ParseArgs/RunDirect.");
-
-        object options = parseArgs.Invoke(null, new object[] { args });
-        if (options == null)
-            throw new ArgumentException("LicenseRecover.NET helper rejected the command line.");
-
-        // Reproduce the target-native request-code read once under host control so
-        // a reflection failure is unwrapped here instead of being reduced by the
-        // legacy helper to only "调用的目标发生了异常".  The normal helper flow still
-        // runs unchanged afterwards; this probe does not write authorization data.
-        ProbeNativeRequestPath(assembly, args);
-
-        Console.WriteLine("[ASPNET_HOST] helperDispatch=RunDirect/target-AppDomain");
-        object value = runDirect.Invoke(null, new object[] { options });
-        return value == null ? 0 : Convert.ToInt32(value);
-    }
-
-    private static string FindWebConfig(string appRoot)
-    {
-        string lower = Path.Combine(appRoot, "web.config");
-        if (File.Exists(lower)) return lower;
-        string upper = Path.Combine(appRoot, "Web.config");
-        return File.Exists(upper) ? upper : null;
     }
 
     public static int Main(string[] args)
@@ -287,38 +146,42 @@ internal static class LicenseRecoverAspNetHost
         }
 
         string hostAssembly = Assembly.GetExecutingAssembly().Location;
-        string helper = Path.Combine(Path.GetDirectoryName(hostAssembly), "LicenseRecover.NET.exe");
+        string toolDir = Path.GetDirectoryName(hostAssembly);
+        string helper = Path.Combine(toolDir, "LicenseRecover.NET.exe");
+        string bridgeSource = Path.Combine(toolDir, BridgeFileName);
         if (!File.Exists(helper))
         {
             Console.Error.WriteLine("[ASPNET_HOST] LicenseRecover.NET.exe not found beside host executable.");
             return 2;
         }
+        if (!File.Exists(bridgeSource))
+        {
+            Console.Error.WriteLine("[ASPNET_HOST] " + BridgeFileName + " not found beside host executable.");
+            return 2;
+        }
 
-        AppDomain targetDomain = null;
+        string targetBridge = Path.Combine(runtimeDir, BridgeFileName);
+        bool bridgeCreated = false;
+        ApplicationManager manager = null;
+        string appId = null;
         try
         {
-            AppDomainSetup setup = new AppDomainSetup();
-            setup.ApplicationBase = WithTrailingSeparator(appRoot);
-            setup.PrivateBinPath = "bin";
-            setup.ShadowCopyFiles = "false";
+            bridgeCreated = EnsureBridgeInTargetBin(bridgeSource, targetBridge);
 
-            string webConfig = FindWebConfig(appRoot);
-            if (!string.IsNullOrEmpty(webConfig))
-                setup.ConfigurationFile = webConfig;
+            Assembly bridgeAssembly = Assembly.LoadFrom(bridgeSource);
+            Type bridgeType = bridgeAssembly.GetType(BridgeTypeName, true);
+            MethodInfo run = bridgeType.GetMethod(
+                "Run", BindingFlags.Instance | BindingFlags.Public);
+            if (run == null)
+                throw new MissingMethodException(BridgeTypeName + ".Run is unavailable.");
 
-            Console.WriteLine("[ASPNET_HOST] creating target AppDomain; base=" + setup.ApplicationBase
-                + " config=" + (setup.ConfigurationFile ?? "<default>"));
+            manager = ApplicationManager.GetApplicationManager();
+            manager.Open();
+            IRegisteredObject bridge = CreateHostedBridge(manager, appRoot, bridgeType, out appId);
+            Console.WriteLine("[ASPNET_HOST] hosted AppDomain created; appId=" + appId);
 
-            targetDomain = AppDomain.CreateDomain(
-                "LicenseRecover.Target." + Guid.NewGuid().ToString("N"),
-                null,
-                setup);
-
-            LicenseRecoverTargetDomainRunner runner =
-                (LicenseRecoverTargetDomainRunner)targetDomain.CreateInstanceFromAndUnwrap(
-                    hostAssembly,
-                    typeof(LicenseRecoverTargetDomainRunner).FullName);
-            return runner.Run(appRoot, runtimeDir, helper, args);
+            object result = run.Invoke(bridge, new object[] { appRoot, runtimeDir, helper, args });
+            return result == null ? 0 : Convert.ToInt32(result);
         }
         catch (Exception ex)
         {
@@ -330,10 +193,17 @@ internal static class LicenseRecoverAspNetHost
         }
         finally
         {
-            if (targetDomain != null)
+            if (manager != null)
             {
-                try { AppDomain.Unload(targetDomain); } catch { }
+                if (!string.IsNullOrEmpty(appId))
+                {
+                    try { manager.ShutdownApplication(appId); } catch { }
+                }
+                try { manager.Close(); } catch { }
             }
+
+            if (bridgeCreated)
+                DeleteBridgeWithRetry(targetBridge);
         }
     }
 }

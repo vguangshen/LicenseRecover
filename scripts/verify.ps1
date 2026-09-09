@@ -196,6 +196,8 @@ Write-Host 'Building uppercase ITMC.Regedit modern native helper adapter...'
 $modernNativeHelper = Join-Path $buildRoot 'LicenseRecover.NET.Modern.exe'
 $aspNetHostSource = Join-Path $repoRoot 'src/dotnet/LicenseRecover.AspNetHost.cs'
 $aspNetHostHelper = Join-Path $buildRoot 'LicenseRecover.NET.AspNetHost.exe'
+$aspNetBridgeSource = Join-Path $repoRoot 'src/dotnet/LicenseRecover.AspNetBridge.cs'
+$aspNetBridgeHelper = Join-Path $buildRoot 'LicenseRecover.NET.AspNetBridge.dll'
 Invoke-External -Command 'python3' -ArgumentList @(
     (Join-Path $repoRoot 'scripts/prepare-dotnet-modern-helper.py'),
     $nativeHelper,
@@ -203,10 +205,16 @@ Invoke-External -Command 'python3' -ArgumentList @(
 )
 if (-not (Test-Path -LiteralPath $modernNativeHelper)) { throw 'Modern .NET helper adapter was not created.' }
 
-Write-Host 'Building lowercase itmcRegedit ASP.NET host helper...'
+Write-Host 'Building lowercase itmcRegedit real ASP.NET host + bridge...'
 if (-not (Test-Path -LiteralPath $aspNetHostSource)) { throw 'Missing src/dotnet/LicenseRecover.AspNetHost.cs.' }
+if (-not (Test-Path -LiteralPath $aspNetBridgeSource)) { throw 'Missing src/dotnet/LicenseRecover.AspNetBridge.cs.' }
 $mcs = Get-Command mcs -ErrorAction SilentlyContinue
-if ($null -eq $mcs) { throw 'Mono mcs compiler is required to build the ASP.NET host helper.' }
+if ($null -eq $mcs) { throw 'Mono mcs compiler is required to build the ASP.NET host helpers.' }
+Invoke-External -Command $mcs.Source -ArgumentList @(
+    '-nologo', '-target:library', '-optimize+', '-r:System.Web.dll',
+    ('-out:' + $aspNetBridgeHelper), $aspNetBridgeSource
+)
+if (-not (Test-Path -LiteralPath $aspNetBridgeHelper)) { throw 'ASP.NET bridge helper was not created.' }
 Invoke-External -Command $mcs.Source -ArgumentList @(
     '-nologo', '-target:exe', '-optimize+', '-r:System.Web.dll',
     ('-out:' + $aspNetHostHelper), $aspNetHostSource
@@ -215,18 +223,32 @@ if (-not (Test-Path -LiteralPath $aspNetHostHelper)) { throw 'ASP.NET host helpe
 $aspHostBytes = [IO.File]::ReadAllBytes($aspNetHostHelper)
 $aspHostAscii = [Text.Encoding]::ASCII.GetString($aspHostBytes)
 $aspHostUnicode = [Text.Encoding]::Unicode.GetString($aspHostBytes)
-foreach ($marker in @('SimpleWorkerRequest','HttpContext','LicenseRecover.NET.exe','ASPNET_HOST')) {
+foreach ($marker in @('ApplicationManager','LicenseRecover.NET.AspNetBridge.dll','LicenseRecover.NET.exe','ASPNET_HOST')) {
     if (($aspHostAscii.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -lt 0) -and
         ($aspHostUnicode.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -lt 0)) {
         throw "ASP.NET host helper is missing marker: $marker"
     }
 }
+$aspBridgeBytes = [IO.File]::ReadAllBytes($aspNetBridgeHelper)
+$aspBridgeAscii = [Text.Encoding]::ASCII.GetString($aspBridgeBytes)
+$aspBridgeUnicode = [Text.Encoding]::Unicode.GetString($aspBridgeBytes)
+foreach ($marker in @('SimpleWorkerRequest','HttpContext','HostingEnvironment','ASPNET_HOST')) {
+    if (($aspBridgeAscii.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -lt 0) -and
+        ($aspBridgeUnicode.IndexOf($marker, [StringComparison]::OrdinalIgnoreCase) -lt 0)) {
+        throw "ASP.NET bridge helper is missing marker: $marker"
+    }
+}
 $aspHostSourceText = Get-Content -LiteralPath $aspNetHostSource -Raw
-if ($aspHostSourceText.Contains('assembly.EntryPoint')) { throw 'ASP.NET host must not re-enter helper EntryPoint/child-AppDomain dispatch.' }
-if (-not $aspHostSourceText.Contains('helperDispatch=RunDirect/target-AppDomain')) { throw 'ASP.NET host target-AppDomain dispatch marker is missing.' }
-if (-not $aspHostSourceText.Contains('MethodInfo parseArgs') -or -not $aspHostSourceText.Contains('MethodInfo runDirect')) { throw 'ASP.NET host ParseArgs/RunDirect reflection dispatch is missing from source.' }
-if (-not $aspHostSourceText.Contains('ValidateMapPaths(HttpContext.Current, appRoot)')) { throw 'ASP.NET host MapPath validation is missing.' }
-if (-not $aspHostSourceText.Contains('ProbeNativeRequestPath(assembly, args)')) { throw 'ASP.NET host native request-code probe is missing.' }
+$aspBridgeSourceText = Get-Content -LiteralPath $aspNetBridgeSource -Raw
+if (-not $aspHostSourceText.Contains('ApplicationManager.GetApplicationManager()')) { throw 'ASP.NET host must use the real System.Web ApplicationManager.' }
+if (-not $aspHostSourceText.Contains('CreateObjectWithDefaultAppHostAndAppId')) { throw 'ASP.NET host real hosted-AppDomain creation path is missing.' }
+if (-not $aspHostSourceText.Contains('EnsureBridgeInTargetBin')) { throw 'ASP.NET host safe bridge staging is missing.' }
+if ($aspBridgeSourceText.Contains('assembly.EntryPoint')) { throw 'ASP.NET bridge must not re-enter helper EntryPoint/child-AppDomain dispatch.' }
+if (-not $aspBridgeSourceText.Contains('HostingEnvironment.IsHosted')) { throw 'ASP.NET bridge hosted-environment validation is missing.' }
+if (-not $aspBridgeSourceText.Contains('MethodInfo parseArgs') -or -not $aspBridgeSourceText.Contains('MethodInfo runDirect')) { throw 'ASP.NET bridge ParseArgs/RunDirect reflection dispatch is missing.' }
+if (-not $aspBridgeSourceText.Contains('ValidateMapPaths(HttpContext.Current, appRoot)')) { throw 'ASP.NET bridge MapPath validation is missing.' }
+if (-not $aspBridgeSourceText.Contains('ProbeNativeRequestPath(assembly, args)')) { throw 'ASP.NET bridge native request-code probe is missing.' }
+if (-not $aspBridgeSourceText.Contains('helperDispatch=RunDirect/hosted-AppDomain')) { throw 'ASP.NET bridge hosted-AppDomain dispatch marker is missing.' }
 
 Write-Host 'Verifying directory-only registration identity policy...'
 $coreSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecover.java') -Raw
@@ -364,6 +386,7 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'LicenseRecover.NET') -Destination $
 $distNativeDir = Join-Path $distDir 'LicenseRecover.NET'
 Copy-Item -LiteralPath $modernNativeHelper -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.Modern.exe') -Force
 Copy-Item -LiteralPath $aspNetHostHelper -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.AspNetHost.exe') -Force
+Copy-Item -LiteralPath $aspNetBridgeHelper -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.AspNetBridge.dll') -Force
 $nativeConfig = Join-Path $repoRoot 'LicenseRecover.NET/LicenseRecover.NET.exe.config'
 if (Test-Path -LiteralPath $nativeConfig) {
     Copy-Item -LiteralPath $nativeConfig -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.Modern.exe.config') -Force

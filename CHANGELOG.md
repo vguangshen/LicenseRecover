@@ -1,3 +1,17 @@
+## [1.2.37] - 2026-09-09
+
+### Fixed
+
+- 根据真实 YX030101 在 v1.2.36 的 Windows/.NET Framework 失败日志，确认人工 `AppDomain + SimpleWorkerRequest` 即使预置 `.appDomain/.appPath/.appVPath`，`HttpServerUtility.MapPath("~/Register.xml")` 仍会在 `FileIOPermission/PathDiscovery` 处拿到空物理路径；失败仍发生在 LicenseRecover 宿主层，目标 `itmcRegedit.dll` 尚未执行。
+- 小写 `itmcRegedit.dll` 链改为由 `System.Web.Hosting.ApplicationManager` 创建真实 ASP.NET `HostingEnvironment`。Host 临时将受校验的 `LicenseRecover.NET.AspNetBridge.dll` 放入目标 `bin`，由 ASP.NET 自己创建站点 AppDomain，再在该域中执行 `MapPath -> getRegNo -> ParseArgs -> RunDirect`。
+- Bridge 进入目标组件前强制核对 `HostingEnvironment.ApplicationPhysicalPath`、`HttpRuntime.AppDomainAppPath`、`~/Register.xml` 与 `~/config.xml` 必须全部指向目标站点；随后仍使用目标小写 DLL 自己的申请号、`DoRegistry()` 与 `CheckReInfo()`，不修改目标 DLL。
+- Host 结束后关闭对应临时 HostingEnvironment 并删除临时 Bridge；若目标 `bin` 已存在同名但不同哈希文件则 fail-closed，绝不覆盖。
+
+### Regression
+
+- 新增真实 Windows Server / .NET Framework 集成测试，使用 YX030101 风格 `web.config`（.NET 4.5、`identity impersonate=true`）、目标 `bin`、小写 `itmcRegedit.RegeditMain.getRegNo()` 和 `~/Register.xml` / `~/config.xml`。
+- Windows 集成测试已实际通过：`HostingEnvironment` 物理根、`HttpRuntime` 应用根、两项 MapPath、16 位 request-code probe 和 `RunDirect/hosted-AppDomain` 全部成功；v1.2.36 的 `FileIOPermission/PathDiscovery` 异常已在旧宿主回归中先复现后消除。
+
 ## [1.2.35] - 2026-09-09
 
 ### Fixed
