@@ -743,6 +743,21 @@ public final class RefactorSmokeTest {
         check("001122AABB".equals(LicenseRecoverModernGUIAutoRecovery.findLabeledHex(nativeOut, "离线授权码")),
                 "native .NET one-click parses target authorization code");
 
+        LicenseRecoverModernGUIUiPatchLauncher.OneClickFailurePresentation failureUi =
+                LicenseRecoverModernGUIUiPatchLauncher.describeOneClickFailure(
+                        "[GENCODE] target-native request-code generation failed; exit=1; output="
+                                + "================ ITMC .NET 版 - 方式二：生成离线授权码 ================"
+                                + " 产品号: YX0302 [错误] 生成失败: 调用的目标发生了异常。 RESULT: FAILED");
+        check("GENCODE".equals(failureUi.stage)
+                        && Integer.valueOf(1).equals(failureUi.exitCode)
+                        && "YX0302".equals(failureUi.product),
+                "one-click failure dialog extracts stage/exit/product from native GENCODE failure");
+        check(failureUi.summary.contains("生成离线授权码失败")
+                        && failureUi.details.contains("\n产品号:")
+                        && failureUi.details.contains("\n[错误]")
+                        && failureUi.details.contains("\nRESULT:"),
+                "one-click failure dialog converts long native output into readable multiline details");
+
         Path dsFixture = base.resolve("DS01-Web.dll");
         writeUtf16Fixture(dsFixture, "itmcIEC", "DS0101", "DS0107", "DS0110", "DS0112");
         check("itmcIEC".equals(LicenseRecoverModernGUIAutoRecovery.detectProduct(

@@ -1,3 +1,17 @@
+## [1.2.29] - 2026-09-09
+
+### Changed
+
+- 重做“一键恢复未完成”错误弹窗：不再把 `[GENCODE] ... output=...` 整段原生输出挤在单行 `JOptionPane` 中。
+- 错误窗口现在按“应用 / 阶段 / 注册产品 / 退出码 / 摘要 / 详细信息”分层展示，详细信息支持自动换行和滚动。
+- 增加“复制详情”“打开日志”“关闭”三个操作，方便直接复制诊断内容或打开当天 `logs/LicenseRecoverGUI-YYYYMMDD.log`。
+- 针对 GENCODE / GENCODE_PARSE / DOREG / VERIFY / PRE_BLOCK / HELPER / CHAIN 提供简短中文摘要，同时保留完整原生输出用于排查。
+
+### Regression
+
+- 新增真实 Windows `GENCODE exit=1 / 产品号 YX0302 / 调用的目标发生了异常` 长消息解析测试，确保阶段、退出码、产品号和多行详情都能稳定提取。
+- CI 明确禁止恢复为直接 `JOptionPane.showMessageDialog(frame, result.message, ...)` 的单行错误弹窗。
+
 ## [1.2.28] - 2026-09-09
 
 ### Fixed

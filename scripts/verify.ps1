@@ -225,6 +225,10 @@ if (-not $autoSource.Contains('registrationProduct')) { throw '.NET app product 
 if (-not $autoSource.Contains('hasDotNetAuthorizationConfigStructure')) { throw 'Modern .NET pre-block cannot distinguish unrelated config.xml files.' }
 if ($autoSource.Contains('String updated = putElement(original, "Service", BLOCK_ENDPOINT);\n            validateXml(updated);') -and -not $autoSource.Contains('[pre-block-skip]')) { throw 'Modern .NET pre-block still aborts on unrelated config.xml files.' }
 if (-not $modernGuiSource.Contains('appendPersistentLog')) { throw 'Modern GUI persistent diagnostics are missing.' }
+$uiPatchSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUIUiPatchLauncher.java') -Raw
+if (-not $uiPatchSource.Contains('showOneClickFailureDialog')) { throw 'Structured one-click failure dialog is missing.' }
+if (-not $uiPatchSource.Contains('复制详情') -or -not $uiPatchSource.Contains('打开日志')) { throw 'One-click failure dialog diagnostic actions are missing.' }
+if ($uiPatchSource.Contains('JOptionPane.showMessageDialog(frame, result.message')) { throw 'One-click failure still renders the raw native message in a one-line JOptionPane.' }
 if (-not $planSource.Contains('hasDirectoryBinaryToken')) { throw 'Java target-binary identity proof is missing.' }
 if (-not $coreSource.Contains('probeTargetRegStr')) { throw 'Java target RegisterMain.getRegInfo RegStr probe is missing.' }
 if (-not $coreSource.Contains('static String toolRuntimeClasspath()')) { throw 'Shared secondary-JVM tool classpath helper is missing.' }
