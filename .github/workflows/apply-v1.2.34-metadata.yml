@@ -1,0 +1,59 @@
+name: Apply v1.2.34 metadata
+
+on:
+  push:
+    branches: [ fix/v1.2.34-target-appdomain ]
+    paths:
+      - .github/workflows/apply-v1.2.34-metadata.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/v1.2.34-target-appdomain
+      - name: Update verification metadata and changelog
+        shell: python
+        run: |
+          from pathlib import Path
+
+          verify = Path('scripts/verify.ps1')
+          text = verify.read_text(encoding='utf-8')
+          old = "if (-not $aspHostSourceText.Contains('helperDispatch=RunDirect/same-AppDomain')) { throw 'ASP.NET host same-AppDomain dispatch marker is missing.' }"
+          new = "if (-not $aspHostSourceText.Contains('helperDispatch=RunDirect/target-AppDomain')) { throw 'ASP.NET host target-AppDomain dispatch marker is missing.' }"
+          if old not in text:
+              raise SystemExit('verify marker not found')
+          verify.write_text(text.replace(old, new), encoding='utf-8')
+
+          readme = Path('README.md')
+          text = readme.read_text(encoding='utf-8')
+          old = '当前稳定版本：**v1.2.33**'
+          if old not in text:
+              raise SystemExit('README stable version marker not found')
+          readme.write_text(text.replace(old, '当前稳定版本：**v1.2.34**', 1), encoding='utf-8')
+
+          changelog = Path('CHANGELOG.md')
+          text = changelog.read_text(encoding='utf-8')
+          entry = '''## [1.2.34] - 2026-09-09
+
+### Fixed
+
+- 修复 v1.2.33 虽已从目标 `bin` 加载小写 `itmcRegedit.dll`，但目标组件仍在 LicenseRecover 自身 AppDomain 中执行，导致 `BaseDirectory` / `ConfigurationFile` 与真实站点环境不一致并在 `GENCODE` 抛出 `TargetInvocationException`。
+- 小写注册链改为目标 AppDomain：`ApplicationBase=站点根目录`、`PrivateBinPath=bin`、`ConfigurationFile=目标 web.config`，并在该目标域内重新建立 `HttpContext`、预加载目标 `itmcRegedit.dll`、调用 helper `ParseArgs -> RunDirect`。
+- 不复制、不修改目标 DLL，不改变申请号、离线授权码、`DoRegistry()`、`CheckReInfo()` 算法；大写 `ITMC.Regedit.dll` 回退链保持不变。
+
+'''
+          if not text.startswith('## [1.2.34]'):
+              changelog.write_text(entry + text, encoding='utf-8')
+      - name: Commit changes
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add scripts/verify.ps1 README.md CHANGELOG.md
+          git commit -m 'chore: finalize v1.2.34 metadata'
+          git push origin HEAD:fix/v1.2.34-target-appdomain
