@@ -1,0 +1,57 @@
+name: Apply v1.2.27 .NET modern fixes
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - scripts/apply-v1.2.27.py
+      - .github/workflows/apply-v1.2.27.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Apply staged v1.2.27 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/apply-v1.2.27.py
+
+      - name: Review generated changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --short
+          git diff --check
+          test "$(tr -d '\r\n[:space:]' < VERSION.txt)" = "1.2.27"
+          test -f release-notes/v1.2.27.md
+          grep -Fq 'LDSTR_PATCHES' scripts/prepare-dotnet-modern-helper.py
+          grep -Fq '75becdebb3772c56ccd10b25537c1f72f6877def844041a6270a3f9e197d2bd4' scripts/prepare-dotnet-modern-helper.py
+          grep -Fq 'hasDotNetAuthorizationConfigStructure' src/main/java/LicenseRecoverModernGUIAutoRecovery.java
+          grep -Fq '[pre-block-skip]' src/main/java/LicenseRecoverModernGUIAutoRecovery.java
+          grep -Fq '.NET pre-block skips unrelated config.xml' src/test/java/RefactorSmokeTest.java
+
+      - name: Commit v1.2.27 source changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain)" ]; then
+            echo 'No changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: complete modern .NET helper and config pre-block'
+          git push origin HEAD:main
