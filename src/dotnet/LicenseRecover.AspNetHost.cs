@@ -31,6 +31,33 @@ internal static class LicenseRecoverAspNetHost
         return full;
     }
 
+    private static string SelectHelper(string toolDir, string runtimeDir, out string chain)
+    {
+        string lower = Path.Combine(runtimeDir, "itmcRegedit.dll");
+        string upper = Path.Combine(runtimeDir, "ITMC.Regedit.dll");
+        string helper;
+
+        if (File.Exists(lower))
+        {
+            chain = "lowercase-itmcRegedit";
+            helper = Path.Combine(toolDir, "LicenseRecover.NET.exe");
+        }
+        else if (File.Exists(upper))
+        {
+            chain = "uppercase-ITMC.Regedit";
+            helper = Path.Combine(toolDir, "LicenseRecover.NET.Modern.exe");
+        }
+        else
+        {
+            throw new FileNotFoundException(
+                "Target bin contains neither exact itmcRegedit.dll nor ITMC.Regedit.dll.");
+        }
+
+        if (!File.Exists(helper))
+            throw new FileNotFoundException("Selected LicenseRecover helper is missing: " + helper);
+        return helper;
+    }
+
     private static string Sha256(string path)
     {
         using (SHA256 sha = SHA256.Create())
@@ -147,18 +174,27 @@ internal static class LicenseRecoverAspNetHost
 
         string hostAssembly = Assembly.GetExecutingAssembly().Location;
         string toolDir = Path.GetDirectoryName(hostAssembly);
-        string helper = Path.Combine(toolDir, "LicenseRecover.NET.exe");
-        string bridgeSource = Path.Combine(toolDir, BridgeFileName);
-        if (!File.Exists(helper))
+        string chain;
+        string helper;
+        try
         {
-            Console.Error.WriteLine("[ASPNET_HOST] LicenseRecover.NET.exe not found beside host executable.");
+            helper = SelectHelper(toolDir, runtimeDir, out chain);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("[ASPNET_HOST] " + ex.GetType().FullName + ": " + ex.Message);
             return 2;
         }
+
+        string bridgeSource = Path.Combine(toolDir, BridgeFileName);
         if (!File.Exists(bridgeSource))
         {
             Console.Error.WriteLine("[ASPNET_HOST] " + BridgeFileName + " not found beside host executable.");
             return 2;
         }
+
+        Console.WriteLine("[ASPNET_HOST] target registration chain=" + chain
+            + "; helper=" + Path.GetFileName(helper));
 
         string targetBridge = Path.Combine(runtimeDir, BridgeFileName);
         bool bridgeCreated = false;
