@@ -1,0 +1,32 @@
+name: Apply uppercase RegID fixture correction
+
+on:
+  push:
+    branches: [ "fix/v1.2.38-uppercase-host" ]
+    paths:
+      - "scripts/patch-uppercase-integration-regid.py"
+      - ".github/workflows/apply-uppercase-integration-regid.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Patch uppercase integration fixture
+        run: python3 scripts/patch-uppercase-integration-regid.py
+      - name: Commit fixture correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/uppercase-host-windows-integration.yml
+          if git diff --cached --quiet; then
+            echo 'No fixture changes to commit.'
+            exit 0
+          fi
+          git commit -m 'test: model uppercase RegID property'
+          git push origin HEAD:fix/v1.2.38-uppercase-host
