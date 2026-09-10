@@ -1275,10 +1275,9 @@ public class LicenseRecover {
                 System.exit(2);
                 return;
             }
-            directoryRegStr = LicenseRecoverModernGUIAutoRecovery.detectProductList(
-                    new File(binDir, "ITMC.Web.dll"), directoryProduct);
+            directoryRegStr = LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(nd);
             if (directoryRegStr == null || directoryRegStr.trim().isEmpty()) {
-                System.err.println("[错误] 目标 ITMC.Web.dll 未解析出 RegStr 产品项，禁止使用版本号/默认列表兜底。");
+                System.err.println("[错误] 目标目录未解析出包含当前 SoftVersionID 的 RegStr，禁止生成授权码。");
                 System.out.println("RESULT: FAILED");
                 System.exit(2);
                 return;

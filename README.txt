@@ -1,4 +1,4 @@
-LicenseRecover v1.2.12
+LicenseRecover v1.2.39
 =====================
 
 ITMC 云实训平台离线授权恢复工具
@@ -69,6 +69,13 @@ v1.2.7 QT40101 与执行资格保护
 - QT40101 未静态声明 RegStr，不再回退到 44 项通用列表；
 - 授权族或 RegStr 未确认的 Java classes-config 项目显示“待确认”，推荐一键恢复与批量执行会自动阻止/跳过，确保不猜测写入；
 - .NET Modern 产品号未确认时同样不会自动写回。
+
+v1.2.39 .NET 当前版本模式修复
+-------------------------------
+- 当前站点 config.xml 的 SoftVersionID 固定作为 .NET RegStr 首个主模式；
+- 原有有效本地授权与 ITMC.Web.dll 中证明的同族模式继续合并保留；
+- GUI 一键恢复与 CLI gencode 共用同一 RegStr 解析器；
+- 当前 SoftVersionID 未进入最终 RegStr 时直接阻止执行，避免数据库写入成功却显示“系统不支持任何模式”。
 
 软件自动更新
 ------------

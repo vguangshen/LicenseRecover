@@ -268,7 +268,9 @@ if ($legacyGuiSource.Contains('productMain.isEmpty()) productMain =')) { throw '
 if (-not $legacyGuiSource.Contains('plan.authorizationFamily, plan.regStr')) { throw 'Legacy GUI Java gencode is not using directory-derived family + RegStr.' }
 if (-not $legacyGuiSource.Contains('目标 ITMC.Web.dll 未解析出 ProName')) { throw 'Legacy GUI .NET fail-closed product guard is missing.' }
 if (-not $coreSource.Contains('LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect')) { throw 'Java core is not using the fail-closed directory plan.' }
-if (-not $autoSource.Contains('VersionID/default-list fallback is disabled')) { throw '.NET fail-closed guard is missing.' }
+if (-not $autoSource.Contains('[MODE] current SoftVersionID is missing from RegStr')) { throw '.NET current SoftVersionID inclusion guard is missing.' }
+if (-not $autoSource.Contains('addRegStrTokens(out, detectProductList')) { throw '.NET target-DLL compatibility mode merge is missing.' }
+if (-not $coreSource.Contains('LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(nd)')) { throw '.NET CLI gencode is not using the unified RegStr resolver.' }
 if (-not $autoSource.Contains('LicenseRecover.NET.AspNetHost.exe') -or -not $autoSource.Contains('LicenseRecover.NET.Modern.exe')) { throw '.NET one-click must use the ASP.NET host for lowercase chain plus uppercase fallback adapter.' }
 if (-not $autoSource.Contains('selectDotNetRegeditAssembly') -or -not $autoSource.Contains('detectLowercaseDotNetRegistrationProduct')) { throw '.NET target-owned lowercase-first registration-chain policy is missing.' }
 if (-not $autoSource.Contains('registrationProduct')) { throw '.NET app product and lowercase registration crypto family are not separated.' }

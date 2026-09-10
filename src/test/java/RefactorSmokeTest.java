@@ -612,6 +612,30 @@ public final class RefactorSmokeTest {
                         noRegStrFixture.toFile(), "YX0303").isEmpty(),
                 ".NET directory parser returns empty instead of inventing RegStr");
 
+        Path yx030308ModeRoot = base.resolve("dotnet-YX030308-mode-merge");
+        Path yx030308ModeBin = yx030308ModeRoot.resolve("bin");
+        Files.createDirectories(yx030308ModeBin);
+        writeUtf16Fixture(yx030308ModeBin.resolve("ITMC.Web.dll"),
+                "YX0303", "YX030301", "YX030321", "SoftVersionID", "ProName");
+        Files.write(yx030308ModeBin.resolve("ITMC.Regedit.dll"), new byte[]{1});
+        Files.write(yx030308ModeRoot.resolve("config.xml"), Arrays.asList(
+                "<ROOT><reg/><SystemSoft><SoftVersionID>YX030308</SoftVersionID></SystemSoft></ROOT>"),
+                StandardCharsets.UTF_8);
+        LicenseRecoverModernGUIAutoRecovery.Detection yx030308ModeDetection =
+                LicenseRecoverModernGUIAutoRecovery.detect(yx030308ModeRoot.toFile());
+        check("YX030308".equals(yx030308ModeDetection.versionId)
+                        && "YX0303".equals(yx030308ModeDetection.productName),
+                ".NET mode-merge fixture proves current SoftVersionID and YX0303 family from target directory");
+        check("YX030301,YX030321".equals(LicenseRecoverModernGUIAutoRecovery.detectProductList(
+                        yx030308ModeBin.resolve("ITMC.Web.dll").toFile(), "YX0303")),
+                "legacy DLL mode scan intentionally lacks the current YX030308 token");
+        check("YX030308,YX030301,YX030321".equals(
+                        LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(yx030308ModeDetection)),
+                ".NET RegStr injects current SoftVersionID first and preserves proven compatibility modes");
+        check(LicenseRecoverModernGUIAutoRecovery.containsRegStrToken(
+                        LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(yx030308ModeDetection), "YX030308"),
+                ".NET final RegStr explicitly contains the current system version mode");
+
         Path yx0102Root = base.resolve("dotnet-YX0102");
         Path yx0102Bin = yx0102Root.resolve("bin");
         Files.createDirectories(yx0102Bin);

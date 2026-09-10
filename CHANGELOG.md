@@ -1,3 +1,17 @@
+## [1.2.39] - 2026-09-10
+
+### Fixed
+
+- 修复 .NET 本地注册能够成功创建/写入授权数据，但当前站点 `SoftVersionID` 未必进入最终 `RegStr`，导致应用启动后仍显示“系统不支持任何模式”的问题。现在只从目标站点自己的 `config.xml` / `bin/config.xml` 读取当前 `SoftVersionID`，验证它与检测结果一致后，将其作为 `RegStr` 首个主模式。
+- 不再让已有本地 RegStr 或 `ITMC.Web.dll` 字符串扫描结果覆盖当前系统版本；两者改为兼容模式来源，与当前 `SoftVersionID` 去重合并。仍不使用目录名、全局默认列表或跨项目推断作为执行证据。
+- `.NET` CLI `gencode` 改为与 GUI 一键恢复共用 `detectDotNetRegStr()`，避免不同入口生成不同的模式集合。
+- 生成前新增当前 `SoftVersionID` 必须存在于最终 `RegStr` 的硬性检查；若缺失则以 `[MODE]` 失败，不再继续进入目标 `gencode / DoRegistry / CheckReInfo`。
+
+### Regression
+
+- 新增 YX030308 风格回归夹具：目标 `ITMC.Web.dll` 只包含 `YX030301`、`YX030321` 兼容模式而故意不包含当前 `YX030308`，测试要求最终 RegStr 精确为 `YX030308,YX030301,YX030321`。
+- CI 增加统一 RegStr 解析器、当前版本包含检查和目标 DLL 兼容模式合并的源码门禁。
+
 ## [1.2.38] - 2026-09-10
 
 ### Fixed

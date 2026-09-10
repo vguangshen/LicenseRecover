@@ -163,7 +163,11 @@ public final class LicenseRecoverModernGUIAutoRecovery {
 
         String regStr = detectDotNetRegStr(d);
         if (blank(regStr))
-            return Result.fail("Target application directory did not prove RegStr products; VersionID/default-list fallback is disabled.", d);
+            return Result.fail("Target application directory did not prove a usable current SoftVersionID/RegStr.", d);
+        if (!blank(d.versionId) && !containsRegStrToken(regStr, d.versionId))
+            return Result.fail("[MODE] current SoftVersionID is missing from RegStr: " + d.versionId, d);
+        if (!blank(d.versionId))
+            log.accept("[dotnet-mode] current SoftVersionID=" + d.versionId + " merged RegStr=" + regStr + "\n");
 
         RegisterVersionEvidence compatibility = readRegisterVersionEvidence(d);
         if (compatibility != null && compatibility.relationCount > 0)
@@ -983,21 +987,56 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     }
 
     /**
-     * Resolve .NET RegStr only from the selected application directory.  A valid
-     * existing local regName is stronger evidence than string scraping: decrypt it
-     * with the ProName already proven by ITMC.Web.dll, require the embedded ProName
-     * to match, and then reuse its RegStr.  If no valid local license exists, keep
-     * the existing DLL product-list parser as the secondary source.
+     * Resolve .NET RegStr only from the selected application directory.
+     *
+     * The current target config.xml SoftVersionID is the site's primary mode
+     * identity and must be present in the generated RegStr. Existing local
+     * regName values and product IDs proven from this target ITMC.Web.dll are
+     * compatibility additions; they are merged without replacing the current
+     * system version. Folder names and global/default product lists are never
+     * used as executable evidence.
      */
     static String detectDotNetRegStr(Detection d) {
         if (d == null || blank(d.productName) || d.runtimeDir == null) return null;
-        String direct = detectDirectDotNetRegStr(d);
-        if (!blank(direct)) return direct;
-        String local = recoverDotNetLocalRegStr(d.appRoot, d.runtimeDir, d.productName);
-        if (!blank(local)) return local;
-        return detectProductList(new File(d.runtimeDir, "ITMC.Web.dll"), d.productName);
+        LinkedHashSet<String> out = new LinkedHashSet<String>();
+
+        String current = readVersion(d.appRoot, d.runtimeDir);
+        if (!blank(current) && !blank(d.versionId)
+                && current.trim().equalsIgnoreCase(d.versionId.trim())
+                && validRegistrationToken(current.trim())) {
+            out.add(current.trim().toUpperCase(Locale.ROOT));
+        }
+
+        addRegStrTokens(out, detectDirectDotNetRegStr(d));
+        addRegStrTokens(out, recoverDotNetLocalRegStr(d.appRoot, d.runtimeDir, d.productName));
+        addRegStrTokens(out, detectProductList(new File(d.runtimeDir, "ITMC.Web.dll"), d.productName));
+        return joinRegStrTokens(out);
     }
 
+    static void addRegStrTokens(LinkedHashSet<String> out, String raw) {
+        if (out == null || blank(raw)) return;
+        String normalized = normalizeProductCsv(raw);
+        if (blank(normalized)) return;
+        for (String token : normalized.split(",")) out.add(token);
+    }
+
+    static String joinRegStrTokens(LinkedHashSet<String> tokens) {
+        if (tokens == null || tokens.isEmpty()) return null;
+        StringBuilder b = new StringBuilder();
+        for (String token : tokens) {
+            if (b.length() > 0) b.append(',');
+            b.append(token);
+        }
+        return b.toString();
+    }
+
+    static boolean containsRegStrToken(String raw, String wanted) {
+        if (blank(raw) || blank(wanted)) return false;
+        for (String token : raw.split(",")) {
+            if (wanted.trim().equalsIgnoreCase(token.trim())) return true;
+        }
+        return false;
+    }
     static String recoverDotNetLocalRegStr(File root, File runtimeDir, String product) {
         if (blank(product)) return null;
         File[] candidates = new File[]{

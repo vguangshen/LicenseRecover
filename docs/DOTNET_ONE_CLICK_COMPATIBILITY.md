@@ -64,3 +64,8 @@ The analyzed DS01xx sample is not limited to the old browser registration-code U
 - Java 8 build and packaging of the v1.2 one-click overlay: GitHub Actions verified.
 - Final artifact contains `LicenseRecoverModernGUIAutoRecovery` and the updated `AppDetector`.
 - Live Windows/IIS write-back should still be tested on an isolated copy before merging v1.2 to `main`; static compatibility does not replace an application-runtime regression test.
+
+
+## v1.2.39 current-mode RegStr rule
+
+For modern .NET targets, the target site's own `config.xml` `SystemSoft/SoftVersionID` is the primary RegStr mode. A valid existing local RegStr and same-family IDs extracted from that target `ITMC.Web.dll` are compatibility additions, not replacements for the current version. The resolver rejects folder/default-list guessing, and one-click refuses to invoke the native registration chain if a detected current SoftVersionID is absent from the final RegStr.
