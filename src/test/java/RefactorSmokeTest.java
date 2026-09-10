@@ -54,7 +54,7 @@ public final class RefactorSmokeTest {
                 "local authorization UserID fixed to fwq");
         Set<String> oneDefault = new LinkedHashSet<String>(Arrays.asList(JavaRegistrationRuntimeProfile.D1));
         Set<String> legacyPath = new LinkedHashSet<String>(Arrays.asList(JavaRegistrationRuntimeProfile.D2));
-        Set<String> modernRoot = new LinkedHashSet<String>(Arrays.asList(JavaRegistrationRuntimeProfile.D3));
+        Set<String> modernThreeArg = new LinkedHashSet<String>(Arrays.asList(JavaRegistrationRuntimeProfile.D3));
         Set<String> modernRootFallback = new LinkedHashSet<String>(Arrays.asList(JavaRegistrationRuntimeProfile.D3, JavaRegistrationRuntimeProfile.D2));
         Set<String> modernDefault = new LinkedHashSet<String>(Arrays.asList(JavaRegistrationRuntimeProfile.D2));
         check(JavaRegistrationRuntimeProfile.chooseModes(false, oneDefault, false).get(0)
@@ -63,7 +63,7 @@ public final class RefactorSmokeTest {
         check(JavaRegistrationRuntimeProfile.chooseModes(false, legacyPath, true).get(0)
                         == JavaRegistrationRuntimeProfile.Mode.TWO_ARG_PATH,
                 "DS2406-style startup keeps legacy two-arg explicit root path");
-        check(JavaRegistrationRuntimeProfile.chooseModes(true, modernRoot, true).get(0)
+        check(JavaRegistrationRuntimeProfile.chooseModes(true, modernThreeArg, true).get(0)
                         == JavaRegistrationRuntimeProfile.Mode.THREE_ARG_TOKEN_PATH,
                 "QT30103-style startup keeps modern three-arg token/root constructor");
         List<JavaRegistrationRuntimeProfile.Mode> ds28Modes =
