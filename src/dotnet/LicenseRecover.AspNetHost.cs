@@ -37,15 +37,15 @@ internal static class LicenseRecoverAspNetHost
         string upper = Path.Combine(runtimeDir, "ITMC.Regedit.dll");
         string helper;
 
-        if (File.Exists(lower))
-        {
-            chain = "lowercase-itmcRegedit";
-            helper = Path.Combine(toolDir, "LicenseRecover.NET.exe");
-        }
-        else if (File.Exists(upper))
+        if (File.Exists(upper))
         {
             chain = "uppercase-ITMC.Regedit";
             helper = Path.Combine(toolDir, "LicenseRecover.NET.Modern.exe");
+        }
+        else if (File.Exists(lower))
+        {
+            chain = "lowercase-itmcRegedit";
+            helper = Path.Combine(toolDir, "LicenseRecover.NET.exe");
         }
         else
         {

@@ -1,4 +1,4 @@
-LicenseRecover v1.2.39
+LicenseRecover v1.2.40
 =====================
 
 ITMC 云实训平台离线授权恢复工具
@@ -76,6 +76,13 @@ v1.2.39 .NET 当前版本模式修复
 - 原有有效本地授权与 ITMC.Web.dll 中证明的同族模式继续合并保留；
 - GUI 一键恢复与 CLI gencode 共用同一 RegStr 解析器；
 - 当前 SoftVersionID 未进入最终 RegStr 时直接阻止执行，避免数据库写入成功却显示“系统不支持任何模式”。
+
+v1.2.40 .NET 注册链一致性修复
+----------------------------
+- 双注册 DLL 同时存在时优先 ITMC.Regedit.dll 现代链；
+- itmcRegedit.dll 仅在大写组件缺失时回退；
+- Host、Bridge、Java 协调器统一选择顺序；
+- 现代链结束后验证站点根 config.xml 的持久化 RegStr 包含当前 SoftVersionID。
 
 软件自动更新
 ------------

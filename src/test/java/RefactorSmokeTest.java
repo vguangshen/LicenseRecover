@@ -636,6 +636,19 @@ public final class RefactorSmokeTest {
                         LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(yx030308ModeDetection), "YX030308"),
                 ".NET final RegStr explicitly contains the current system version mode");
 
+        Path persistedModeConfig = base.resolve("persisted-modern-root-config.xml");
+        String persistedModeJson = "{\"RegStr\":\"YX030101,YX030102\",\"ProName\":\"YX0301\"}";
+        String persistedModeCipher = LicenseRecoverModernGUIAutoRecovery.desEncryptHex(
+                "12345678" + persistedModeJson, "*ITMCYX0301OK*");
+        Files.write(persistedModeConfig, Arrays.asList(
+                "<ROOT><reg><regType>1</regType><regName>" + persistedModeCipher + "</regName></reg></ROOT>"), StandardCharsets.UTF_8);
+        check("YX030101,YX030102".equals(LicenseRecoverModernGUIAutoRecovery.recoverDotNetLocalRegStrFromConfig(
+                        persistedModeConfig.toFile(), "YX0301")),
+                ".NET mode verifier reads persisted RegStr from exact site-root modern config");
+        check(LicenseRecoverModernGUIAutoRecovery.recoverDotNetLocalRegStrFromConfig(
+                        persistedModeConfig.toFile(), "YX0302") == null,
+                ".NET mode verifier rejects persisted RegStr with wrong ProName");
+
         Path yx0102Root = base.resolve("dotnet-YX0102");
         Path yx0102Bin = yx0102Root.resolve("bin");
         Files.createDirectories(yx0102Bin);
@@ -709,13 +722,13 @@ public final class RefactorSmokeTest {
         Files.createDirectories(chainBin);
         Files.write(chainBin.resolve("ITMC.Regedit.dll"), new byte[]{1});
         Files.write(chainBin.resolve("itmcRegedit.dll"), new byte[]{2});
-        check("itmcRegedit.dll".equals(LicenseRecoverModernGUIAutoRecovery.selectDotNetRegeditAssembly(
-                        chainBin.toFile()).getName()),
-                ".NET registration chain prefers lowercase itmcRegedit.dll when both assemblies exist");
-        Files.delete(chainBin.resolve("itmcRegedit.dll"));
         check("ITMC.Regedit.dll".equals(LicenseRecoverModernGUIAutoRecovery.selectDotNetRegeditAssembly(
                         chainBin.toFile()).getName()),
-                ".NET registration chain falls back to uppercase ITMC.Regedit.dll only when lowercase is absent");
+                ".NET registration chain prefers uppercase ITMC.Regedit.dll when both assemblies exist");
+        Files.delete(chainBin.resolve("ITMC.Regedit.dll"));
+        check("itmcRegedit.dll".equals(LicenseRecoverModernGUIAutoRecovery.selectDotNetRegeditAssembly(
+                        chainBin.toFile()).getName()),
+                ".NET registration chain falls back to lowercase itmcRegedit.dll only when uppercase is absent");
 
         Path yx302CrossFixture = base.resolve("YX030107-Web.dll");
         writeUtf16Fixture(yx302CrossFixture, "YX030107", "YX0302", "YX030201", "YX030204", "YX030219");

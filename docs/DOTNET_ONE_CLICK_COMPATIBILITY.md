@@ -69,3 +69,7 @@ The analyzed DS01xx sample is not limited to the old browser registration-code U
 ## v1.2.39 current-mode RegStr rule
 
 For modern .NET targets, the target site's own `config.xml` `SystemSoft/SoftVersionID` is the primary RegStr mode. A valid existing local RegStr and same-family IDs extracted from that target `ITMC.Web.dll` are compatibility additions, not replacements for the current version. The resolver rejects folder/default-list guessing, and one-click refuses to invoke the native registration chain if a detected current SoftVersionID is absent from the final RegStr.
+
+## v1.2.40 registration-chain parity
+
+When both registration generations are present, `ITMC.Regedit.dll` is selected before `itmcRegedit.dll`. The Java coordinator, ASP.NET host and bridge use the same order. After uppercase native verification succeeds, one-click reads the site-root `config.xml` and requires a modern record whose `ProName` matches the detected product and whose persisted `RegStr` contains the current `SoftVersionID`. A stale `bin/config.xml` cannot satisfy this check.

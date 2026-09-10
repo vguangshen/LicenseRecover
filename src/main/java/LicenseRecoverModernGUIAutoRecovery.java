@@ -154,10 +154,10 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             if (blank(registrationProduct))
                 return Result.fail("[CHAIN] lowercase itmcRegedit.dll is authoritative, but its registration crypto family "
                         + "could not be proven from matching itmc<family> + *<family>OK* constants.", d);
-            log.accept("[dotnet-chain] lowercase itmcRegedit.dll preferred via ASP.NET host; appProduct=" + appProduct
+            log.accept("[dotnet-chain] uppercase ITMC.Regedit.dll absent; lowercase itmcRegedit.dll compatibility fallback via ASP.NET host; appProduct=" + appProduct
                     + " registrationProduct=" + registrationProduct + "\n");
         } else {
-            log.accept("[dotnet-chain] lowercase itmcRegedit.dll absent; uppercase ITMC.Regedit.dll fallback via hosted AppDomain; product="
+            log.accept("[dotnet-chain] uppercase ITMC.Regedit.dll preferred via hosted AppDomain; product="
                     + appProduct + "\n");
         }
 
@@ -256,6 +256,17 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             if (checked.exitCode != 0)
                 throw nativeFailure("VERIFY", "selected target RegeditMain.CheckReInfo() did not confirm the native write-back", checked);
             log.accept("[dotnet-stage] VERIFY: OK\n");
+
+            // Check the exact site-root record consumed by the modern Web runtime.
+            if (!lowercaseChain) {
+                File siteConfig = new File(d.appRoot, "config.xml");
+                String persistedRegStr = recoverDotNetLocalRegStrFromConfig(siteConfig, appProduct);
+                if (blank(persistedRegStr))
+                    throw new IOException("[MODE_VERIFY] uppercase CheckReInfo passed, but site-root config.xml has no readable modern RegStr for ProName=" + appProduct);
+                if (!blank(d.versionId) && !containsRegStrToken(persistedRegStr, d.versionId))
+                    throw new IOException("[MODE_VERIFY] site-root persisted RegStr does not contain current SoftVersionID=" + d.versionId + "; RegStr=" + persistedRegStr);
+                log.accept("[dotnet-mode-verify] persisted root RegStr=" + persistedRegStr + "\n");
+            }
 
             if (blockNet) {
                 // Re-assert in case the native writer rewrote config.xml while registering.
@@ -364,10 +375,11 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     }
 
     static File selectDotNetRegeditAssembly(File runtimeDir) {
-        File lower = findExactChild(runtimeDir, "itmcRegedit.dll");
-        if (lower != null) return lower;
-        return findExactChild(runtimeDir, "ITMC.Regedit.dll");
-    }
+    // Match the target Web runtime: modern uppercase first, legacy lowercase fallback.
+    File upper = findExactChild(runtimeDir, "ITMC.Regedit.dll");
+    if (upper != null) return upper;
+    return findExactChild(runtimeDir, "itmcRegedit.dll");
+}
 
     static String detectLowercaseDotNetRegistrationProduct(File lowerDll) {
         return detectLowercaseDotNetRegistrationProduct(extractUtf16Ascii(lowerDll));
@@ -1037,6 +1049,23 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         }
         return false;
     }
+    static String recoverDotNetLocalRegStrFromConfig(File cfg, String product) {
+    if (blank(product) || cfg == null || !cfg.isFile()) return null;
+    try {
+        String encrypted = firstElement(readUtf8(cfg), "regName");
+        if (blank(encrypted)) return null;
+        String plain = desDecryptHex(encrypted.trim(), "*ITMC" + product.trim() + "OK*");
+        int begin = plain.indexOf('{'), end = plain.lastIndexOf('}');
+        if (begin < 0 || end <= begin) return null;
+        String json = plain.substring(begin, end + 1);
+        String embeddedProduct = jsonStringField(json, "ProName");
+        String regStr = normalizeProductCsv(jsonStringField(json, "RegStr"));
+        return product.trim().equalsIgnoreCase(embeddedProduct) && !blank(regStr) ? regStr : null;
+    } catch (Throwable ignore) {
+        return null;
+    }
+}
+
     static String recoverDotNetLocalRegStr(File root, File runtimeDir, String product) {
         if (blank(product)) return null;
         File[] candidates = new File[]{

@@ -1,3 +1,13 @@
+## [1.2.40] - 2026-09-10
+
+### Fixed
+- .NET 双注册组件部署改为 `ITMC.Regedit.dll` 现代链优先，`itmcRegedit.dll` 仅作为兼容回退，与目标 Web 运行时顺序保持一致。
+- Java 协调器、ASP.NET Host 与 Bridge 预加载统一采用同一选择顺序。
+- 大写现代链完成 `DoRegistry + CheckReInfo` 后重新读取站点根 `config.xml`；实际持久化 `RegStr` 必须包含当前 `SoftVersionID`，否则以 `[MODE_VERIFY]` 失败。
+
+### Regression
+- Java smoke test 覆盖双 DLL uppercase-first、lowercase-only fallback，以及站点根现代授权的持久化 RegStr 读取。
+
 ## [1.2.39] - 2026-09-10
 
 ### Fixed

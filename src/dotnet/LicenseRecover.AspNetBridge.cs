@@ -172,15 +172,15 @@ public sealed class LicenseRecoverAspNetBridgeRunner : MarshalByRefObject, IRegi
         string target = null;
         string chain = null;
 
-        if (File.Exists(lower))
-        {
-            target = lower;
-            chain = "lowercase-itmcRegedit";
-        }
-        else if (File.Exists(upper))
+        if (File.Exists(upper))
         {
             target = upper;
             chain = "uppercase-ITMC.Regedit";
+        }
+        else if (File.Exists(lower))
+        {
+            target = lower;
+            chain = "lowercase-itmcRegedit";
         }
 
         if (target == null)

@@ -271,8 +271,18 @@ if (-not $coreSource.Contains('LicenseRecoverModernGUIJavaPlan plan = LicenseRec
 if (-not $autoSource.Contains('[MODE] current SoftVersionID is missing from RegStr')) { throw '.NET current SoftVersionID inclusion guard is missing.' }
 if (-not $autoSource.Contains('addRegStrTokens(out, detectProductList')) { throw '.NET target-DLL compatibility mode merge is missing.' }
 if (-not $coreSource.Contains('LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(nd)')) { throw '.NET CLI gencode is not using the unified RegStr resolver.' }
-if (-not $autoSource.Contains('LicenseRecover.NET.AspNetHost.exe') -or -not $autoSource.Contains('LicenseRecover.NET.Modern.exe')) { throw '.NET one-click must use the ASP.NET host for lowercase chain plus uppercase fallback adapter.' }
-if (-not $autoSource.Contains('selectDotNetRegeditAssembly') -or -not $autoSource.Contains('detectLowercaseDotNetRegistrationProduct')) { throw '.NET target-owned lowercase-first registration-chain policy is missing.' }
+if (-not $autoSource.Contains('LicenseRecover.NET.AspNetHost.exe') -or -not $autoSource.Contains('LicenseRecover.NET.Modern.exe')) { throw '.NET one-click must use the ASP.NET host with uppercase modern and lowercase compatibility helpers.' }
+if (-not $autoSource.Contains('selectDotNetRegeditAssembly') -or -not $autoSource.Contains('detectLowercaseDotNetRegistrationProduct')) { throw '.NET registration-chain selection or lowercase compatibility-family probe is missing.' }
+$autoUpperAt = $autoSource.IndexOf('File upper = findExactChild(runtimeDir, "ITMC.Regedit.dll");')
+$autoLowerAt = $autoSource.IndexOf('return findExactChild(runtimeDir, "itmcRegedit.dll");')
+if ($autoUpperAt -lt 0 -or $autoLowerAt -lt 0 -or $autoUpperAt -gt $autoLowerAt) { throw '.NET coordinator is not uppercase-first.' }
+$hostUpperAt = $aspHostSourceText.IndexOf('if (File.Exists(upper))')
+$hostLowerAt = $aspHostSourceText.IndexOf('else if (File.Exists(lower))')
+if ($hostUpperAt -lt 0 -or $hostLowerAt -lt 0 -or $hostUpperAt -gt $hostLowerAt) { throw 'ASP.NET host is not uppercase-first.' }
+$bridgeUpperAt = $aspBridgeSourceText.IndexOf('if (File.Exists(upper))')
+$bridgeLowerAt = $aspBridgeSourceText.IndexOf('else if (File.Exists(lower))')
+if ($bridgeUpperAt -lt 0 -or $bridgeLowerAt -lt 0 -or $bridgeUpperAt -gt $bridgeLowerAt) { throw 'ASP.NET bridge is not uppercase-first.' }
+if (-not $autoSource.Contains('[dotnet-mode-verify] persisted root RegStr=')) { throw '.NET site-root persisted RegStr verification is missing.' }
 if (-not $autoSource.Contains('registrationProduct')) { throw '.NET app product and lowercase registration crypto family are not separated.' }
 if (-not $autoSource.Contains('hasDotNetAuthorizationConfigStructure')) { throw 'Modern .NET pre-block cannot distinguish unrelated config.xml files.' }
 if ($autoSource.Contains('String updated = putElement(original, "Service", BLOCK_ENDPOINT);\n            validateXml(updated);') -and -not $autoSource.Contains('[pre-block-skip]')) { throw 'Modern .NET pre-block still aborts on unrelated config.xml files.' }
