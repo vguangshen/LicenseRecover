@@ -13,6 +13,7 @@ This note records the runtime ABI evidence used by the Java target-native regist
 | YT00129 | same wrapper/root relay and three-arg token/path ABI | explicit webapp-root path; product alias `QT04`, RegStr alias `QT0420` | yes |
 | QT40101 | `RegisterListener -> SystemInitService.getRegisterMain(product,path) -> (String product, String token, String configPath)` | classpath root (`WEB-INF/classes`); startup consumes `getRegInfo()` without `checkReInfo()`; product `QT401`, RegStr `QT40101` | no (`ITMCReg-1.0.5.jar`) |
 | XMT0102 | `ServletContext.getRealPath("/") -> RegisterListener.getRegisterMain(product,root,request) -> (String product, String token, String configPath)` | webapp-root path; family `XMT01`, startup ProductID `XMT0102`, RegStr `QT100110,QT100106` | yes |
+| XMT0103 | same XMT Fastjson startup flow and three-arg token/path ABI | webapp-root path; family `XMT01`, startup ProductID `XMT0103`, RegStr `QT100102` | yes |
 
 The supplied DS3110 registration component has SHA-256 `ef00e4751fcbc5ea6c100e4bbaf73f60094310d26c1894ca3906e70c73f45cfa`, identical to the DS2802 `ITMCReg.jar` sample. Its two-argument constructor derives the configuration directory from the registration class CodeSource, so the isolated host must preserve the original JAR CodeSource when restoring protected classes in memory.
 
@@ -43,3 +44,5 @@ The supplied XMT0102 sample uses the packed ITMCReg generation shared with DS280
 The sample's existing local payload is family-keyed as `XMT01`; the real startup constructor uses `XMT0102`. A target-native write using ProductID `XMT0102`, webapp-root path, and RegStr `QT100110,QT100106` passes fresh `checkReInfo()` and the application `RegisterListener.checkReInfoNew()` flow.
 
 The branch smoke suite includes a dedicated XMT0102 fixture for this Fastjson consumer path so future refactors cannot silently fall back to the broader `XMT01` runtime product.
+
+XMT0103 confirms the XMT0102 Fastjson consumer is a reusable lineage profile: the concrete runtime ProductID comes from target `SystemInfo.registerId`, while `XMT01` remains only the broader authorization family. Its target-declared RegStr is `QT100102`.

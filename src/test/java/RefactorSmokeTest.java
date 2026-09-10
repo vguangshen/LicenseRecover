@@ -384,6 +384,34 @@ public final class RefactorSmokeTest {
                         && xmt0102Plan.automaticRecoveryReady,
                 "XMT0102 proves concrete startup ProductID when RegStr is consumed through JSONObject");
 
+        Path xmt0103Root = base.resolve("java-XMT0103-json-regstr");
+        Path xmt0103Lib = xmt0103Root.resolve("WEB-INF/lib");
+        Path xmt0103Classes = xmt0103Root.resolve("WEB-INF/classes");
+        Files.createDirectories(xmt0103Lib);
+        Files.createDirectories(xmt0103Classes.resolve("com/itmc/register/utils"));
+        Files.createDirectories(xmt0103Classes.resolve("com/itmc/register/service"));
+        Files.write(xmt0103Lib.resolve("ITMCReg.jar"), new byte[]{1});
+        Files.write(xmt0103Root.resolve("systemConfig.yml"),
+                Arrays.asList("global.system.VersionID=XMT0103"), StandardCharsets.UTF_8);
+        Files.write(xmt0103Classes.resolve("config.xml"), Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>XMT0103</SoftVersionID><regInfo>QT100102</regInfo></SystemSoft></ROOT>"),
+                StandardCharsets.UTF_8);
+        Files.write(xmt0103Classes.resolve("RegistrationEvidence.class"),
+                "XMT01".getBytes(StandardCharsets.US_ASCII));
+        Files.write(xmt0103Classes.resolve("com/itmc/register/utils/SystemInfo.class"),
+                "config.xml SystemSoft registerId".getBytes(StandardCharsets.US_ASCII));
+        Files.write(xmt0103Classes.resolve("com/itmc/register/service/RegisterListener.class"),
+                "com/itmc/register/utils/SystemInfo registerId itmc/regedit/RegisterMain checkReInfo getRegInfo "
+                        .concat("com/alibaba/fastjson/JSONObject toJSONString parseObject regStr versionID contains")
+                        .getBytes(StandardCharsets.US_ASCII));
+        LicenseRecoverModernGUIJavaPlan xmt0103Plan =
+                LicenseRecoverModernGUIJavaPlan.inspect(xmt0103Root.toFile());
+        check("XMT01".equals(xmt0103Plan.authorizationFamily)
+                        && "XMT0103".equals(xmt0103Plan.runtimeProductId)
+                        && "QT100102".equals(xmt0103Plan.regStr)
+                        && xmt0103Plan.automaticRecoveryReady,
+                "XMT0103 reuses the XMT Fastjson startup profile without a product-specific exception");
+
         Path ds501Root = base.resolve("java-DS50109");
         Path ds501Lib = ds501Root.resolve("WEB-INF/lib");
         Path ds501Classes = ds501Root.resolve("WEB-INF/classes");
@@ -816,6 +844,27 @@ public final class RefactorSmokeTest {
         int verifyAt = autoRecoverySource.indexOf("verify.add(\"verify\")");
         check(preBlockAt >= 0 && generateAt > preBlockAt && applyAt > generateAt && verifyAt > applyAt,
                 ".NET pre-block guard is established before gencode, DoRegistry and CheckReInfo in source order");
+
+        int javaDoRegAt = autoRecoverySource.indexOf("[java-stage] DOREG: OK");
+        int javaFreshVerifyAt = autoRecoverySource.indexOf("[java-stage] VERIFY_FRESH: OK");
+        int javaSuccessAt = autoRecoverySource.indexOf("Java local authorization was applied through the target-native registration chain");
+        check(javaDoRegAt >= 0 && javaFreshVerifyAt > javaDoRegAt && javaSuccessAt > javaFreshVerifyAt,
+                "Java final success is emitted only after fresh-JVM target verification, never after DoRegistry alone");
+        check(autoRecoverySource.contains("containsAllRegStrTokens(persisted, regStr)")
+                        && autoRecoverySource.contains("verifiedAttempt == null"),
+                "Java final success requires persisted target RegStr and a successful startup-derived verifier attempt");
+
+        String javaHostSource = new String(Files.readAllBytes(
+                Paths.get("src/main/java/LicenseRecoverJavaHost.java")), StandardCharsets.UTF_8);
+        int javaVerifyMethodAt = javaHostSource.indexOf("static int verify");
+        int javaVerifyOkAt = javaHostSource.indexOf("[java-stage] VERIFY_FRESH: OK", javaVerifyMethodAt);
+        int javaResultOkAt = javaHostSource.indexOf("RESULT: OK", javaVerifyMethodAt);
+        check(javaHostSource.contains("Boolean.TRUE.equals(unregistered)")
+                        && javaHostSource.contains("containsAllCsv(regStr, o.regStr)")
+                        && javaHostSource.contains("persisted ProName mismatch")
+                        && javaVerifyMethodAt >= 0 && javaVerifyOkAt > javaVerifyMethodAt
+                        && javaResultOkAt > javaVerifyOkAt,
+                "Java host prints final RESULT: OK only after checkReInfo/RegStr/ProName verification passes");
         check(autoRecoverySource.contains("action=block")
                         && autoRecoverySource.contains("program=\" + helper.getAbsolutePath()")
                         && autoRecoverySource.contains("HTTP_PROXY")

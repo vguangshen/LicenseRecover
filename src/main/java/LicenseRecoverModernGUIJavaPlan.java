@@ -375,7 +375,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
                                                String confirmedFamily, String runtimeProduct) {
         if (root == null || blank(softId) || blank(confirmedFamily) || blank(runtimeProduct)) return null;
         String concrete = softId.trim();
-        if (!concrete.toUpperCase(Locale.ROOT).matches("QT401\d{2}")) return null;
+        if (!concrete.toUpperCase(Locale.ROOT).matches("QT401\\d{2}")) return null;
         if (!"QT401".equalsIgnoreCase(confirmedFamily.trim())
                 || !"QT401".equalsIgnoreCase(runtimeProduct.trim())) return null;
         File classes = new File(root, "WEB-INF" + File.separator + "classes");
@@ -387,7 +387,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
         if (blank(family) || !"QT401".equalsIgnoreCase(family.trim())) return null;
         try {
             String text = new String(Files.readAllBytes(config1.toPath()), StandardCharsets.UTF_8);
-            if (!text.contains("id="" + concrete + """) && !text.contains("id='" + concrete + "'")) return null;
+            if (!text.contains("id=\"" + concrete + "\"") && !text.contains("id='" + concrete + "'")) return null;
         } catch (Exception ex) { return null; }
         File systemInfo = new File(classes, "com" + File.separator + "ruoyi" + File.separator + "web"
                 + File.separator + "register" + File.separator + "utils" + File.separator + "SystemInfo.class");
