@@ -30,7 +30,6 @@ jobs:
           s=s.replace(old2,new2,1)
           p.write_text(s,encoding='utf-8')
 
-          # Add smoke coverage using synthetic class bytes to ensure fallback evidence helper is present.
           t=Path('src/test/java/RefactorSmokeTest.java')
           ts=t.read_text(encoding='utf-8')
           marker='System.out.println("RefactorSmokeTest: OK");'
@@ -40,8 +39,7 @@ jobs:
           t.write_text(ts,encoding='utf-8')
 
           Path('VERSION.txt').write_text('1.2.44\n',encoding='utf-8')
-          notes=Path('release-notes/v1.2.44.md')
-          notes.write_text('''# LicenseRecover v1.2.44\n\n## YX030506 Java runtime-profile 修复\n\n- 修复 YX0305/YX030506 Spring Boot 产品的显式配置路径识别。\n- 目标启动链使用 `ProjectSourcesPath.projectPath("/")`，其实现通过 `ResourceUtils.getURL("classpath:")` 得到 `WEB-INF/classes`，因此三参数 `RegisterMain(product, token, path)` 的真实 path 是 `WEB-INF/classes`，不是 ServletContext WebApp Root。\n- runtime profile 仍然 fail-closed：必须同时证明启动类确实调用 `ProjectSourcesPath.projectPath("/")`，并且目标 `ProjectSourcesPath.class` 具备 `classpath: -> ResourceUtils.getURL -> URL.getPath -> File.getAbsolutePath` 的实现证据，才允许使用 classes-root。\n- 不放宽 Java 的最终成功条件；仍需 target-native DOREG 后由 fresh JVM 完成 RegisterMain 原生校验，只有 `VERIFY_FRESH: OK` 后才显示最终 `OK`。\n''',encoding='utf-8')
+          Path('release-notes/v1.2.44.md').write_text('''# LicenseRecover v1.2.44\n\n## YX030506 Java runtime-profile 修复\n\n- 修复 YX0305/YX030506 Spring Boot 产品的显式配置路径识别。\n- 目标启动链使用 `ProjectSourcesPath.projectPath("/")`，其实现通过 `ResourceUtils.getURL("classpath:")` 得到 `WEB-INF/classes`，因此三参数 `RegisterMain(product, token, path)` 的真实 path 是 `WEB-INF/classes`，不是 ServletContext WebApp Root。\n- runtime profile 仍然 fail-closed：必须同时证明启动类确实调用 `ProjectSourcesPath.projectPath("/")`，并且目标 `ProjectSourcesPath.class` 具备 `classpath: -> ResourceUtils.getURL -> URL.getPath -> File.getAbsolutePath` 的实现证据，才允许使用 classes-root。\n- 不放宽 Java 的最终成功条件；仍需 target-native DOREG 后由 fresh JVM 完成 RegisterMain 原生校验，只有 `VERIFY_FRESH: OK` 后才显示最终 `OK`。\n''',encoding='utf-8')
           for name in ['README.md','README.txt','CHANGELOG.md']:
               q=Path(name)
               if q.exists():
@@ -55,3 +53,4 @@ jobs:
           git add src/main/java/JavaRegistrationRuntimeProfile.java src/test/java/RefactorSmokeTest.java VERSION.txt README.md README.txt CHANGELOG.md release-notes/v1.2.44.md
           git commit -m "fix: mirror YX030506 ProjectSourcesPath startup path"
           git push
+# trigger
