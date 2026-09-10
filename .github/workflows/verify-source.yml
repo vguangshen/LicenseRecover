@@ -27,9 +27,6 @@ jobs:
           if ! command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1 \
              || ! command -v x86_64-w64-mingw32-windres >/dev/null 2>&1 \
              || ! command -v mcs >/dev/null 2>&1; then
-            # The hosted image may carry Chrome apt metadata in either .list or
-            # deb822 .sources form. Its index rotates independently and can cause
-            # a transient Hash Sum mismatch; none of the toolchains below use it.
             shopt -s nullglob
             for source in /etc/apt/sources.list.d/*; do
               if grep -q 'dl.google.com/linux/chrome' "$source" 2>/dev/null; then
@@ -72,6 +69,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./scripts/verify.ps1
+      - name: Verify batch backup cleanup safety
+        shell: bash
+        run: java -cp "build/verify:LicenseRecoverGUI.jar" LicenseRecoverModernGUIBackupCleanup --self-test
       - name: Build and package native EXE launcher
         shell: pwsh
         run: ./scripts/package-native-launcher.ps1

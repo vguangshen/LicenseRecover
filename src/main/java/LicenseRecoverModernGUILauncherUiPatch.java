@@ -3,5 +3,6 @@ public final class LicenseRecoverModernGUILauncherUiPatch {
 
     public static void main(String[] args) {
         LicenseRecoverModernGUIUiPatchLauncher.main(args);
+        LicenseRecoverModernGUIBackupCleanup.installLater(args);
     }
 }
