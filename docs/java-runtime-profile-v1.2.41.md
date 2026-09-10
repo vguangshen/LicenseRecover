@@ -41,3 +41,5 @@ The supplied QT40101 sample stores registration XML under `WEB-INF/classes/confi
 The supplied XMT0102 sample uses the packed ITMCReg generation shared with DS2802/DS3110/YT001xx. `WEB-INF/classes/config.xml` declares `SoftVersionID=XMT0102` and `regInfo=QT100110,QT100106`. Startup constructs `RegisterMain` with concrete `SystemInfo.registerId` (`XMT0102`) and the Servlet webapp root. It reads RegStr by serializing `getRegInfo()` through Fastjson and fetching the lower-case `regStr` property, so concrete runtime-product proof accepts this target-proven consumer shape in addition to direct `getRegStr()` callers.
 
 The sample's existing local payload is family-keyed as `XMT01`; the real startup constructor uses `XMT0102`. A target-native write using ProductID `XMT0102`, webapp-root path, and RegStr `QT100110,QT100106` passes fresh `checkReInfo()` and the application `RegisterListener.checkReInfoNew()` flow.
+
+The branch smoke suite includes a dedicated XMT0102 fixture for this Fastjson consumer path so future refactors cannot silently fall back to the broader `XMT01` runtime product.
