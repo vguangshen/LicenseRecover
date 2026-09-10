@@ -1,0 +1,41 @@
+name: Fix Java YT runtime-profile quotes
+
+on:
+  push:
+    branches:
+      - refactor/java-native-host-v1.2.41
+    paths:
+      - .github/workflows/fix-java-yt-profile-quotes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refactor/java-native-host-v1.2.41
+          fetch-depth: 0
+      - name: Fix Java string escaping
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/main/java/JavaRegistrationRuntimeProfile.java')
+          s = p.read_text(encoding='utf-8')
+          bad = 'ServletContext.getRealPath("/") 根路径: " + best.relativePath);'
+          good = 'ServletContext.getRealPath(\\"/\\") 根路径: " + best.relativePath);'
+          count = s.count(bad)
+          if count != 2:
+              raise SystemExit('expected 2 bad Java quote sites, found ' + str(count))
+          p.write_text(s.replace(bad, good), encoding='utf-8')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/fix-java-yt-profile-quotes.yml
+          git add src/main/java/JavaRegistrationRuntimeProfile.java
+          git commit -m 'fix: escape Java runtime-profile root diagnostics'
+          git push origin HEAD:refactor/java-native-host-v1.2.41
