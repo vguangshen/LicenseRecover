@@ -2,7 +2,7 @@
 
 ITMC 云实训平台离线授权恢复工具，支持 Java 与 .NET 应用。项目面向原授权服务不可用后的本地恢复场景，保留 Java 8 / Windows 7 / Windows Server 2008 兼容边界。
 
-当前稳定版本：**v1.2.40**
+当前稳定版本：**v1.2.41**
 
 ## 下载
 
@@ -70,6 +70,8 @@ CI 构建正式 portable ZIP 时会下载该固定 runtime、校验 SHA-256，�
 ## 支持范围
 
 ### Java 应用
+
+v1.2.41 起，Java 一键恢复改为按目标应用真实启动链执行：目标 `GetRegisterCode` / `RegisterMain.doRegistry()` 完成写入后，必须在全新 JVM 中按启动代码证明的构造器与路径重新执行目标校验，并核对持久化 `RegStr`/`ProName`。只有 fresh-JVM 验证全部通过才显示最终 **OK**；任何阶段失败都会保持失败状态并回滚注册文件快照。当前回归矩阵覆盖 DS50109、DS2406、QT30103、DS2802、DS3110、YT00138、YT00129、QT40101、XMT0102、XMT0103 等不同 ABI、路径与 RegStr 消费方式。
 
 支持包含 `WEB-INF` / `WEB-INF/lib` 的 ITMC Java 应用，能够识别标准布局和已知的嵌套 `WEB-INF/WEB-INF` 布局，并覆盖当前已验证的 YT、XMT、QT30xxx、DS28xx 等产品代际。
 
