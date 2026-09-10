@@ -1,0 +1,363 @@
+name: Apply Java target-native recovery refactor
+
+on:
+  push:
+    branches: [ "refactor/java-native-host-v1.2.41" ]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Wire isolated Java native host into one-click recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def rd(p): return Path(p).read_text(encoding='utf-8')
+          def wr(p,s): Path(p).write_text(s, encoding='utf-8', newline='\n')
+          def one(s, old, new, label):
+              n=s.count(old)
+              if n != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {n}')
+              return s.replace(old,new,1)
+
+          # Tighten helper isolation: target classes may see JRE/platform classes, never tool-bundled vendor classes.
+          p='src/main/java/LicenseRecoverJavaHost.java'; s=rd(p)
+          s=one(s,
+              'ChildFirstLoader loader = new ChildFirstLoader(urls.toArray(new URL[urls.size()]),\n                ClassLoader.getSystemClassLoader());',
+              'ClassLoader platformParent = ClassLoader.getSystemClassLoader().getParent();\n        ChildFirstLoader loader = new ChildFirstLoader(urls.toArray(new URL[urls.size()]), platformParent);',
+              'target loader parent')
+          s=one(s,
+              'System.out.println("[java-host] target classloader=child-first; target URLs=" + urls.size());',
+              'System.out.println("[java-host] target classloader=child-first/platform-parent; target URLs=" + urls.size());',
+              'target loader log')
+          wr(p,s)
+
+          # Replace legacy Java direct config synthesis dispatch with a .NET-style target-native staged chain.
+          p='src/main/java/LicenseRecoverModernGUIAutoRecovery.java'; s=rd(p)
+          start=s.index('    private static Result recoverJava(Detection d, boolean backup, boolean blockNet, boolean dryRun, Consumer<String> log) throws Exception {')
+          end=s.index('    private static Result recoverDotNet(', start)
+          replacement=r'''    private static Result recoverJava(Detection d, boolean backup, boolean blockNet, boolean dryRun, Consumer<String> log) throws Exception {
+        LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(d.appRoot);
+        if (plan.detected) log.accept(plan.logSummary());
+        if (!plan.detected || !plan.automaticRecoveryReady)
+            return Result.fail("自动恢复已阻止：" + (plan.detected ? plan.recoveryReadiness : "未识别 Java 注册结构") + "。未修改任何文件。", d);
+        if (blank(plan.runtimeProductId))
+            return Result.fail("[JAVA_CHAIN] 目标目录未确认运行注册ID。", d);
+
+        String product = plan.runtimeProductId.trim();
+        String version = blank(plan.softVersionId) ? d.versionId : plan.softVersionId.trim();
+        List<File> bases = javaRegistrationBases(d, plan);
+        if (bases.isEmpty()) return Result.fail("[JAVA_CHAIN] 未找到可用的目标注册配置基目录。", d);
+
+        log.accept("[java-chain] target-native isolated helper; product=" + product
+                + " version=" + valueOrPending(version) + " candidates=" + javaBaseSummary(bases) + "\n");
+        log.accept("[java-chain] helper system classpath=tool-only; target WEB-INF/classes/lib are child-first isolated\n");
+
+        String regStr = normalizeProductCsv(plan.regStr);
+        if (blank(regStr)) {
+            for (File base : bases) {
+                log.accept("[java-stage] PROBE: start base=" + base.getAbsolutePath() + "\n");
+                NativeProcessResult probed = runJavaHost(d, "probe", base, product, version,
+                        null, null, null, log);
+                if (probed.exitCode != 0) {
+                    log.accept("[java-stage] PROBE: rejected base=" + base.getAbsolutePath()
+                            + " output=" + compactNativeOutput(probed.output) + "\n");
+                    continue;
+                }
+                String candidate = normalizeProductCsv(firstValue(probed.output, "TARGET_REGSTR="));
+                if (blank(candidate)) continue;
+                if (!blank(version) && !containsRegStrToken(candidate, version)) {
+                    log.accept("[java-stage] PROBE: RegStr missing current SoftVersionID at "
+                            + base.getAbsolutePath() + ": " + candidate + "\n");
+                    continue;
+                }
+                regStr = candidate;
+                log.accept("[java-stage] PROBE: OK RegStr=" + regStr + "\n");
+                break;
+            }
+        }
+        if (blank(regStr))
+            return Result.fail("[JAVA_MODE] 目标目录及目标 RegisterMain 均未证明可用 RegStr。", d);
+        if (!blank(version) && !containsRegStrToken(regStr, version))
+            return Result.fail("[JAVA_MODE] 当前 SoftVersionID 未进入 RegStr: " + version + "; RegStr=" + regStr, d);
+        log.accept("[java-mode] current SoftVersionID=" + valueOrPending(version) + " RegStr=" + regStr + "\n");
+
+        File codeBase = bases.get(0);
+        log.accept("[java-stage] GENCODE: start\n");
+        NativeProcessResult generated = runJavaHost(d, "gencode", codeBase, product, version,
+                regStr, null, null, log);
+        if (generated.exitCode != 0)
+            throw nativeFailure("JAVA_GENCODE", "target-native request/auth generation failed", generated);
+        String request = findLabeledHex(generated.output, "注册申请号", "申请号");
+        String auth = findLabeledHex(generated.output, "离线授权码", "授权码");
+        if (blank(request) || blank(auth))
+            throw new IOException("[JAVA_GENCODE_PARSE] helper returned success but request/auth fields were not parsed; output="
+                    + compactNativeOutput(generated.output));
+        String machine = firstValue(generated.output, "TARGET_MACHINE=");
+        log.accept("[java-stage] GENCODE_PARSE: OK\n");
+
+        if (dryRun) {
+            log.accept("[dry-run] Java target-native codes generated under process isolation; no target file was changed.\n");
+            return new Result(true, "Java target-native preview completed; no file was changed.",
+                    d, machine, request, auth);
+        }
+
+        LinkedHashMap<File, byte[]> originals = snapshotJavaRegistrationFiles(d);
+        if (backup) backupJavaRegistrationFiles(originals, log);
+        IOException lastFailure = null;
+        for (int i = 0; i < bases.size(); i++) {
+            File base = bases.get(i);
+            if (i > 0) restoreJavaRegistrationFiles(originals, log);
+            try {
+                log.accept("[java-stage] DOREG: start base=" + base.getAbsolutePath() + "\n");
+                NativeProcessResult applied = runJavaHost(d, "doreg", base, product, version,
+                        regStr, request, auth, log);
+                if (applied.exitCode != 0)
+                    throw nativeFailure("JAVA_DOREG", "target RegisterMain.doRegistry() failed for base="
+                            + base.getAbsolutePath(), applied);
+                log.accept("[java-stage] DOREG: OK base=" + base.getAbsolutePath() + "\n");
+
+                if (blockNet) blockJavaAuthorizationConfigs(d, log);
+
+                // A new helper JVM and a new target ClassLoader are mandatory here.  This
+                // rejects static-cache successes that disappear when Tomcat starts cleanly.
+                log.accept("[java-stage] VERIFY_FRESH: start base=" + base.getAbsolutePath() + "\n");
+                NativeProcessResult checked = runJavaHost(d, "verify", base, product, version,
+                        regStr, null, null, log);
+                if (checked.exitCode != 0)
+                    throw nativeFailure("JAVA_VERIFY", "fresh target RegisterMain.checkReInfo() rejected write-back for base="
+                            + base.getAbsolutePath(), checked);
+                String persisted = normalizeProductCsv(firstValue(checked.output, "TARGET_REGSTR="));
+                if (blank(persisted) || (!blank(version) && !containsRegStrToken(persisted, version)))
+                    throw new IOException("[JAVA_MODE_VERIFY] fresh verifier did not expose current SoftVersionID; RegStr="
+                            + valueOrPending(persisted));
+                log.accept("[java-stage] VERIFY_FRESH: OK base=" + base.getAbsolutePath()
+                        + " persisted RegStr=" + persisted + "\n");
+                return new Result(true,
+                        "Java local authorization was applied through the target-native registration chain and passed a fresh-JVM self-check. Restart Tomcat.",
+                        d, machine, request, auth);
+            } catch (IOException ex) {
+                lastFailure = ex;
+                log.accept("[java-candidate-failed] " + ex.getMessage() + "\n");
+            }
+        }
+
+        restoreJavaRegistrationFiles(originals, log);
+        if (lastFailure != null) throw lastFailure;
+        throw new IOException("[JAVA_CHAIN] no registration base completed target-native write-back + fresh verification");
+    }
+
+    static String buildJavaRecoveryClasspath(File toolDir, File runtimeDir) {
+        if (runtimeDir == null) throw new IllegalArgumentException("runtimeDir is required");
+        // The helper itself runs only from tool jars. Target libraries are loaded by
+        // LicenseRecoverJavaHost through its isolated child-first class loader.
+        return LicenseRecover.toolRuntimeClasspath(toolDir);
+    }
+
+    private static NativeProcessResult runJavaHost(Detection d, String mode, File base,
+                                                    String product, String version, String regStr,
+                                                    String request, String auth, Consumer<String> log) throws Exception {
+        ArrayList<String> cmd = new ArrayList<String>();
+        cmd.add(javaExe());
+        cmd.add("-Dfile.encoding=UTF-8");
+        cmd.add("-cp");
+        cmd.add(buildJavaRecoveryClasspath(toolDir(), d.runtimeDir));
+        cmd.add("LicenseRecoverJavaHost");
+        cmd.add(mode);
+        cmd.add(d.appRoot.getAbsolutePath());
+        cmd.add(d.runtimeDir.getAbsolutePath());
+        cmd.add("--base"); cmd.add(base.getAbsolutePath());
+        cmd.add("--product"); cmd.add(product);
+        if (!blank(version)) { cmd.add("--version"); cmd.add(version); }
+        if (!blank(regStr)) { cmd.add("--regstr"); cmd.add(regStr); }
+        if (!blank(request)) { cmd.add("--seq"); cmd.add(request); }
+        if (!blank(auth)) { cmd.add("--code"); cmd.add(auth); }
+        return runNativeCapture(cmd, d.appRoot, log);
+    }
+
+    static List<File> javaRegistrationBases(Detection d, LicenseRecoverModernGUIJavaPlan plan) {
+        ArrayList<File> out = new ArrayList<File>();
+        File root = d.appRoot;
+        File lib = d.runtimeDir;
+        File classes = new File(root, "WEB-INF" + File.separator + "classes");
+        File data = new File(root, "data");
+        String generation = plan == null || plan.generation == null ? "" : plan.generation.toLowerCase(Locale.ROOT);
+        if (generation.contains("data-config")) addJavaBase(out, data);
+        else if (generation.contains("classes-config")) addJavaBase(out, classes);
+        else addJavaBase(out, lib);
+        if (plan != null && plan.rootConfigStyle) addJavaBase(out, root);
+        addJavaBase(out, lib);
+        addJavaBase(out, root);
+        addJavaBase(out, classes);
+        addJavaBase(out, data);
+        return out;
+    }
+
+    private static void addJavaBase(List<File> out, File base) {
+        if (base == null || !base.isDirectory()) return;
+        try {
+            String key = base.getCanonicalPath();
+            for (File existing : out) if (existing.getCanonicalPath().equalsIgnoreCase(key)) return;
+        } catch (IOException ignore) {
+            for (File existing : out) if (existing.getAbsolutePath().equalsIgnoreCase(base.getAbsolutePath())) return;
+        }
+        out.add(base);
+    }
+
+    private static String javaBaseSummary(List<File> bases) {
+        StringBuilder b = new StringBuilder();
+        for (File base : bases) { if (b.length() > 0) b.append(" | "); b.append(base.getAbsolutePath()); }
+        return b.toString();
+    }
+
+    private static LinkedHashMap<File, byte[]> snapshotJavaRegistrationFiles(Detection d) throws IOException {
+        LinkedHashMap<File, byte[]> out = new LinkedHashMap<File, byte[]>();
+        ArrayList<File> candidates = new ArrayList<File>();
+        File classes = new File(d.appRoot, "WEB-INF" + File.separator + "classes");
+        File data = new File(d.appRoot, "data");
+        Collections.addAll(candidates,
+                new File(d.appRoot, "config.xml"), new File(d.runtimeDir, "config.xml"),
+                new File(classes, "config.xml"), new File(data, "config.xml"),
+                new File(d.appRoot, "Register.xml"), new File(d.runtimeDir, "Register.xml"),
+                new File(classes, "Register.xml"), new File(data, "Register.xml"));
+        HashSet<String> seen = new HashSet<String>();
+        for (File f : candidates) {
+            String key;
+            try { key = f.getCanonicalPath().toLowerCase(Locale.ROOT); }
+            catch (IOException ex) { key = f.getAbsolutePath().toLowerCase(Locale.ROOT); }
+            if (!seen.add(key)) continue;
+            out.put(f, f.isFile() ? Files.readAllBytes(f.toPath()) : null);
+        }
+        return out;
+    }
+
+    private static void backupJavaRegistrationFiles(LinkedHashMap<File, byte[]> originals, Consumer<String> log) throws IOException {
+        for (Map.Entry<File, byte[]> e : originals.entrySet()) {
+            if (e.getValue() == null) continue;
+            File bak = uniqueBackup(e.getKey());
+            Files.write(bak.toPath(), e.getValue());
+            if (log != null) log.accept("[backup-java] " + bak.getAbsolutePath() + "\n");
+        }
+    }
+
+    private static void restoreJavaRegistrationFiles(LinkedHashMap<File, byte[]> originals, Consumer<String> log) {
+        for (Map.Entry<File, byte[]> e : originals.entrySet()) {
+            try {
+                File f = e.getKey();
+                if (e.getValue() == null) Files.deleteIfExists(f.toPath());
+                else Files.write(f.toPath(), e.getValue());
+                if (log != null) log.accept("[rollback-java] restored " + f.getAbsolutePath() + "\n");
+            } catch (Throwable ex) {
+                if (log != null) log.accept("[rollback-java-warning] " + e.getKey().getAbsolutePath()
+                        + ": " + safe(ex) + "\n");
+            }
+        }
+    }
+
+    static void blockJavaAuthorizationConfigs(Detection d, Consumer<String> log) throws Exception {
+        File classes = new File(d.appRoot, "WEB-INF" + File.separator + "classes");
+        File data = new File(d.appRoot, "data");
+        File[] files = new File[]{ new File(d.appRoot, "config.xml"), new File(d.runtimeDir, "config.xml"),
+                new File(classes, "config.xml"), new File(data, "config.xml") };
+        HashSet<String> seen = new HashSet<String>();
+        Pattern regBlock = Pattern.compile("(?is)<reg\\b[^>]*>.*?</reg\\s*>");
+        Pattern service = Pattern.compile("(?is)(<Service\\b[^>]*>)(.*?)(</Service\\s*>)");
+        for (File f : files) {
+            if (!f.isFile()) continue;
+            String key = f.getCanonicalPath().toLowerCase(Locale.ROOT);
+            if (!seen.add(key)) continue;
+            String xml = readUtf8(f);
+            Matcher regMatcher = regBlock.matcher(xml);
+            StringBuffer all = new StringBuffer();
+            boolean changed = false;
+            while (regMatcher.find()) {
+                String block = regMatcher.group();
+                Matcher sm = service.matcher(block);
+                String updated = sm.find() ? sm.replaceFirst("$1" + Matcher.quoteReplacement(BLOCK_ENDPOINT) + "$3") : block;
+                if (!block.equals(updated)) changed = true;
+                regMatcher.appendReplacement(all, Matcher.quoteReplacement(updated));
+            }
+            regMatcher.appendTail(all);
+            if (!changed) continue;
+            validateXml(all.toString());
+            Files.write(f.toPath(), all.toString().getBytes(StandardCharsets.UTF_8));
+            if (log != null) log.accept("[block-net-java] " + f.getAbsolutePath() + "\n");
+        }
+    }
+
+'''
+          s=s[:start]+replacement+s[end:]
+          wr(p,s)
+
+          # Smoke tests: the helper JVM classpath must no longer contain target jars.
+          p='src/test/java/RefactorSmokeTest.java'; s=rd(p)
+          old='''        String recoveryCp = LicenseRecoverModernGUIAutoRecovery.buildJavaRecoveryClasspath(
+                toolCpDir.toFile(), targetRuntime.toFile());
+        check(recoveryCp.startsWith(toolCpWithOverlay + File.pathSeparator)
+                        && recoveryCp.endsWith(targetRuntime.toFile().getAbsolutePath() + File.separator + "*"),
+                "Java recovery child classpath keeps tool overlay/core ahead of target WEB-INF/lib");'''
+          new='''        String recoveryCp = LicenseRecoverModernGUIAutoRecovery.buildJavaRecoveryClasspath(
+                toolCpDir.toFile(), targetRuntime.toFile());
+        check(recoveryCp.equals(toolCpWithOverlay),
+                "Java recovery helper system classpath stays tool-only; target jars are isolated child-first");
+        check(LicenseRecoverJavaHost.instantiateRegisterMainCompatible(
+                        ModernRegisterMain3.class, "QT30103", "native-token", "D:/app/") instanceof ModernRegisterMain3,
+                "Java native host supports target 3-arg RegisterMain constructor");
+        check(LicenseRecoverJavaHost.instantiateRegisterMainCompatible(
+                        LegacyRegisterMain2.class, "DS24", "ignored", "D:/app/WEB-INF/lib/") instanceof LegacyRegisterMain2,
+                "Java native host supports target 2-arg RegisterMain constructor");
+        check(LicenseRecoverJavaHost.instantiateRegisterMainCompatible(
+                        LegacyRegisterMain1.class, "DS50109", "ignored", "D:/app/") instanceof LegacyRegisterMain1,
+                "Java native host supports target 1-arg RegisterMain constructor");
+        check(LicenseRecoverJavaHost.containsCsv("DS2406,DS2407", "ds2406"),
+                "Java native fresh verifier checks exact current SoftVersionID token");'''
+          s=one(s,old,new,'Java classpath smoke test')
+          wr(p,s)
+
+          # Overlay/package guards: ship the new helper and enforce the architecture in CI.
+          p='scripts/verify.ps1'; s=rd(p)
+          s=one(s,
+              "    'LicenseRecoverModernGUI',\n    'OperationResult',",
+              "    'LicenseRecoverModernGUI',\n    'LicenseRecoverJavaHost',\n    'OperationResult',",
+              'overlay host prefix')
+          s=one(s,
+              "if ($overlayEntries -notcontains 'LicenseRecoverModernGUIAutoRecovery.class') {\n    throw 'Overlay is missing LicenseRecoverModernGUIAutoRecovery.class.'\n}\n",
+              "if ($overlayEntries -notcontains 'LicenseRecoverModernGUIAutoRecovery.class') {\n    throw 'Overlay is missing LicenseRecoverModernGUIAutoRecovery.class.'\n}\nif ($overlayEntries -notcontains 'LicenseRecoverJavaHost.class') {\n    throw 'Overlay is missing LicenseRecoverJavaHost.class; Java target-native recovery cannot run.'\n}\n",
+              'overlay host guard')
+          anchor="$autoSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUIAutoRecovery.java') -Raw\n"
+          s=one(s,anchor,anchor+"$javaHostSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverJavaHost.java') -Raw\n",'java host source variable')
+          guard="""if (-not $javaHostSource.Contains('class ChildFirstLoader') -or -not $javaHostSource.Contains('checkConnect(String host, int port)')) { throw 'Java target-native isolated host/network guard is missing.' }
+if (-not $autoSource.Contains('[java-stage] VERIFY_FRESH: start') -or -not $autoSource.Contains('LicenseRecoverJavaHost')) { throw 'Java one-click is not wired to fresh-JVM target-native verification.' }
+if ($autoSource.Contains('runtimeDir.getAbsolutePath() + File.separator + "*";')) { throw 'Java helper system classpath still contains target jars.' }
+"""
+          marker="Write-Host 'Building deterministic runtime overlay...'\n"
+          s=one(s,marker,guard+"\n"+marker,'java native host source guards')
+          wr(p,s)
+
+          print('Java target-native staged recovery wired')
+          PY
+          git diff --check
+          git status --short
+      - name: Commit refactor
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain -- src/main/java/LicenseRecoverJavaHost.java src/main/java/LicenseRecoverModernGUIAutoRecovery.java src/test/java/RefactorSmokeTest.java scripts/verify.ps1)" ]; then
+            echo 'No source changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main/java/LicenseRecoverJavaHost.java src/main/java/LicenseRecoverModernGUIAutoRecovery.java src/test/java/RefactorSmokeTest.java scripts/verify.ps1
+          git commit -m 'refactor: Java target-native staged registration recovery'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
