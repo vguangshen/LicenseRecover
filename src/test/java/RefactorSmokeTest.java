@@ -75,6 +75,15 @@ public final class RefactorSmokeTest {
         check(JavaRegistrationRuntimeProfile.chooseModes(true, modernDefault, false).get(0)
                         == JavaRegistrationRuntimeProfile.Mode.TWO_ARG_TOKEN_DEFAULT,
                 "DS3110-style startup keeps modern two-arg target-default constructor");
+        List<JavaRegistrationRuntimeProfile.Mode> ytWrapperModes =
+                JavaRegistrationRuntimeProfile.chooseModes(true, modernRootFallback, true, true);
+        check(ytWrapperModes.size() == 1
+                        && ytWrapperModes.get(0) == JavaRegistrationRuntimeProfile.Mode.THREE_ARG_TOKEN_PATH,
+                "YT001xx wrapper consumes proven servlet root without inventing two-token fallback");
+        check(LicenseRecoverJavaHost.containsAllCsv("QT0420,QT0437", "QT0420"),
+                "Java persisted-mode verification accepts target-proven alias token");
+        check(!LicenseRecoverJavaHost.containsAllCsv("QT0420", "YT00129"),
+                "YT00129 SoftVersionID is distinct from its QT0420 startup registration alias");
         check("YT001".equals(LegacyJavaRegistrationMetadata.selectFallbackPrefix(
                         Arrays.asList("QT1001", "DS26", "YT001", "YT00129"), "YT00138")),
                 "legacy runtime family is derived from target RegisterUtil constants");

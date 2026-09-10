@@ -309,6 +309,9 @@ if (-not $javaHostSource.Contains('class ChildFirstLoader') -or -not $javaHostSo
 if (-not $javaHostSource.Contains('ProtectionDomain') -or -not $javaHostSource.Contains('NetRemover.unpackVirbox')) { throw 'Packed Java registration host does not preserve original target CodeSource.' }
 if (-not $javaHostSource.Contains('target RegisterMain.doRegistry() returned false')) { throw 'Java native doRegistry false-return guard is missing.' }
 if (-not $javaRuntimeProfileSource.Contains('RegisterMain') -or -not $javaRuntimeProfileSource.Contains('checkReInfo') -or -not $javaRuntimeProfileSource.Contains('getRealPath')) { throw 'Java startup constructor ABI profile is incomplete.' }
+if (-not $javaRuntimeProfileSource.Contains('findServletRootRelay')) { throw 'Java runtime profile cannot prove Servlet root relayed through a registration wrapper.' }
+if (-not $javaHostSource.Contains('containsAllCsv(regStr, o.regStr)')) { throw 'Java fresh verifier still assumes SoftVersionID instead of target startup RegStr.' }
+if (-not $autoSource.Contains('containsAllRegStrTokens(persisted, regStr)')) { throw 'Java coordinator does not verify persisted target startup RegStr tokens.' }
 if (-not $autoSource.Contains('JavaRegistrationRuntimeProfile.inspect') -or -not $autoSource.Contains('[java-stage] VERIFY_FRESH: start')) { throw 'Java one-click is not wired to runtime-derived fresh-JVM verification.' }
 if ($autoSource.Contains('runtimeDir.getAbsolutePath() + File.separator + "*";')) { throw 'Java helper system classpath still contains target jars.' }
 

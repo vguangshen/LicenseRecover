@@ -119,6 +119,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         log.accept("[java-chain] helper system classpath=tool-only; target WEB-INF/classes/lib are child-first isolated\n");
 
         String regStr = normalizeProductCsv(plan.regStr);
+        boolean regStrFromPlan = !blank(regStr);
         if (blank(regStr)) {
             for (JavaRegistrationRuntimeProfile.Attempt attempt : attempts) {
                 log.accept("[java-stage] PROBE: start ctor=" + attempt.summary() + "\n");
@@ -143,9 +144,15 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         }
         if (blank(regStr))
             return Result.fail("[JAVA_MODE] 目标目录及目标 RegisterMain 均未证明可用 RegStr。", d);
-        if (!blank(version) && !containsRegStrToken(regStr, version))
-            return Result.fail("[JAVA_MODE] 当前 SoftVersionID 未进入 RegStr: " + version + "; RegStr=" + regStr, d);
-        log.accept("[java-mode] current SoftVersionID=" + valueOrPending(version) + " RegStr=" + regStr + "\n");
+        // If the target plan proved a startup alias (for example YT00129 -> QT0420),
+        // do not replace it with or require the current SoftVersionID. Dynamic probes
+        // remain conservative and must contain the current version token.
+        if (!regStrFromPlan && !blank(version) && !containsRegStrToken(regStr, version))
+            return Result.fail("[JAVA_MODE] 动态 RegStr 未包含当前 SoftVersionID: " + version + "; RegStr=" + regStr, d);
+        if (regStrFromPlan && !blank(version) && !containsRegStrToken(regStr, version))
+            log.accept("[java-mode] current SoftVersionID=" + version + " startup-mapped RegStr=" + regStr + "\n");
+        else
+            log.accept("[java-mode] current SoftVersionID=" + valueOrPending(version) + " RegStr=" + regStr + "\n");
 
         JavaRegistrationRuntimeProfile.Attempt primary = attempts.get(0);
         log.accept("[java-stage] GENCODE: start\n");
@@ -203,9 +210,9 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                 if (verifiedAttempt == null)
                     throw nativeFailure("JAVA_VERIFY", "fresh target startup constructor sequence rejected write-back", checked);
                 String persisted = normalizeProductCsv(firstValue(checked.output, "TARGET_REGSTR="));
-                if (blank(persisted) || (!blank(version) && !containsRegStrToken(persisted, version)))
-                    throw new IOException("[JAVA_MODE_VERIFY] fresh verifier did not expose current SoftVersionID; RegStr="
-                            + valueOrPending(persisted));
+                if (blank(persisted) || !containsAllRegStrTokens(persisted, regStr))
+                    throw new IOException("[JAVA_MODE_VERIFY] fresh verifier did not preserve target startup RegStr="
+                            + regStr + "; persisted=" + valueOrPending(persisted));
                 log.accept("[java-stage] VERIFY_FRESH: OK ctor=" + verifiedAttempt.summary()
                         + " persisted RegStr=" + persisted + "\n");
                 return new Result(true,
@@ -1280,6 +1287,16 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             b.append(token);
         }
         return b.toString();
+    }
+
+    static boolean containsAllRegStrTokens(String actual, String expected) {
+        if (blank(expected)) return true;
+        if (blank(actual)) return false;
+        String normalized = normalizeProductCsv(expected);
+        if (blank(normalized)) return true;
+        for (String token : normalized.split(","))
+            if (!containsRegStrToken(actual, token)) return false;
+        return true;
     }
 
     static boolean containsRegStrToken(String raw, String wanted) {

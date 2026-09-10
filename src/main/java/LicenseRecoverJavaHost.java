@@ -343,8 +343,9 @@ public final class LicenseRecoverJavaHost {
         System.out.println("TARGET_CHECK_REINFO=" + unregistered);
         if (unregistered) throw new IllegalStateException("target checkReInfo() reports unregistered");
         if (blank(regStr)) throw new IllegalStateException("target getRegInfo().RegStr is empty after native write-back");
-        if (!blank(o.version) && !containsCsv(regStr, o.version))
-            throw new IllegalStateException("persisted RegStr does not contain current SoftVersionID=" + o.version + "; RegStr=" + regStr);
+        if (!blank(o.regStr) && !containsAllCsv(regStr, o.regStr))
+            throw new IllegalStateException("persisted RegStr does not preserve target startup mode token(s)="
+                    + o.regStr + "; RegStr=" + regStr);
         if (!blank(proName) && !proName.trim().equalsIgnoreCase(o.product.trim()))
             throw new IllegalStateException("persisted ProName mismatch: expected=" + o.product + " actual=" + proName);
         System.out.println("[java-stage] VERIFY_FRESH: OK");
@@ -518,6 +519,16 @@ public final class LicenseRecoverJavaHost {
         if (blank(csv) || blank(wanted)) return false;
         for (String x : csv.split(",")) if (wanted.trim().equalsIgnoreCase(x.trim())) return true;
         return false;
+    }
+
+    static boolean containsAllCsv(String actual, String expected) {
+        if (blank(expected)) return true;
+        if (blank(actual)) return false;
+        String normalized = normalizeCsv(expected);
+        if (blank(normalized)) return true;
+        for (String token : normalized.split(","))
+            if (!containsCsv(actual, token)) return false;
+        return true;
     }
 
     static String withSeparator(File dir) {

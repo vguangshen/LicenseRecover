@@ -102,21 +102,36 @@ public final class JavaRegistrationRuntimeProfile {
             Candidate best = findStartupCandidate(classes);
             if (best == null) return fail(jar, "未找到同时调用 RegisterMain.<init> 与 checkReInfo() 的启动类");
 
+            // Some Spring/Tomcat generations split the startup chain across classes:
+            // SysParamInit obtains ServletContext.getRealPath("/") and passes that root to
+            // RegisterUtil.checkRegister(root), while RegisterUtil owns the actual
+            // RegisterMain constructor/checkReInfo call. Treat that data-flow as explicit
+            // root evidence instead of requiring getRealPath and RegisterMain in one class.
+            String rootRelay = null;
+            if (!best.servletRootEvidence && (best.ctorDescriptors.contains(D3)
+                    || (!modern && best.ctorDescriptors.contains(D2)))) {
+                rootRelay = findServletRootRelay(classes, best);
+            }
+            boolean rootEvidence = best.servletRootEvidence || rootRelay != null;
+
             ArrayList<Attempt> attempts = new ArrayList<Attempt>();
             if (modern) {
                 if (best.ctorDescriptors.contains(D3)) {
-                    if (!best.servletRootEvidence)
-                        return fail(jar, "启动类使用 3 参 RegisterMain，但未证明 ServletContext.getRealPath(\"/\") 根路径: " + best.relativePath);
+                    if (!rootEvidence)
+                        return fail(jar, "启动类使用 3 参 RegisterMain，但未证明 ServletContext.getRealPath("/") 根路径: " + best.relativePath);
                     attempts.add(new Attempt(Mode.THREE_ARG_TOKEN_PATH, root, best.relativePath));
                 }
-                if (best.ctorDescriptors.contains(D2))
+                // A proven wrapper relay has a non-empty root argument, so its internal
+                // two-arg branch is not a Tomcat fallback. Keep D2 only for call sites
+                // that themselves prove both branches (for example DS28).
+                if (best.ctorDescriptors.contains(D2) && rootRelay == null)
                     attempts.add(new Attempt(Mode.TWO_ARG_TOKEN_DEFAULT, null, best.relativePath));
                 if (best.ctorDescriptors.contains(D1) && has1)
                     attempts.add(new Attempt(Mode.ONE_ARG_DEFAULT, null, best.relativePath));
             } else {
                 if (best.ctorDescriptors.contains(D2)) {
-                    if (!best.servletRootEvidence)
-                        return fail(jar, "旧版启动类使用 2 参路径构造器，但未证明 ServletContext.getRealPath(\"/\") 根路径: " + best.relativePath);
+                    if (!rootEvidence)
+                        return fail(jar, "旧版启动类使用 2 参路径构造器，但未证明 ServletContext.getRealPath("/") 根路径: " + best.relativePath);
                     attempts.add(new Attempt(Mode.TWO_ARG_PATH, root, best.relativePath));
                 }
                 if (best.ctorDescriptors.contains(D1))
@@ -127,6 +142,7 @@ public final class JavaRegistrationRuntimeProfile {
                         + best.ctorDescriptors + " target=" + declared);
 
             StringBuilder ev = new StringBuilder();
+            if (rootRelay != null) ev.append(rootRelay).append(" [ServletContext.getRealPath(/)] -> ");
             ev.append(best.relativePath).append(" -> ");
             for (int i = 0; i < attempts.size(); i++) {
                 if (i > 0) ev.append(" -> fallback ");
@@ -147,11 +163,16 @@ public final class JavaRegistrationRuntimeProfile {
     }
 
     static List<Mode> chooseModes(boolean modern, Set<String> startupDescriptors, boolean servletRootEvidence) {
+        return chooseModes(modern, startupDescriptors, servletRootEvidence, false);
+    }
+
+    static List<Mode> chooseModes(boolean modern, Set<String> startupDescriptors,
+                                  boolean servletRootEvidence, boolean explicitRootRelay) {
         ArrayList<Mode> out = new ArrayList<Mode>();
         if (startupDescriptors == null) return out;
         if (modern) {
             if (startupDescriptors.contains(D3) && servletRootEvidence) out.add(Mode.THREE_ARG_TOKEN_PATH);
-            if (startupDescriptors.contains(D2)) out.add(Mode.TWO_ARG_TOKEN_DEFAULT);
+            if (startupDescriptors.contains(D2) && !explicitRootRelay) out.add(Mode.TWO_ARG_TOKEN_DEFAULT);
             if (startupDescriptors.contains(D1)) out.add(Mode.ONE_ARG_DEFAULT);
         } else {
             if (startupDescriptors.contains(D2) && servletRootEvidence) out.add(Mode.TWO_ARG_PATH);
@@ -241,6 +262,41 @@ public final class JavaRegistrationRuntimeProfile {
             Candidate c = new Candidate(rel, score, ctors, rootEvidence);
             if (best == null || c.score > best.score
                     || (c.score == best.score && c.relativePath.compareToIgnoreCase(best.relativePath) < 0)) best = c;
+        }
+        return best;
+    }
+
+    /**
+     * Prove an explicit Servlet root that is relayed into the wrapper which owns
+     * RegisterMain. This is intentionally narrow/fail-closed: the caller must both
+     * obtain ServletContext.getRealPath(String) and invoke wrapper.checkRegister(String).
+     */
+    private static String findServletRootRelay(File classes, Candidate wrapper) throws IOException {
+        if (classes == null || wrapper == null) return null;
+        String wrapperOwner = wrapper.relativePath.replace('\\', '/');
+        if (wrapperOwner.endsWith(".class")) wrapperOwner = wrapperOwner.substring(0, wrapperOwner.length() - 6);
+        ArrayList<File> files = new ArrayList<File>();
+        collectClassFiles(classes, files, 0, 14);
+        String best = null;
+        int bestScore = Integer.MIN_VALUE;
+        for (File f : files) {
+            ClassRefs refs;
+            try { refs = ClassRefs.parse(Files.readAllBytes(f.toPath())); }
+            catch (Throwable ignore) { continue; }
+            boolean getsRoot = refs.hasMethodRef("javax/servlet/ServletContext", "getRealPath",
+                    "(Ljava/lang/String;)Ljava/lang/String;")
+                    || refs.hasMethodRef("jakarta/servlet/ServletContext", "getRealPath",
+                    "(Ljava/lang/String;)Ljava/lang/String;");
+            if (!getsRoot) continue;
+            boolean callsWrapper = refs.hasMethodRef(wrapperOwner, "checkRegister", "(Ljava/lang/String;)V")
+                    || refs.hasMethodRef(wrapperOwner, "checkRegister", "(Ljava/lang/String;)Z");
+            if (!callsWrapper) continue;
+            String rel = relative(classes, f);
+            int score = startupScore(f.getName(), rel);
+            if (best == null || score > bestScore || (score == bestScore && rel.compareToIgnoreCase(best) < 0)) {
+                best = rel;
+                bestScore = score;
+            }
         }
         return best;
     }
