@@ -206,11 +206,19 @@ public final class LicenseRecoverModernGUIJavaPlan {
             }
         }
         String libConfig = relative(root, new File(lib, "config.xml"));
-        String targets = libConfig;
-        if (rootConfig) targets += " + config.xml(webapp根)";
-        String verify = rootConfig
-                ? "RegisterMain.checkReInfo(): lib + webapp根"
-                : "RegisterMain.checkReInfo(): lib";
+        boolean projectClasspathBase = usesProjectClasspathRegistrationBase(root);
+        String targets;
+        String verify;
+        if (projectClasspathBase) {
+            targets = relative(root, classesConfig);
+            verify = "RegisterMain.checkReInfo(): WEB-INF/classes (ProjectSourcesPath)";
+        } else {
+            targets = libConfig;
+            if (rootConfig) targets += " + config.xml(webapp根)";
+            verify = rootConfig
+                    ? "RegisterMain.checkReInfo(): lib + webapp根"
+                    : "RegisterMain.checkReInfo(): lib";
+        }
 
         return new LicenseRecoverModernGUIJavaPlan(true, root, lib, jar,
                 soft, generation, family, runtimeProduct, products, targets, verify, rootConfig, packed,
@@ -561,6 +569,19 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 && classFileContainsAll(runner, "PRODUCT_ALL_NUM", "split",
                         "itmc/regedit/GetRegisterCode", "RegeditNew", "itmcsoft",
                         "itmc/regedit/RegisterMain", "writeRegisterUser", "checkReInfo");
+    }
+
+    static boolean usesProjectClasspathRegistrationBase(File root) {
+        if (root == null) return false;
+        File classes = new File(root, "WEB-INF" + File.separator + "classes");
+        File provider = new File(classes, "com" + File.separator + "itmc" + File.separator
+                + "utils" + File.separator + "ProjectSourcesPath.class");
+        File runner = new File(classes, "com" + File.separator + "itmc" + File.separator
+                + "utils" + File.separator + "ProjectApplicationRunner.class");
+        return classFileContainsAll(provider, "classpath:", "org/springframework/util/ResourceUtils",
+                        "getURL", "java/net/URL", "getPath", "java/io/File", "getAbsolutePath")
+                && classFileContainsAll(runner, "com/itmc/utils/ProjectSourcesPath", "projectPath",
+                        "itmc/regedit/RegisterMain", "checkReInfo");
     }
 
     private static boolean classFileContainsAll(File file, String... tokens) {

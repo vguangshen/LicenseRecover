@@ -2,7 +2,7 @@
 
 ITMC 云实训平台离线授权恢复工具，支持 Java 与 .NET 应用。项目面向原授权服务不可用后的本地恢复场景，保留 Java 8 / Windows 7 / Windows Server 2008 兼容边界。
 
-当前稳定版本：**v1.2.43**
+当前稳定版本：**v1.2.44**
 
 ## 下载
 
@@ -174,3 +174,7 @@ PowerShell 7 / Linux / macOS：
 - 根目录不跟踪生成 ZIP 或 JRE；大体积运行时由固定 runtime Release 管理。
 
 更详细的工程说明见 `DEVELOPMENT.md`。
+
+
+### v1.2.44 Java classpath-root compatibility
+YX030506-style startup code that explicitly derives its registration base from `ProjectSourcesPath.projectPath("/")` is now mapped to `WEB-INF/classes`. The path is accepted only when the target class files prove the classpath provider chain, and the final success state still requires a fresh-JVM native verification.
