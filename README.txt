@@ -1,6 +1,6 @@
 v1.2.44：修复 YX030506 / ProjectSourcesPath classpath-root 注册路径；只有 fresh JVM 原生验证通过才显示 OK。
 
-LicenseRecover v1.2.43
+LicenseRecover v1.2.44
 =====================
 
 ITMC 云实训平台离线授权恢复工具

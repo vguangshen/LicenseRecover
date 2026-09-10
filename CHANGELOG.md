@@ -4,7 +4,7 @@
 - Keep fresh-JVM verification mandatory; no successful status is emitted until target `checkReInfo`/`RegStr` validation passes.
 - Correct the batch-plan configuration target display for this classpath-root generation.
 
-## [1.2.43] - 2026-09-11
+## [1.2.44] - 2026-09-11
 
 ### Changed
 - 将“批量删除备份”从批量页单独的“备份整理”行移动到“操作”单选组，与“一键恢复授权（推荐）”和“方式三”并列。

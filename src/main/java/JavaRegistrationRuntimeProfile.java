@@ -294,10 +294,11 @@ public final class JavaRegistrationRuntimeProfile {
                     "(Ljava/lang/String;)Ljava/lang/String;")
                     || refs.hasMethodRef("jakarta/servlet/ServletContext", "getRealPath",
                     "(Ljava/lang/String;)Ljava/lang/String;");
-            boolean classpathRootEvidence = projectClasspathProvider
-                    && refs.hasMethodRef("com/itmc/utils/ProjectSourcesPath", "projectPath",
+            boolean projectPathCall = refs.hasMethodRef("com/itmc/utils/ProjectSourcesPath", "projectPath",
                     "(Ljava/lang/String;)Ljava/lang/String;")
                     && refs.hasUtf8("/");
+            boolean classpathRootEvidence = projectPathCall
+                    && (projectClasspathProvider || hasProjectClasspathRootProviderFallback(classes));
             Candidate c = new Candidate(rel, score, ctors, rootEvidence, classpathRootEvidence);
             if (best == null || c.score > best.score
                     || (c.score == best.score && c.relativePath.compareToIgnoreCase(best.relativePath) < 0)) best = c;
@@ -327,6 +328,40 @@ public final class JavaRegistrationRuntimeProfile {
         } catch (Throwable ignore) {
             return false;
         }
+    }
+
+    /**
+     * Fallback proof for YX0305 Spring Boot generations. Keep this fail-closed:
+     * require the exact ProjectSourcesPath class and all constant strings proving
+     * classpath: -> ResourceUtils.getURL -> URL.getPath -> File.getAbsolutePath.
+     */
+    private static boolean hasProjectClasspathRootProviderFallback(File classes) {
+        if (classes == null || !classes.isDirectory()) return false;
+        File provider = new File(classes, "com" + File.separator + "itmc" + File.separator
+                + "utils" + File.separator + "ProjectSourcesPath.class");
+        if (!provider.isFile()) return false;
+        try {
+            byte[] data = Files.readAllBytes(provider.toPath());
+            return containsAscii(data, "classpath:")
+                    && containsAscii(data, "org/springframework/util/ResourceUtils")
+                    && containsAscii(data, "getURL")
+                    && containsAscii(data, "java/net/URL")
+                    && containsAscii(data, "getPath")
+                    && containsAscii(data, "java/io/File")
+                    && containsAscii(data, "getAbsolutePath");
+        } catch (Throwable ignore) {
+            return false;
+        }
+    }
+
+    private static boolean containsAscii(byte[] data, String value) {
+        if (data == null || value == null || value.isEmpty()) return false;
+        byte[] needle = value.getBytes(StandardCharsets.UTF_8);
+        outer: for (int i = 0; i + needle.length <= data.length; i++) {
+            for (int j = 0; j < needle.length; j++) if (data[i + j] != needle[j]) continue outer;
+            return true;
+        }
+        return false;
     }
 
     /**
