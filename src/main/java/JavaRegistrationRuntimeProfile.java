@@ -137,18 +137,20 @@ public final class JavaRegistrationRuntimeProfile {
             // RegisterMain constructor/checkReInfo call. Treat that data-flow as explicit
             // root evidence instead of requiring getRealPath and RegisterMain in one class.
             String rootRelay = null;
-            if (!best.servletRootEvidence && (best.ctorDescriptors.contains(D3)
+            if (!best.servletRootEvidence && !best.classpathRootEvidence
+                    && (best.ctorDescriptors.contains(D3)
                     || (!modern && best.ctorDescriptors.contains(D2)))) {
                 rootRelay = findServletRootRelay(classes, best);
             }
-            boolean rootEvidence = best.servletRootEvidence || rootRelay != null;
+            boolean servletRootEvidence = best.servletRootEvidence || rootRelay != null;
+            File explicitBase = selectExplicitBase(root, classes, servletRootEvidence, best.classpathRootEvidence);
 
             ArrayList<Attempt> attempts = new ArrayList<Attempt>();
             if (modern) {
                 if (best.ctorDescriptors.contains(D3)) {
-                    if (!rootEvidence)
-                        return fail(jar, "启动类使用 3 参 RegisterMain，但未证明 ServletContext.getRealPath(\"/\") 根路径: " + best.relativePath);
-                    attempts.add(new Attempt(Mode.THREE_ARG_TOKEN_PATH, root, best.relativePath));
+                    if (explicitBase == null)
+                        return fail(jar, "启动类使用 3 参 RegisterMain，但未证明显式配置路径（ServletContext.getRealPath(\"/\") / ProjectSourcesPath.projectPath(\"/\")）: " + best.relativePath);
+                    attempts.add(new Attempt(Mode.THREE_ARG_TOKEN_PATH, explicitBase, best.relativePath));
                 }
                 // A proven wrapper relay has a non-empty root argument, so its internal
                 // two-arg branch is not a Tomcat fallback. Keep D2 only for call sites
@@ -159,9 +161,9 @@ public final class JavaRegistrationRuntimeProfile {
                     attempts.add(new Attempt(Mode.ONE_ARG_DEFAULT, null, best.relativePath));
             } else {
                 if (best.ctorDescriptors.contains(D2)) {
-                    if (!rootEvidence)
-                        return fail(jar, "旧版启动类使用 2 参路径构造器，但未证明 ServletContext.getRealPath(\"/\") 根路径: " + best.relativePath);
-                    attempts.add(new Attempt(Mode.TWO_ARG_PATH, root, best.relativePath));
+                    if (explicitBase == null)
+                        return fail(jar, "旧版启动类使用 2 参路径构造器，但未证明显式配置路径（ServletContext.getRealPath(\"/\") / ProjectSourcesPath.projectPath(\"/\")）: " + best.relativePath);
+                    attempts.add(new Attempt(Mode.TWO_ARG_PATH, explicitBase, best.relativePath));
                 }
                 if (best.ctorDescriptors.contains(D1))
                     attempts.add(new Attempt(Mode.ONE_ARG_DEFAULT, null, best.relativePath));
@@ -172,7 +174,10 @@ public final class JavaRegistrationRuntimeProfile {
 
             StringBuilder ev = new StringBuilder();
             if (rootRelay != null) ev.append(rootRelay).append(" [ServletContext.getRealPath(/)] -> ");
-            ev.append(best.relativePath).append(" -> ");
+            ev.append(best.relativePath);
+            if (best.classpathRootEvidence)
+                ev.append(" [ProjectSourcesPath.projectPath(/) -> WEB-INF/classes]");
+            ev.append(" -> ");
             for (int i = 0; i < attempts.size(); i++) {
                 if (i > 0) ev.append(" -> fallback ");
                 ev.append(attempts.get(i).summary());
@@ -273,6 +278,7 @@ public final class JavaRegistrationRuntimeProfile {
         ArrayList<File> files = new ArrayList<File>();
         collectClassFiles(classes, files, 0, 14);
         Candidate best = null;
+        boolean projectClasspathProvider = hasProjectClasspathRootProvider(classes);
         for (File f : files) {
             byte[] bytes;
             try { bytes = Files.readAllBytes(f.toPath()); }
@@ -288,11 +294,39 @@ public final class JavaRegistrationRuntimeProfile {
                     "(Ljava/lang/String;)Ljava/lang/String;")
                     || refs.hasMethodRef("jakarta/servlet/ServletContext", "getRealPath",
                     "(Ljava/lang/String;)Ljava/lang/String;");
-            Candidate c = new Candidate(rel, score, ctors, rootEvidence);
+            boolean classpathRootEvidence = projectClasspathProvider
+                    && refs.hasMethodRef("com/itmc/utils/ProjectSourcesPath", "projectPath",
+                    "(Ljava/lang/String;)Ljava/lang/String;")
+                    && refs.hasUtf8("/");
+            Candidate c = new Candidate(rel, score, ctors, rootEvidence, classpathRootEvidence);
             if (best == null || c.score > best.score
                     || (c.score == best.score && c.relativePath.compareToIgnoreCase(best.relativePath) < 0)) best = c;
         }
         return best;
+    }
+
+    static File selectExplicitBase(File root, File classes,
+                                   boolean servletRootEvidence, boolean classpathRootEvidence) {
+        if (servletRootEvidence) return root;
+        if (classpathRootEvidence) return classes;
+        return null;
+    }
+
+    private static boolean hasProjectClasspathRootProvider(File classes) {
+        if (classes == null || !classes.isDirectory()) return false;
+        File provider = new File(classes, "com" + File.separator + "itmc" + File.separator
+                + "utils" + File.separator + "ProjectSourcesPath.class");
+        if (!provider.isFile()) return false;
+        try {
+            ClassRefs refs = ClassRefs.parse(Files.readAllBytes(provider.toPath()));
+            return refs.hasUtf8("classpath:")
+                    && refs.hasMethodRef("org/springframework/util/ResourceUtils", "getURL",
+                    "(Ljava/lang/String;)Ljava/net/URL;")
+                    && refs.hasMethodRef("java/net/URL", "getPath", "()Ljava/lang/String;")
+                    && refs.hasMethodRef("java/io/File", "getAbsolutePath", "()Ljava/lang/String;");
+        } catch (Throwable ignore) {
+            return false;
+        }
     }
 
     /**
@@ -378,6 +412,7 @@ public final class JavaRegistrationRuntimeProfile {
         if ("SysParamInit.class".equalsIgnoreCase(simple)) return 1000;
         if ("SystemSetListener.class".equalsIgnoreCase(simple)) return 980;
         if ("RegisterListener.class".equalsIgnoreCase(simple)) return 960;
+        if ("ProjectApplicationRunner.class".equalsIgnoreCase(simple)) return 950;
         if ("RegisterUtil.class".equalsIgnoreCase(simple)) return 600;
         String x = rel.toLowerCase(Locale.ROOT).replace('\\', '/');
         if (x.contains("/listener/") || x.contains("/configuration/")) return 400;
@@ -433,11 +468,14 @@ public final class JavaRegistrationRuntimeProfile {
         final int score;
         final Set<String> ctorDescriptors;
         final boolean servletRootEvidence;
-        Candidate(String relativePath, int score, Set<String> ctorDescriptors, boolean servletRootEvidence) {
+        final boolean classpathRootEvidence;
+        Candidate(String relativePath, int score, Set<String> ctorDescriptors,
+                  boolean servletRootEvidence, boolean classpathRootEvidence) {
             this.relativePath = relativePath;
             this.score = score;
             this.ctorDescriptors = ctorDescriptors;
             this.servletRootEvidence = servletRootEvidence;
+            this.classpathRootEvidence = classpathRootEvidence;
         }
     }
 
@@ -543,6 +581,12 @@ public final class JavaRegistrationRuntimeProfile {
                 if (name.equals(method)) out.add(natDesc(b[i]));
             }
             return out;
+        }
+
+        boolean hasUtf8(String value) {
+            if (value == null) return false;
+            for (String x : utf) if (value.equals(x)) return true;
+            return false;
         }
 
         boolean hasMethodRef(String owner, String name, String desc) {

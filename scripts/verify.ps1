@@ -256,6 +256,8 @@ $planSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecover
 $autoSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUIAutoRecovery.java') -Raw
 $javaHostSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverJavaHost.java') -Raw
 $javaRuntimeProfileSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'JavaRegistrationRuntimeProfile.java') -Raw
+if (-not $javaRuntimeProfileSource.Contains('ProjectSourcesPath.projectPath(/) -> WEB-INF/classes')) { throw 'YX030506 ProjectSourcesPath classpath-root runtime marker is missing.' }
+if (-not $javaRuntimeProfileSource.Contains('hasProjectClasspathRootProvider')) { throw 'YX030506 ProjectSourcesPath provider proof is missing.' }
 $legacyNetSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LegacyDotNetProtocol.java') -Raw
 $legacyGuiSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverGUI.java') -Raw
 $modernGuiSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUI.java') -Raw

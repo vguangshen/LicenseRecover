@@ -1,3 +1,9 @@
+## 1.2.44 - 2026-09-11
+
+- Fix YX030506-style `ProjectSourcesPath.projectPath("/")` startup chains by proving and selecting `WEB-INF/classes` as the explicit target-native RegisterMain base.
+- Keep fresh-JVM verification mandatory; no successful status is emitted until target `checkReInfo`/`RegStr` validation passes.
+- Correct the batch-plan configuration target display for this classpath-root generation.
+
 ## [1.2.43] - 2026-09-11
 
 ### Changed

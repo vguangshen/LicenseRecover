@@ -80,6 +80,14 @@ public final class RefactorSmokeTest {
         check(ytWrapperModes.size() == 1
                         && ytWrapperModes.get(0) == JavaRegistrationRuntimeProfile.Mode.THREE_ARG_TOKEN_PATH,
                 "YT001xx wrapper consumes proven servlet root without inventing two-token fallback");
+        File yxRootBase = base.resolve("yx030506-root").toFile();
+        File yxClassesBase = base.resolve("yx030506-root/WEB-INF/classes").toFile();
+        check(JavaRegistrationRuntimeProfile.selectExplicitBase(yxRootBase, yxClassesBase, false, true)
+                        .equals(yxClassesBase),
+                "YX030506 ProjectSourcesPath classpath evidence selects WEB-INF/classes as RegisterMain base");
+        check(JavaRegistrationRuntimeProfile.selectExplicitBase(yxRootBase, yxClassesBase, true, true)
+                        .equals(yxRootBase),
+                "Servlet root remains authoritative when both explicit path proofs are present");
         check(LicenseRecoverJavaHost.containsAllCsv("QT0420,QT0437", "QT0420"),
                 "Java persisted-mode verification accepts target-proven alias token");
         check(!LicenseRecoverJavaHost.containsAllCsv("QT0420", "YT00129"),
