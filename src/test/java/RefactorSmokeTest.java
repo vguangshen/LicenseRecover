@@ -989,9 +989,19 @@ public final class RefactorSmokeTest {
         Path targetRuntime = Files.createTempDirectory("lrc-target-lib-");
         String recoveryCp = LicenseRecoverModernGUIAutoRecovery.buildJavaRecoveryClasspath(
                 toolCpDir.toFile(), targetRuntime.toFile());
-        check(recoveryCp.startsWith(toolCpWithOverlay + File.pathSeparator)
-                        && recoveryCp.endsWith(targetRuntime.toFile().getAbsolutePath() + File.separator + "*"),
-                "Java recovery child classpath keeps tool overlay/core ahead of target WEB-INF/lib");
+        check(recoveryCp.equals(toolCpWithOverlay),
+                "Java recovery helper system classpath stays tool-only; target jars are isolated child-first");
+        check(LicenseRecoverJavaHost.instantiateRegisterMainCompatible(
+                        ModernRegisterMain3.class, "QT30103", "native-token", "D:/app/") instanceof ModernRegisterMain3,
+                "Java native host supports target 3-arg RegisterMain constructor");
+        check(LicenseRecoverJavaHost.instantiateRegisterMainCompatible(
+                        LegacyRegisterMain2.class, "DS24", "ignored", "D:/app/WEB-INF/lib/") instanceof LegacyRegisterMain2,
+                "Java native host supports target 2-arg RegisterMain constructor");
+        check(LicenseRecoverJavaHost.instantiateRegisterMainCompatible(
+                        LegacyRegisterMain1.class, "DS50109", "ignored", "D:/app/") instanceof LegacyRegisterMain1,
+                "Java native host supports target 1-arg RegisterMain constructor");
+        check(LicenseRecoverJavaHost.containsCsv("DS2406,DS2407", "ds2406"),
+                "Java native fresh verifier checks exact current SoftVersionID token");
 
         String autoSource230 = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIAutoRecovery.java")), StandardCharsets.UTF_8);
         check(autoSource230.contains("LicenseRecover.NET.AspNetHost.exe"), "lowercase .NET chain uses ASP.NET host helper");

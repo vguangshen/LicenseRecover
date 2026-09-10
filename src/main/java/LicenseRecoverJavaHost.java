@@ -193,10 +193,10 @@ public final class LicenseRecoverJavaHost {
             if (jar.isFile() && jar.getName().toLowerCase(Locale.ROOT).endsWith(".jar"))
                 urls.add(jar.toURI().toURL());
         }
-        ChildFirstLoader loader = new ChildFirstLoader(urls.toArray(new URL[urls.size()]),
-                ClassLoader.getSystemClassLoader());
+        ClassLoader platformParent = ClassLoader.getSystemClassLoader().getParent();
+        ChildFirstLoader loader = new ChildFirstLoader(urls.toArray(new URL[urls.size()]), platformParent);
         Thread.currentThread().setContextClassLoader(loader);
-        System.out.println("[java-host] target classloader=child-first; target URLs=" + urls.size());
+        System.out.println("[java-host] target classloader=child-first/platform-parent; target URLs=" + urls.size());
         return new TargetRuntime(loader, unpack);
     }
 
