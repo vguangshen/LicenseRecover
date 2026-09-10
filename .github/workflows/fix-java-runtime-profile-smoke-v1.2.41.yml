@@ -1,0 +1,37 @@
+name: Fix Java runtime-profile smoke test collision
+
+on:
+  push:
+    branches: [ "refactor/java-native-host-v1.2.41" ]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Fix smoke-test identifier and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/test/java/RefactorSmokeTest.java')
+          s = p.read_text(encoding='utf-8')
+          old_decl = 'Set<String> modernRoot = new LinkedHashSet<String>(Arrays.asList(JavaRegistrationRuntimeProfile.D3));'
+          new_decl = 'Set<String> modernThreeArg = new LinkedHashSet<String>(Arrays.asList(JavaRegistrationRuntimeProfile.D3));'
+          old_use = 'JavaRegistrationRuntimeProfile.chooseModes(true, modernRoot, true).get(0)'
+          new_use = 'JavaRegistrationRuntimeProfile.chooseModes(true, modernThreeArg, true).get(0)'
+          if old_decl not in s or old_use not in s:
+              raise SystemExit('expected smoke-test collision markers were not found')
+          s = s.replace(old_decl, new_decl, 1).replace(old_use, new_use, 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+          git rm .github/workflows/fix-java-runtime-profile-smoke-v1.2.41.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/test/java/RefactorSmokeTest.java
+          git commit -m 'test: fix Java runtime-profile smoke variable collision'
+          git push
