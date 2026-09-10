@@ -309,6 +309,10 @@ if (-not $javaHostSource.Contains('class ChildFirstLoader') -or -not $javaHostSo
 if (-not $javaHostSource.Contains('ProtectionDomain') -or -not $javaHostSource.Contains('NetRemover.unpackVirbox')) { throw 'Packed Java registration host does not preserve original target CodeSource.' }
 if (-not $javaHostSource.Contains('target RegisterMain.doRegistry() returned false')) { throw 'Java native doRegistry false-return guard is missing.' }
 if (-not $javaRuntimeProfileSource.Contains('RegisterMain') -or -not $javaRuntimeProfileSource.Contains('checkReInfo') -or -not $javaRuntimeProfileSource.Contains('getRealPath')) { throw 'Java startup constructor ABI profile is incomplete.' }
+if (-not $javaRuntimeProfileSource.Contains('findClasspathFactoryRelay') -or -not $javaRuntimeProfileSource.Contains('getRegInfo-only')) { throw 'QT401 classpath-root/getRegInfo-only startup profile is missing.' }
+if (-not $javaHostSource.Contains('--reginfo-only')) { throw 'Java target host cannot mirror RegInfo-only startup validation.' }
+if (-not $autoSource.Contains('attempt.checkReInfo')) { throw 'Java coordinator does not pass startup verification semantics.' }
+if (-not $javaPlanSource.Contains('confirmedQt401PrimaryRegStr')) { throw 'QT401 target-owned RegStr proof is missing.' }
 if (-not $javaRuntimeProfileSource.Contains('findServletRootRelay')) { throw 'Java runtime profile cannot prove Servlet root relayed through a registration wrapper.' }
 if (-not $javaHostSource.Contains('containsAllCsv(regStr, o.regStr)')) { throw 'Java fresh verifier still assumes SoftVersionID instead of target startup RegStr.' }
 if (-not $autoSource.Contains('containsAllRegStrTokens(persisted, regStr)')) { throw 'Java coordinator does not verify persisted target startup RegStr tokens.' }

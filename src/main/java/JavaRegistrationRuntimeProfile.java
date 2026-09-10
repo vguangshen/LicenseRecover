@@ -49,13 +49,20 @@ public final class JavaRegistrationRuntimeProfile {
         public final Mode mode;
         public final File baseDir;
         public final String sourceClass;
+        /** True only when the target startup path itself invokes RegisterMain.checkReInfo(). */
+        public final boolean checkReInfo;
         Attempt(Mode mode, File baseDir, String sourceClass) {
+            this(mode, baseDir, sourceClass, true);
+        }
+        Attempt(Mode mode, File baseDir, String sourceClass, boolean checkReInfo) {
             this.mode = mode;
             this.baseDir = baseDir;
             this.sourceClass = sourceClass;
+            this.checkReInfo = checkReInfo;
         }
         public String summary() {
-            return mode.cliName + (baseDir == null ? "(target-default-path)" : "(" + baseDir.getAbsolutePath() + ")");
+            return mode.cliName + (baseDir == null ? "(target-default-path)" : "(" + baseDir.getAbsolutePath() + ")")
+                    + (checkReInfo ? "[checkReInfo]" : "[getRegInfo-only]");
         }
     }
 
@@ -100,7 +107,29 @@ public final class JavaRegistrationRuntimeProfile {
             File classes = findClassesDir(root);
             if (classes == null) return fail(jar, "未找到 WEB-INF/classes，无法证明 Tomcat 启动构造器");
             Candidate best = findStartupCandidate(classes);
-            if (best == null) return fail(jar, "未找到同时调用 RegisterMain.<init> 与 checkReInfo() 的启动类");
+            ClasspathFactoryRelay classpathRelay = best == null ? findClasspathFactoryRelay(classes) : null;
+            if (best == null && classpathRelay == null)
+                return fail(jar, "未找到可证明的 RegisterMain 启动链（checkReInfo/getRegInfo）");
+
+            // QT401/RuoYi-style generations obtain the exploded WEB-INF/classes path via
+            // ClassUtils.getDefaultClassLoader().getResource("").getPath(), relay that
+            // path into a target-owned getRegisterMain(product,path) factory, and then
+            // consume getRegInfo() directly. Mirror that exact path and verification API.
+            if (classpathRelay != null) {
+                ArrayList<Attempt> classpathAttempts = new ArrayList<Attempt>();
+                if (modern && classpathRelay.ctorDescriptors.contains(D3)) {
+                    classpathAttempts.add(new Attempt(Mode.THREE_ARG_TOKEN_PATH, classes,
+                            classpathRelay.factoryClass, false));
+                } else {
+                    return fail(jar, "classpath-root RegisterMain factory relay 与目标构造器代际不匹配: "
+                            + classpathRelay.ctorDescriptors);
+                }
+                String ev = classpathRelay.callerClass
+                        + " [ClassUtils.getDefaultClassLoader().getResource().getPath -> WEB-INF/classes] -> "
+                        + classpathRelay.factoryClass + ".getRegisterMain -> "
+                        + classpathAttempts.get(0).summary() + "; RegisterMain constructors=" + declared;
+                return new JavaRegistrationRuntimeProfile(true, jar, modern, classpathAttempts, ev, null);
+            }
 
             // Some Spring/Tomcat generations split the startup chain across classes:
             // SysParamInit obtains ServletContext.getRealPath("/") and passes that root to
@@ -267,6 +296,50 @@ public final class JavaRegistrationRuntimeProfile {
     }
 
     /**
+     * Prove a QT401/RuoYi-style classpath-root factory relay. The caller must obtain
+     * the default ClassLoader resource path, pass it to target-owned
+     * getRegisterMain(String,String), and then consume RegisterMain.getRegInfo().
+     * No selected-folder or registration-JAR path inference is accepted here.
+     */
+    private static ClasspathFactoryRelay findClasspathFactoryRelay(File classes) throws IOException {
+        if (classes == null || !classes.isDirectory()) return null;
+        ArrayList<File> files = new ArrayList<File>();
+        collectClassFiles(classes, files, 0, 14);
+        ClasspathFactoryRelay best = null;
+        for (File factoryFile : files) {
+            ClassRefs factoryRefs;
+            try { factoryRefs = ClassRefs.parse(Files.readAllBytes(factoryFile.toPath())); }
+            catch (Throwable ignore) { continue; }
+            Set<String> ctors = factoryRefs.methodRefs("itmc/regedit/RegisterMain", "<init>");
+            if (!ctors.contains(D3)) continue;
+            String factoryRel = relative(classes, factoryFile);
+            String owner = factoryRel.replace('\\', '/');
+            if (owner.endsWith(".class")) owner = owner.substring(0, owner.length() - 6);
+            for (File callerFile : files) {
+                ClassRefs callerRefs;
+                try { callerRefs = ClassRefs.parse(Files.readAllBytes(callerFile.toPath())); }
+                catch (Throwable ignore) { continue; }
+                if (!callerRefs.hasMethodRef("org/springframework/util/ClassUtils", "getDefaultClassLoader",
+                        "()Ljava/lang/ClassLoader;")) continue;
+                if (!callerRefs.hasMethodRef("java/lang/ClassLoader", "getResource",
+                        "(Ljava/lang/String;)Ljava/net/URL;")) continue;
+                if (!callerRefs.hasMethodRef("java/net/URL", "getPath", "()Ljava/lang/String;")) continue;
+                if (!callerRefs.hasMethodRef(owner, "getRegisterMain",
+                        "(Ljava/lang/String;Ljava/lang/String;)Litmc/regedit/RegisterMain;")) continue;
+                if (!callerRefs.hasMethodRef("itmc/regedit/RegisterMain", "getRegInfo",
+                        "()Litmc/regedit/webservice/RegeditInfo;")) continue;
+                String callerRel = relative(classes, callerFile);
+                int score = startupScore(callerFile.getName(), callerRel);
+                ClasspathFactoryRelay hit = new ClasspathFactoryRelay(factoryRel, callerRel, score, ctors);
+                if (best == null || hit.score > best.score
+                        || (hit.score == best.score && hit.callerClass.compareToIgnoreCase(best.callerClass) < 0))
+                    best = hit;
+            }
+        }
+        return best;
+    }
+
+    /**
      * Prove an explicit Servlet root that is relayed into the wrapper which owns
      * RegisterMain. This is intentionally narrow/fail-closed: the caller must both
      * obtain ServletContext.getRealPath(String) and invoke wrapper.checkRegister(String).
@@ -340,6 +413,19 @@ public final class JavaRegistrationRuntimeProfile {
                 return out.toByteArray();
             } finally { in.close(); }
         } finally { jf.close(); }
+    }
+
+    static final class ClasspathFactoryRelay {
+        final String factoryClass;
+        final String callerClass;
+        final int score;
+        final Set<String> ctorDescriptors;
+        ClasspathFactoryRelay(String factoryClass, String callerClass, int score, Set<String> ctorDescriptors) {
+            this.factoryClass = factoryClass;
+            this.callerClass = callerClass;
+            this.score = score;
+            this.ctorDescriptors = ctorDescriptors;
+        }
     }
 
     static final class Candidate {

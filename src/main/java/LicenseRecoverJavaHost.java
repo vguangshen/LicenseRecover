@@ -47,6 +47,7 @@ public final class LicenseRecoverJavaHost {
         String seq;
         String code;
         String ctorMode;
+        boolean checkReInfo = true;
     }
 
     static final class TargetRuntime implements AutoCloseable {
@@ -172,6 +173,7 @@ public final class LicenseRecoverJavaHost {
             else if ("--seq".equals(a) && i + 1 < args.length) o.seq = args[++i];
             else if ("--code".equals(a) && i + 1 < args.length) o.code = args[++i];
             else if ("--ctor".equals(a) && i + 1 < args.length) o.ctorMode = args[++i];
+            else if ("--reginfo-only".equals(a)) o.checkReInfo = false;
             else throw new IllegalArgumentException("unknown/missing option: " + a);
         }
         if (!o.appRoot.isDirectory()) throw new IllegalArgumentException("appRoot not found: " + o.appRoot);
@@ -324,14 +326,17 @@ public final class LicenseRecoverJavaHost {
 
     static int verify(TargetRuntime rt, Options o) throws Exception {
         Object reg = newRegisterMain(rt.loader, o.product, o.baseDir, o.ctorMode);
-        Method check = findNoArgMethod(reg.getClass(), "checkReInfo");
-        if (check == null) throw new NoSuchMethodException("target RegisterMain has no checkReInfo()");
-        check.setAccessible(true);
-        Object raw;
-        try { raw = check.invoke(reg); }
-        catch (InvocationTargetException ex) { throw rethrow(ex); }
-        if (!(raw instanceof Boolean)) throw new IllegalStateException("checkReInfo() did not return boolean: " + raw);
-        boolean unregistered = ((Boolean) raw).booleanValue();
+        Boolean unregistered = null;
+        if (o.checkReInfo) {
+            Method check = findNoArgMethod(reg.getClass(), "checkReInfo");
+            if (check == null) throw new NoSuchMethodException("target RegisterMain has no checkReInfo()");
+            check.setAccessible(true);
+            Object raw;
+            try { raw = check.invoke(reg); }
+            catch (InvocationTargetException ex) { throw rethrow(ex); }
+            if (!(raw instanceof Boolean)) throw new IllegalStateException("checkReInfo() did not return boolean: " + raw);
+            unregistered = (Boolean) raw;
+        }
         Object info = invokeOptionalNoArg(reg, "getRegInfo");
         String regStr = normalizeCsv(stringGetter(info, "getRegStr"));
         String proName = stringGetter(info, "getProName");
@@ -340,8 +345,8 @@ public final class LicenseRecoverJavaHost {
         System.out.println("TARGET_PRODUCT=" + safe(proName));
         System.out.println("TARGET_REGID=" + safe(regId));
         System.out.println("TARGET_REGSTR=" + safe(regStr));
-        System.out.println("TARGET_CHECK_REINFO=" + unregistered);
-        if (unregistered) throw new IllegalStateException("target checkReInfo() reports unregistered");
+        System.out.println("TARGET_CHECK_REINFO=" + (unregistered == null ? "SKIPPED_BY_STARTUP_PROFILE" : unregistered));
+        if (Boolean.TRUE.equals(unregistered)) throw new IllegalStateException("target checkReInfo() reports unregistered");
         if (blank(regStr)) throw new IllegalStateException("target getRegInfo().RegStr is empty after native write-back");
         if (!blank(o.regStr) && !containsAllCsv(regStr, o.regStr))
             throw new IllegalStateException("persisted RegStr does not preserve target startup mode token(s)="

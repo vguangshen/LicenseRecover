@@ -254,6 +254,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         }
         if (attempt == null) throw new IllegalArgumentException("Java runtime constructor attempt is required");
         cmd.add("--ctor"); cmd.add(attempt.mode.cliName);
+        if (!attempt.checkReInfo) cmd.add("--reginfo-only");
         cmd.add("--product"); cmd.add(product);
         if (!blank(version)) { cmd.add("--version"); cmd.add(version); }
         if (!blank(regStr)) { cmd.add("--regstr"); cmd.add(regStr); }

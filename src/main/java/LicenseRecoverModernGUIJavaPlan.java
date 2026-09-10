@@ -144,6 +144,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 : (!blank(configDrivenRuntime) ? configDrivenRuntime : binaryRuntime)));
         File jar = findRegJar(lib);
         boolean packed = jar != null && isVirboxPackedJar(jar);
+        String qt401PrimaryRegStr = confirmedQt401PrimaryRegStr(root, soft, family, runtimeProduct);
         String configDrivenPrimaryRegStr = confirmedConfigDrivenPrimaryRegStr(
                 root, soft, family, configDrivenRuntime);
         String dataDrivenPrimaryRegStr = confirmedDataDrivenPrimaryRegStr(
@@ -156,6 +157,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
             products = dataRegInfo;
         } else if (classesRegInfo != null) {
             products = classesRegInfo;
+        } else if (!blank(qt401PrimaryRegStr)) {
+            products = qt401PrimaryRegStr;
         } else if (!blank(configDrivenPrimaryRegStr)) {
             products = configDrivenPrimaryRegStr;
         } else if (!blank(dataDrivenPrimaryRegStr)) {
@@ -172,7 +175,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 || directDataIdentity || !blank(confirmedClassesFamily) || binaryIdentity;
         boolean directoryRegStr = directoryMapping != null
                 || dataRegInfo != null || classesRegInfo != null
-                || !blank(configDrivenPrimaryRegStr) || !blank(dataDrivenPrimaryRegStr)
+                || !blank(qt401PrimaryRegStr) || !blank(configDrivenPrimaryRegStr) || !blank(dataDrivenPrimaryRegStr)
                 || recoveredLocalRegStr != null;
         // A missing static regInfo is not itself a reason to guess. If the target ships
         // ITMCReg and its product identity is already proven by directory evidence, the
@@ -361,6 +364,45 @@ public final class LicenseRecoverModernGUIJavaPlan {
         // Concrete runtime IDs (DS501xx/YX0305xx) must also occur as an exact token
         // in target bytecode; the occurrence in config.xml alone is intentionally insufficient.
         return hasDirectoryBinaryToken(root, lib, candidate) ? candidate.trim() : null;
+    }
+
+    /**
+     * QT401xx/RuoYi generation: config1.xml proves registration product QT401,
+     * classes/config.xml proves the concrete system id, and target startup bytecode
+     * proves classpath-root -> getRegisterMain(product,path) -> getRegInfo/RegStr.
+     */
+    static String confirmedQt401PrimaryRegStr(File root, String softId,
+                                               String confirmedFamily, String runtimeProduct) {
+        if (root == null || blank(softId) || blank(confirmedFamily) || blank(runtimeProduct)) return null;
+        String concrete = softId.trim();
+        if (!concrete.toUpperCase(Locale.ROOT).matches("QT401\d{2}")) return null;
+        if (!"QT401".equalsIgnoreCase(confirmedFamily.trim())
+                || !"QT401".equalsIgnoreCase(runtimeProduct.trim())) return null;
+        File classes = new File(root, "WEB-INF" + File.separator + "classes");
+        File config = new File(classes, "config.xml");
+        String configured = readElement(config, "SoftVersionID");
+        if (blank(configured) || !concrete.equalsIgnoreCase(configured.trim())) return null;
+        File config1 = new File(classes, "config1.xml");
+        String family = readElement(config1, "SoftVersionID");
+        if (blank(family) || !"QT401".equalsIgnoreCase(family.trim())) return null;
+        try {
+            String text = new String(Files.readAllBytes(config1.toPath()), StandardCharsets.UTF_8);
+            if (!text.contains("id="" + concrete + """) && !text.contains("id='" + concrete + "'")) return null;
+        } catch (Exception ex) { return null; }
+        File systemInfo = new File(classes, "com" + File.separator + "ruoyi" + File.separator + "web"
+                + File.separator + "register" + File.separator + "utils" + File.separator + "SystemInfo.class");
+        File initService = new File(classes, "com" + File.separator + "ruoyi" + File.separator + "web"
+                + File.separator + "controller" + File.separator + "listener" + File.separator + "service"
+                + File.separator + "SystemInitService.class");
+        File listener = new File(classes, "com" + File.separator + "ruoyi" + File.separator + "web"
+                + File.separator + "register" + File.separator + "service" + File.separator + "RegisterListener.class");
+        if (!classFileContainsAll(systemInfo, "config1.xml", "SystemSoft", "SoftVersionID", "registerId")) return null;
+        if (!classFileContainsAll(initService, "getRegisterMain", "RegeditNew", "itmcsoft",
+                "itmc/regedit/RegisterMain")) return null;
+        if (!classFileContainsAll(listener, "org/springframework/util/ClassUtils", "getDefaultClassLoader",
+                "java/lang/ClassLoader", "getResource", "java/net/URL", "getPath",
+                "getRegisterMain", "getRegInfo", "getRegStr", "ClassPid", "contains")) return null;
+        return concrete;
     }
 
     /**

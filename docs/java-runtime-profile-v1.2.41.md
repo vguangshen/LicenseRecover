@@ -11,6 +11,7 @@ This note records the runtime ABI evidence used by the Java target-native regist
 | DS3110 | `(String product, String token)` | target/default path derived by registration component | yes |
 | YT00138 | `SysParamInit.getRealPath("/") -> RegisterUtil.checkRegister(root) -> (String product, String token, String configPath)` | explicit webapp-root path; product `YT001`, RegStr `YT00138` | yes |
 | YT00129 | same wrapper/root relay and three-arg token/path ABI | explicit webapp-root path; product alias `QT04`, RegStr alias `QT0420` | yes |
+| QT40101 | `RegisterListener -> SystemInitService.getRegisterMain(product,path) -> (String product, String token, String configPath)` | classpath root (`WEB-INF/classes`); startup consumes `getRegInfo()` without `checkReInfo()`; product `QT401`, RegStr `QT40101` | no (`ITMCReg-1.0.5.jar`) |
 
 The supplied DS3110 registration component has SHA-256 `ef00e4751fcbc5ea6c100e4bbaf73f60094310d26c1894ca3906e70c73f45cfa`, identical to the DS2802 `ITMCReg.jar` sample. Its two-argument constructor derives the configuration directory from the registration class CodeSource, so the isolated host must preserve the original JAR CodeSource when restoring protected classes in memory.
 
@@ -27,3 +28,8 @@ YT00138 falls through the application's own registration mapping to product `YT0
 The branch smoke suite separately asserts this alias invariant: a persisted `QT0420` satisfies the YT00129 startup mapping even though the literal SoftVersionID `YT00129` is not present in that RegStr.
 
 The supplied YT00129 archive is WEB-INF-only and does not itself provide the site-root `systemConfig.yml`/config identity. Production detection remains fail-closed in that incomplete layout; tests may only add `YT00129` root identity as an explicit fixture when modelling the missing deployment root.
+
+
+## QT40101 classpath-root generation
+
+The supplied QT40101 sample stores registration XML under `WEB-INF/classes/config.xml`. `config1.xml` proves registration product `QT401` while the concrete system is `QT40101`. Startup obtains the exploded classpath root with `ClassUtils.getDefaultClassLoader().getResource("").getPath()`, passes that path through `SystemInitService.getRegisterMain(product,path)`, and then consumes `RegisterMain.getRegInfo().getRegStr()`; this startup path does not call `RegisterMain.checkReInfo()`. The target-native verifier therefore mirrors RegInfo-only validation for this proven profile rather than forcing an API the application does not use at startup.
