@@ -11,6 +11,8 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -50,6 +52,29 @@ public final class RefactorSmokeTest {
 
         check("fwq".equals(LicenseRecover.LOCAL_AUTH_USER_ID),
                 "local authorization UserID fixed to fwq");
+        Set<String> oneDefault = new LinkedHashSet<String>(Arrays.asList(JavaRegistrationRuntimeProfile.D1));
+        Set<String> legacyPath = new LinkedHashSet<String>(Arrays.asList(JavaRegistrationRuntimeProfile.D2));
+        Set<String> modernRoot = new LinkedHashSet<String>(Arrays.asList(JavaRegistrationRuntimeProfile.D3));
+        Set<String> modernRootFallback = new LinkedHashSet<String>(Arrays.asList(JavaRegistrationRuntimeProfile.D3, JavaRegistrationRuntimeProfile.D2));
+        Set<String> modernDefault = new LinkedHashSet<String>(Arrays.asList(JavaRegistrationRuntimeProfile.D2));
+        check(JavaRegistrationRuntimeProfile.chooseModes(false, oneDefault, false).get(0)
+                        == JavaRegistrationRuntimeProfile.Mode.ONE_ARG_DEFAULT,
+                "DS50109-style startup keeps legacy one-arg target-default constructor");
+        check(JavaRegistrationRuntimeProfile.chooseModes(false, legacyPath, true).get(0)
+                        == JavaRegistrationRuntimeProfile.Mode.TWO_ARG_PATH,
+                "DS2406-style startup keeps legacy two-arg explicit root path");
+        check(JavaRegistrationRuntimeProfile.chooseModes(true, modernRoot, true).get(0)
+                        == JavaRegistrationRuntimeProfile.Mode.THREE_ARG_TOKEN_PATH,
+                "QT30103-style startup keeps modern three-arg token/root constructor");
+        List<JavaRegistrationRuntimeProfile.Mode> ds28Modes =
+                JavaRegistrationRuntimeProfile.chooseModes(true, modernRootFallback, true);
+        check(ds28Modes.size() == 2
+                        && ds28Modes.get(0) == JavaRegistrationRuntimeProfile.Mode.THREE_ARG_TOKEN_PATH
+                        && ds28Modes.get(1) == JavaRegistrationRuntimeProfile.Mode.TWO_ARG_TOKEN_DEFAULT,
+                "DS2802-style startup preserves explicit-root then default-path fallback order");
+        check(JavaRegistrationRuntimeProfile.chooseModes(true, modernDefault, false).get(0)
+                        == JavaRegistrationRuntimeProfile.Mode.TWO_ARG_TOKEN_DEFAULT,
+                "DS3110-style startup keeps modern two-arg target-default constructor");
         check("YT001".equals(LegacyJavaRegistrationMetadata.selectFallbackPrefix(
                         Arrays.asList("QT1001", "DS26", "YT001", "YT00129"), "YT00138")),
                 "legacy runtime family is derived from target RegisterUtil constants");

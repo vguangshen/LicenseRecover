@@ -9,13 +9,20 @@ import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.Permission;
+import java.security.CodeSource;
+import java.security.ProtectionDomain;
+import java.security.cert.Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.List;
 import java.util.Locale;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 
 /**
  * Isolated Java registration host.
@@ -39,6 +46,7 @@ public final class LicenseRecoverJavaHost {
         String regStr;
         String seq;
         String code;
+        String ctorMode;
     }
 
     static final class TargetRuntime implements AutoCloseable {
@@ -58,7 +66,18 @@ public final class LicenseRecoverJavaHost {
 
     /** Prefer every target-owned dependency over the tool's bundled compatibility jars. */
     static final class ChildFirstLoader extends URLClassLoader {
-        ChildFirstLoader(URL[] urls, ClassLoader parent) { super(urls, parent); }
+        final Map<String, byte[]> restoredRegistrationClasses;
+        final ProtectionDomain restoredRegistrationDomain;
+
+        ChildFirstLoader(URL[] urls, ClassLoader parent, Map<String, byte[]> restoredRegistrationClasses,
+                         File originalRegistrationJar) throws Exception {
+            super(urls, parent);
+            this.restoredRegistrationClasses = restoredRegistrationClasses == null
+                    ? Collections.<String, byte[]>emptyMap() : restoredRegistrationClasses;
+            this.restoredRegistrationDomain = originalRegistrationJar == null ? null
+                    : new ProtectionDomain(new CodeSource(originalRegistrationJar.toURI().toURL(),
+                    (Certificate[]) null), null, this, null);
+        }
 
         protected synchronized Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
             if (parentFirst(name)) return super.loadClass(name, resolve);
@@ -69,6 +88,22 @@ public final class LicenseRecoverJavaHost {
             }
             if (resolve) resolveClass(loaded);
             return loaded;
+        }
+
+        protected Class<?> findClass(String name) throws ClassNotFoundException {
+            byte[] restored = restoredRegistrationClasses.get(name);
+            if (restored != null) {
+                int split = name.lastIndexOf('.');
+                if (split > 0) {
+                    String pkg = name.substring(0, split);
+                    if (getPackage(pkg) == null) {
+                        try { definePackage(pkg, null, null, null, null, null, null, null); }
+                        catch (IllegalArgumentException ignore) { }
+                    }
+                }
+                return defineClass(name, restored, 0, restored.length, restoredRegistrationDomain);
+            }
+            return super.findClass(name);
         }
 
         private static boolean parentFirst(String name) {
@@ -136,11 +171,14 @@ public final class LicenseRecoverJavaHost {
             else if ("--regstr".equals(a) && i + 1 < args.length) o.regStr = normalizeCsv(args[++i]);
             else if ("--seq".equals(a) && i + 1 < args.length) o.seq = args[++i];
             else if ("--code".equals(a) && i + 1 < args.length) o.code = args[++i];
+            else if ("--ctor".equals(a) && i + 1 < args.length) o.ctorMode = args[++i];
             else throw new IllegalArgumentException("unknown/missing option: " + a);
         }
         if (!o.appRoot.isDirectory()) throw new IllegalArgumentException("appRoot not found: " + o.appRoot);
         if (!o.runtimeDir.isDirectory()) throw new IllegalArgumentException("runtimeDir not found: " + o.runtimeDir);
         if (blank(o.product)) throw new IllegalArgumentException("--product is required");
+        if (blank(o.ctorMode)) throw new IllegalArgumentException("--ctor is required; constructor guessing is disabled");
+        JavaRegistrationRuntimeProfile.Mode.fromCli(o.ctorMode);
         if (o.baseDir == null) o.baseDir = o.appRoot;
         if (!o.baseDir.isDirectory()) throw new IllegalArgumentException("registration base not found: " + o.baseDir);
         return o;
@@ -161,47 +199,65 @@ public final class LicenseRecoverJavaHost {
 
     static TargetRuntime openTarget(File appRoot, File runtimeDir) throws Exception {
         ArrayList<URL> urls = new ArrayList<URL>();
-        File unpack = null;
         File[] jars = runtimeDir.listFiles();
         if (jars == null) jars = new File[0];
         Arrays.sort(jars, new Comparator<File>() {
             public int compare(File a, File b) { return a.getName().compareToIgnoreCase(b.getName()); }
         });
 
-        for (File jar : jars) {
-            if (!jar.isFile() || !jar.getName().toLowerCase(Locale.ROOT).endsWith(".jar")) continue;
-            if (!jar.getName().toLowerCase(Locale.ROOT).contains("itmcreg")) continue;
-            try {
-                if (NetRemover.jarIsPacked(jar)) {
-                    Path temp = Files.createTempDirectory("lrc-java-target-unpack-");
-                    unpack = temp.toFile();
-                    int count = NetRemover.unpackPackedJar(jar, unpack);
-                    if (count <= 0) throw new IOException("packed ITMCReg jar produced no restored classes: " + jar.getName());
-                    urls.add(unpack.toURI().toURL());
-                    System.out.println("[java-host] restored packed target registration classes=" + count + " from " + jar.getName());
-                    break;
-                }
-            } catch (Throwable ex) {
-                deleteRecursive(unpack);
-                throw new IOException("failed to prepare packed target registration jar " + jar.getName(), ex);
-            }
+        File registrationJar = JavaRegistrationRuntimeProfile.findRegistrationJar(runtimeDir);
+        Map<String, byte[]> restored = Collections.emptyMap();
+        if (registrationJar != null && NetRemover.jarIsPacked(registrationJar)) {
+            restored = loadRestoredRegistrationClasses(registrationJar);
+            System.out.println("[java-host] restored packed target registration classes=" + restored.size()
+                    + " with original CodeSource=" + registrationJar.getAbsolutePath());
         }
 
-        File classes = new File(appRoot, "WEB-INF" + File.separator + "classes");
-        if (classes.isDirectory()) urls.add(classes.toURI().toURL());
+        File classes = JavaRegistrationRuntimeProfile.findClassesDir(appRoot);
+        if (classes != null && classes.isDirectory()) urls.add(classes.toURI().toURL());
         for (File jar : jars) {
             if (jar.isFile() && jar.getName().toLowerCase(Locale.ROOT).endsWith(".jar"))
                 urls.add(jar.toURI().toURL());
         }
         ClassLoader platformParent = ClassLoader.getSystemClassLoader().getParent();
-        ChildFirstLoader loader = new ChildFirstLoader(urls.toArray(new URL[urls.size()]), platformParent);
+        ChildFirstLoader loader = new ChildFirstLoader(urls.toArray(new URL[urls.size()]), platformParent,
+                restored, registrationJar);
         Thread.currentThread().setContextClassLoader(loader);
         System.out.println("[java-host] target classloader=child-first/platform-parent; target URLs=" + urls.size());
-        return new TargetRuntime(loader, unpack);
+        return new TargetRuntime(loader, null);
+    }
+
+    static Map<String, byte[]> loadRestoredRegistrationClasses(File jar) throws Exception {
+        byte[] key = NetRemover.loadKeystream();
+        if (key == null) throw new IOException("missing virbox_keystream.bin for packed target registration jar");
+        LinkedHashMap<String, byte[]> out = new LinkedHashMap<String, byte[]>();
+        JarFile jf = new JarFile(jar);
+        try {
+            java.util.Enumeration<JarEntry> entries = jf.entries();
+            while (entries.hasMoreElements()) {
+                JarEntry e = entries.nextElement();
+                if (e.isDirectory() || !e.getName().endsWith(".class")) continue;
+                java.io.InputStream in = jf.getInputStream(e);
+                byte[] bytes;
+                try {
+                    java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                    byte[] buf = new byte[8192];
+                    int n;
+                    while ((n = in.read(buf)) >= 0) bos.write(buf, 0, n);
+                    bytes = bos.toByteArray();
+                } finally { in.close(); }
+                if (NetRemover.isPacked(bytes)) {
+                    bytes = NetRemover.unpackVirbox(bytes, key);
+                    if (bytes == null) throw new IOException("Virbox restore failed: " + e.getName());
+                }
+                out.put(e.getName().substring(0, e.getName().length() - 6).replace('/', '.'), bytes);
+            }
+        } finally { jf.close(); }
+        return out;
     }
 
     static int probe(TargetRuntime rt, Options o) throws Exception {
-        Object reg = newRegisterMain(rt.loader, o.product, o.baseDir);
+        Object reg = newRegisterMain(rt.loader, o.product, o.baseDir, o.ctorMode);
         Object info = invokeOptionalNoArg(reg, "getRegInfo");
         String regStr = normalizeCsv(stringGetter(info, "getRegStr"));
         String proName = stringGetter(info, "getProName");
@@ -250,7 +306,7 @@ public final class LicenseRecoverJavaHost {
 
     static int doreg(TargetRuntime rt, Options o) throws Exception {
         if (blank(o.seq) || blank(o.code)) throw new IllegalArgumentException("--seq and --code are required for doreg");
-        Object reg = newRegisterMain(rt.loader, o.product, o.baseDir);
+        Object reg = newRegisterMain(rt.loader, o.product, o.baseDir, o.ctorMode);
         Method method = findStringPairMethod(reg.getClass(), "doRegistry");
         if (method == null) throw new NoSuchMethodException("target RegisterMain has no doRegistry(String,String); methods="
                 + methodSummary(reg.getClass(), "doRegistry"));
@@ -258,6 +314,8 @@ public final class LicenseRecoverJavaHost {
         Object result;
         try { result = method.invoke(reg, o.seq, o.code); }
         catch (InvocationTargetException ex) { throw rethrow(ex); }
+        if (result instanceof Boolean && !((Boolean) result).booleanValue())
+            throw new IllegalStateException("target RegisterMain.doRegistry() returned false");
         System.out.println("[java-stage] DOREG native-return=" + String.valueOf(result));
         System.out.println("TARGET_BASE=" + canonical(o.baseDir));
         System.out.println("RESULT: OK");
@@ -265,7 +323,7 @@ public final class LicenseRecoverJavaHost {
     }
 
     static int verify(TargetRuntime rt, Options o) throws Exception {
-        Object reg = newRegisterMain(rt.loader, o.product, o.baseDir);
+        Object reg = newRegisterMain(rt.loader, o.product, o.baseDir, o.ctorMode);
         Method check = findNoArgMethod(reg.getClass(), "checkReInfo");
         if (check == null) throw new NoSuchMethodException("target RegisterMain has no checkReInfo()");
         check.setAccessible(true);
@@ -294,15 +352,39 @@ public final class LicenseRecoverJavaHost {
         return 0;
     }
 
-    static Object newRegisterMain(ClassLoader loader, String product, File baseDir) throws Exception {
+    static Object newRegisterMain(ClassLoader loader, String product, File baseDir, String ctorMode) throws Exception {
+        JavaRegistrationRuntimeProfile.Mode mode = JavaRegistrationRuntimeProfile.Mode.fromCli(ctorMode);
+        Class<?> rm = Class.forName("itmc.regedit.RegisterMain", true, loader);
+        String path = withSeparator(baseDir);
+        if (mode == JavaRegistrationRuntimeProfile.Mode.ONE_ARG_DEFAULT) {
+            Constructor<?> c = rm.getConstructor(String.class);
+            return construct(c, product);
+        }
+        if (mode == JavaRegistrationRuntimeProfile.Mode.TWO_ARG_PATH) {
+            Constructor<?> c = rm.getConstructor(String.class, String.class);
+            return construct(c, product, path);
+        }
+
         Class<?> codeClass = Class.forName("itmc.regedit.GetRegisterCode", true, loader);
         Object codeHelper = newInstance(codeClass);
         String token = str(invoke(codeHelper, "encrypt",
                 new Class<?>[]{String.class, String.class},
                 new Object[]{product + "RegeditNew", "itmcsoft"}));
-        Class<?> rm = Class.forName("itmc.regedit.RegisterMain", true, loader);
-        String path = withSeparator(baseDir);
-        return instantiateRegisterMainCompatible(rm, product, token, path);
+        if (blank(token)) throw new IllegalStateException("target GetRegisterCode could not build RegisterMain token");
+        if (mode == JavaRegistrationRuntimeProfile.Mode.TWO_ARG_TOKEN_DEFAULT) {
+            Constructor<?> c = rm.getConstructor(String.class, String.class);
+            return construct(c, product, token);
+        }
+        if (mode == JavaRegistrationRuntimeProfile.Mode.THREE_ARG_TOKEN_PATH) {
+            Constructor<?> c = rm.getConstructor(String.class, String.class, String.class);
+            return construct(c, product, token, path);
+        }
+        throw new IllegalArgumentException("unsupported constructor mode: " + mode);
+    }
+
+    static Object construct(Constructor<?> c, Object... args) throws Exception {
+        try { return c.newInstance(args); }
+        catch (InvocationTargetException ex) { throw rethrow(ex); }
     }
 
     static Object instantiateRegisterMainCompatible(Class<?> rm, String product, String token, String path) throws Exception {

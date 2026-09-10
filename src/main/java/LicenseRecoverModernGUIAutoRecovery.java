@@ -106,31 +106,34 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (blank(plan.runtimeProductId))
             return Result.fail("[JAVA_CHAIN] 目标目录未确认运行注册ID。", d);
 
+        JavaRegistrationRuntimeProfile runtimeProfile = JavaRegistrationRuntimeProfile.inspect(d.appRoot, d.runtimeDir);
+        log.accept(runtimeProfile.logSummary());
+        if (!runtimeProfile.supported)
+            return Result.fail("[JAVA_RUNTIME_ABI] " + runtimeProfile.failureReason + "。未修改任何文件。", d);
+        List<JavaRegistrationRuntimeProfile.Attempt> attempts = runtimeProfile.attempts;
+
         String product = plan.runtimeProductId.trim();
         String version = blank(plan.softVersionId) ? d.versionId : plan.softVersionId.trim();
-        List<File> bases = javaRegistrationBases(d, plan);
-        if (bases.isEmpty()) return Result.fail("[JAVA_CHAIN] 未找到可用的目标注册配置基目录。", d);
-
         log.accept("[java-chain] target-native isolated helper; product=" + product
-                + " version=" + valueOrPending(version) + " candidates=" + javaBaseSummary(bases) + "\n");
+                + " version=" + valueOrPending(version) + " runtime=" + runtimeProfile.evidence + "\n");
         log.accept("[java-chain] helper system classpath=tool-only; target WEB-INF/classes/lib are child-first isolated\n");
 
         String regStr = normalizeProductCsv(plan.regStr);
         if (blank(regStr)) {
-            for (File base : bases) {
-                log.accept("[java-stage] PROBE: start base=" + base.getAbsolutePath() + "\n");
-                NativeProcessResult probed = runJavaHost(d, "probe", base, product, version,
+            for (JavaRegistrationRuntimeProfile.Attempt attempt : attempts) {
+                log.accept("[java-stage] PROBE: start ctor=" + attempt.summary() + "\n");
+                NativeProcessResult probed = runJavaHost(d, "probe", attempt, product, version,
                         null, null, null, log);
                 if (probed.exitCode != 0) {
-                    log.accept("[java-stage] PROBE: rejected base=" + base.getAbsolutePath()
+                    log.accept("[java-stage] PROBE: rejected ctor=" + attempt.summary()
                             + " output=" + compactNativeOutput(probed.output) + "\n");
                     continue;
                 }
                 String candidate = normalizeProductCsv(firstValue(probed.output, "TARGET_REGSTR="));
                 if (blank(candidate)) continue;
                 if (!blank(version) && !containsRegStrToken(candidate, version)) {
-                    log.accept("[java-stage] PROBE: RegStr missing current SoftVersionID at "
-                            + base.getAbsolutePath() + ": " + candidate + "\n");
+                    log.accept("[java-stage] PROBE: RegStr missing current SoftVersionID at ctor="
+                            + attempt.summary() + ": " + candidate + "\n");
                     continue;
                 }
                 regStr = candidate;
@@ -144,9 +147,9 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             return Result.fail("[JAVA_MODE] 当前 SoftVersionID 未进入 RegStr: " + version + "; RegStr=" + regStr, d);
         log.accept("[java-mode] current SoftVersionID=" + valueOrPending(version) + " RegStr=" + regStr + "\n");
 
-        File codeBase = bases.get(0);
+        JavaRegistrationRuntimeProfile.Attempt primary = attempts.get(0);
         log.accept("[java-stage] GENCODE: start\n");
-        NativeProcessResult generated = runJavaHost(d, "gencode", codeBase, product, version,
+        NativeProcessResult generated = runJavaHost(d, "gencode", primary, product, version,
                 regStr, null, null, log);
         if (generated.exitCode != 0)
             throw nativeFailure("JAVA_GENCODE", "target-native request/auth generation failed", generated);
@@ -167,36 +170,46 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         LinkedHashMap<File, byte[]> originals = snapshotJavaRegistrationFiles(d);
         if (backup) backupJavaRegistrationFiles(originals, log);
         IOException lastFailure = null;
-        for (int i = 0; i < bases.size(); i++) {
-            File base = bases.get(i);
+        for (int i = 0; i < attempts.size(); i++) {
+            JavaRegistrationRuntimeProfile.Attempt writeAttempt = attempts.get(i);
             if (i > 0) restoreJavaRegistrationFiles(originals, log);
             try {
-                log.accept("[java-stage] DOREG: start base=" + base.getAbsolutePath() + "\n");
-                NativeProcessResult applied = runJavaHost(d, "doreg", base, product, version,
+                log.accept("[java-stage] DOREG: start ctor=" + writeAttempt.summary() + "\n");
+                NativeProcessResult applied = runJavaHost(d, "doreg", writeAttempt, product, version,
                         regStr, request, auth, log);
                 if (applied.exitCode != 0)
-                    throw nativeFailure("JAVA_DOREG", "target RegisterMain.doRegistry() failed for base="
-                            + base.getAbsolutePath(), applied);
-                log.accept("[java-stage] DOREG: OK base=" + base.getAbsolutePath() + "\n");
+                    throw nativeFailure("JAVA_DOREG", "target RegisterMain.doRegistry() failed for ctor="
+                            + writeAttempt.summary(), applied);
+                log.accept("[java-stage] DOREG: OK ctor=" + writeAttempt.summary() + "\n");
 
                 if (blockNet) blockJavaAuthorizationConfigs(d, log);
 
-                // A new helper JVM and target ClassLoader are mandatory here. This
-                // rejects static-cache successes that disappear when Tomcat starts cleanly.
-                log.accept("[java-stage] VERIFY_FRESH: start base=" + base.getAbsolutePath() + "\n");
-                NativeProcessResult checked = runJavaHost(d, "verify", base, product, version,
-                        regStr, null, null, log);
-                if (checked.exitCode != 0)
-                    throw nativeFailure("JAVA_VERIFY", "fresh target RegisterMain.checkReInfo() rejected write-back for base="
-                            + base.getAbsolutePath(), checked);
+                // Re-run the exact startup constructor sequence in fresh JVMs. For
+                // generations such as DS28, Tomcat itself tries explicit-root first and
+                // target-default-path second; only those proven call-site modes are allowed.
+                NativeProcessResult checked = null;
+                JavaRegistrationRuntimeProfile.Attempt verifiedAttempt = null;
+                for (JavaRegistrationRuntimeProfile.Attempt verifyAttempt : attempts) {
+                    log.accept("[java-stage] VERIFY_FRESH: start ctor=" + verifyAttempt.summary() + "\n");
+                    checked = runJavaHost(d, "verify", verifyAttempt, product, version,
+                            regStr, null, null, log);
+                    if (checked.exitCode == 0) {
+                        verifiedAttempt = verifyAttempt;
+                        break;
+                    }
+                    log.accept("[java-stage] VERIFY_FRESH: rejected ctor=" + verifyAttempt.summary()
+                            + " output=" + compactNativeOutput(checked.output) + "\n");
+                }
+                if (verifiedAttempt == null)
+                    throw nativeFailure("JAVA_VERIFY", "fresh target startup constructor sequence rejected write-back", checked);
                 String persisted = normalizeProductCsv(firstValue(checked.output, "TARGET_REGSTR="));
                 if (blank(persisted) || (!blank(version) && !containsRegStrToken(persisted, version)))
                     throw new IOException("[JAVA_MODE_VERIFY] fresh verifier did not expose current SoftVersionID; RegStr="
                             + valueOrPending(persisted));
-                log.accept("[java-stage] VERIFY_FRESH: OK base=" + base.getAbsolutePath()
+                log.accept("[java-stage] VERIFY_FRESH: OK ctor=" + verifiedAttempt.summary()
                         + " persisted RegStr=" + persisted + "\n");
                 return new Result(true,
-                        "Java local authorization was applied through the target-native registration chain and passed a fresh-JVM self-check. Restart Tomcat.",
+                        "Java local authorization was applied through the target-native registration chain and passed the target startup constructor sequence in a fresh JVM. Restart Tomcat.",
                         d, machine, request, auth);
             } catch (IOException ex) {
                 lastFailure = ex;
@@ -206,7 +219,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
 
         restoreJavaRegistrationFiles(originals, log);
         if (lastFailure != null) throw lastFailure;
-        throw new IOException("[JAVA_CHAIN] no registration base completed target-native write-back + fresh verification");
+        throw new IOException("[JAVA_CHAIN] no runtime-derived registration constructor completed write-back + fresh verification");
     }
 
     static String buildJavaRecoveryClasspath(File toolDir, File runtimeDir) {
@@ -216,7 +229,8 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         return LicenseRecover.toolRuntimeClasspath(toolDir);
     }
 
-    private static NativeProcessResult runJavaHost(Detection d, String mode, File base,
+    private static NativeProcessResult runJavaHost(Detection d, String mode,
+                                                    JavaRegistrationRuntimeProfile.Attempt attempt,
                                                     String product, String version, String regStr,
                                                     String request, String auth, Consumer<String> log) throws Exception {
         ArrayList<String> cmd = new ArrayList<String>();
@@ -228,7 +242,11 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         cmd.add(mode);
         cmd.add(d.appRoot.getAbsolutePath());
         cmd.add(d.runtimeDir.getAbsolutePath());
-        cmd.add("--base"); cmd.add(base.getAbsolutePath());
+        if (attempt != null && attempt.baseDir != null) {
+            cmd.add("--base"); cmd.add(attempt.baseDir.getAbsolutePath());
+        }
+        if (attempt == null) throw new IllegalArgumentException("Java runtime constructor attempt is required");
+        cmd.add("--ctor"); cmd.add(attempt.mode.cliName);
         cmd.add("--product"); cmd.add(product);
         if (!blank(version)) { cmd.add("--version"); cmd.add(version); }
         if (!blank(regStr)) { cmd.add("--regstr"); cmd.add(regStr); }

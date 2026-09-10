@@ -255,6 +255,7 @@ $coreSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecover
 $planSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUIJavaPlan.java') -Raw
 $autoSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUIAutoRecovery.java') -Raw
 $javaHostSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverJavaHost.java') -Raw
+$javaRuntimeProfileSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'JavaRegistrationRuntimeProfile.java') -Raw
 $legacyNetSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LegacyDotNetProtocol.java') -Raw
 $legacyGuiSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverGUI.java') -Raw
 $modernGuiSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUI.java') -Raw
@@ -305,7 +306,10 @@ if ($javaPlanSource.Contains('return "QT40101"')) { throw 'Java plan still synth
 if (-not $javaPlanSource.Contains('No product-family/runtime-id guessing here')) { throw 'Strict Java directory identity marker missing.' }
 
 if (-not $javaHostSource.Contains('class ChildFirstLoader') -or -not $javaHostSource.Contains('checkConnect(String host, int port)')) { throw 'Java target-native isolated host/network guard is missing.' }
-if (-not $autoSource.Contains('[java-stage] VERIFY_FRESH: start') -or -not $autoSource.Contains('LicenseRecoverJavaHost')) { throw 'Java one-click is not wired to fresh-JVM target-native verification.' }
+if (-not $javaHostSource.Contains('ProtectionDomain') -or -not $javaHostSource.Contains('NetRemover.unpackVirbox')) { throw 'Packed Java registration host does not preserve original target CodeSource.' }
+if (-not $javaHostSource.Contains('target RegisterMain.doRegistry() returned false')) { throw 'Java native doRegistry false-return guard is missing.' }
+if (-not $javaRuntimeProfileSource.Contains('RegisterMain') -or -not $javaRuntimeProfileSource.Contains('checkReInfo') -or -not $javaRuntimeProfileSource.Contains('getRealPath')) { throw 'Java startup constructor ABI profile is incomplete.' }
+if (-not $autoSource.Contains('JavaRegistrationRuntimeProfile.inspect') -or -not $autoSource.Contains('[java-stage] VERIFY_FRESH: start')) { throw 'Java one-click is not wired to runtime-derived fresh-JVM verification.' }
 if ($autoSource.Contains('runtimeDir.getAbsolutePath() + File.separator + "*";')) { throw 'Java helper system classpath still contains target jars.' }
 
 Write-Host 'Building deterministic runtime overlay...'
@@ -318,6 +322,7 @@ $classPrefixes = @(
     'ConfigSafety',
     'LicenseRecoverModernGUI',
     'LicenseRecoverJavaHost',
+    'JavaRegistrationRuntimeProfile',
     'OperationResult',
     'PatchSafety',
     'ProcessRunner',
@@ -378,6 +383,9 @@ if ($overlayEntries -notcontains 'LicenseRecoverModernGUIAutoRecovery.class') {
 }
 if ($overlayEntries -notcontains 'LicenseRecoverJavaHost.class') {
     throw 'Overlay is missing LicenseRecoverJavaHost.class; Java target-native recovery cannot run.'
+}
+if ($overlayEntries -notcontains 'JavaRegistrationRuntimeProfile.class') {
+    throw 'Overlay is missing JavaRegistrationRuntimeProfile.class; Tomcat constructor ABI detection cannot run.'
 }
 
 Write-Host 'Assembling application-only distribution...'
