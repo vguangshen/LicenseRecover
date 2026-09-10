@@ -1,4 +1,3 @@
-import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.File;
 import java.io.IOException;
@@ -24,8 +23,6 @@ import java.util.jar.JarFile;
  * mirror Tomcat's real constructor generation without executing protected startup code.
  */
 public final class JavaRegistrationRuntimeProfile {
-    private JavaRegistrationRuntimeProfile() { }
-
     static final String D1 = "(Ljava/lang/String;)V";
     static final String D2 = "(Ljava/lang/String;Ljava/lang/String;)V";
     static final String D3 = "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V";
@@ -312,7 +309,10 @@ public final class JavaRegistrationRuntimeProfile {
 
         ClassRefs(int[] tags, int[] a, int[] b, String[] utf,
                   LinkedHashSet<String> declaredConstructorDescriptors) {
-            this.tags = tags; this.a = a; this.b = b; this.utf = utf;
+            this.tags = tags;
+            this.a = a;
+            this.b = b;
+            this.utf = utf;
             this.declaredConstructorDescriptors = declaredConstructorDescriptors;
         }
 
@@ -320,30 +320,59 @@ public final class JavaRegistrationRuntimeProfile {
             if (data == null || data.length < 10) throw new IOException("short class file");
             Cursor c = new Cursor(data);
             if (c.u4() != 0xCAFEBABEL) throw new IOException("bad class magic");
-            c.u2(); c.u2();
+            c.u2();
+            c.u2();
             int count = c.u2();
-            int[] tags = new int[count], a = new int[count], b = new int[count];
+            int[] tags = new int[count];
+            int[] a = new int[count];
+            int[] b = new int[count];
             String[] utf = new String[count];
             for (int i = 1; i < count; i++) {
-                int tag = c.u1(); tags[i] = tag;
+                int tag = c.u1();
+                tags[i] = tag;
                 switch (tag) {
                     case 1: {
                         int n = c.u2();
                         utf[i] = new String(c.bytes(n), StandardCharsets.UTF_8);
                         break;
                     }
-                    case 3: case 4: c.skip(4); break;
-                    case 5: case 6: c.skip(8); i++; break;
-                    case 7: case 8: case 16: case 19: case 20: a[i] = c.u2(); break;
-                    case 9: case 10: case 11: case 12: case 17: case 18:
-                        a[i] = c.u2(); b[i] = c.u2(); break;
-                    case 15: a[i] = c.u1(); b[i] = c.u2(); break;
-                    default: throw new IOException("unsupported constant-pool tag " + tag);
+                    case 3:
+                    case 4:
+                        c.skip(4);
+                        break;
+                    case 5:
+                    case 6:
+                        c.skip(8);
+                        i++;
+                        break;
+                    case 7:
+                    case 8:
+                    case 16:
+                    case 19:
+                    case 20:
+                        a[i] = c.u2();
+                        break;
+                    case 9:
+                    case 10:
+                    case 11:
+                    case 12:
+                    case 17:
+                    case 18:
+                        a[i] = c.u2();
+                        b[i] = c.u2();
+                        break;
+                    case 15:
+                        a[i] = c.u1();
+                        b[i] = c.u2();
+                        break;
+                    default:
+                        throw new IOException("unsupported constant-pool tag " + tag);
                 }
             }
             c.skip(6);
-            int interfaces = c.u2(); c.skip(interfaces * 2);
-            skipMembers(c); // fields
+            int interfaces = c.u2();
+            c.skip(interfaces * 2);
+            skipMembers(c);
             int methods = c.u2();
             LinkedHashSet<String> declared = new LinkedHashSet<String>();
             for (int i = 0; i < methods; i++) {
@@ -386,17 +415,21 @@ public final class JavaRegistrationRuntimeProfile {
             if (classIndex <= 0 || classIndex >= tags.length || tags[classIndex] != 7) return null;
             return value(utf, a[classIndex]);
         }
+
         private String natName(int natIndex) {
             if (natIndex <= 0 || natIndex >= tags.length || tags[natIndex] != 12) return null;
             return value(utf, a[natIndex]);
         }
+
         private String natDesc(int natIndex) {
             if (natIndex <= 0 || natIndex >= tags.length || tags[natIndex] != 12) return null;
             return value(utf, b[natIndex]);
         }
+
         private static String value(String[] values, int index) {
             return index > 0 && index < values.length ? values[index] : null;
         }
+
         private static void skipMembers(Cursor c) throws IOException {
             int count = c.u2();
             for (int i = 0; i < count; i++) {
@@ -405,12 +438,13 @@ public final class JavaRegistrationRuntimeProfile {
                 skipAttributes(c, attrs);
             }
         }
+
         private static void skipAttributes(Cursor c, int count) throws IOException {
             for (int i = 0; i < count; i++) {
                 c.u2();
                 long n = c.u4();
                 if (n > Integer.MAX_VALUE) throw new IOException("oversized class attribute");
-                c.skip((int)n);
+                c.skip((int) n);
             }
         }
     }
@@ -418,13 +452,49 @@ public final class JavaRegistrationRuntimeProfile {
     static final class Cursor {
         final byte[] data;
         int p;
-        Cursor(byte[] data) { this.data = data; }
-        int u1() throws IOException { need(1); return data[p++] & 255; }
-        int u2() throws IOException { need(2); int v = ((data[p] & 255) << 8) | (data[p + 1] & 255); p += 2; return v; }
-        long u4() throws IOException { need(4); long v = ((long)(data[p] & 255) << 24) | ((long)(data[p + 1] & 255) << 16)
-                | ((long)(data[p + 2] & 255) << 8) | (long)(data[p + 3] & 255); p += 4; return v; }
-        byte[] bytes(int n) throws IOException { need(n); byte[] out = new byte[n]; System.arraycopy(data, p, out, 0, n); p += n; return out; }
-        void skip(int n) throws IOException { if (n < 0) throw new IOException("negative skip"); need(n); p += n; }
-        void need(int n) throws IOException { if (p + n > data.length) throw new IOException("truncated class file"); }
+
+        Cursor(byte[] data) {
+            this.data = data;
+        }
+
+        int u1() throws IOException {
+            need(1);
+            return data[p++] & 255;
+        }
+
+        int u2() throws IOException {
+            need(2);
+            int v = ((data[p] & 255) << 8) | (data[p + 1] & 255);
+            p += 2;
+            return v;
+        }
+
+        long u4() throws IOException {
+            need(4);
+            long v = ((long) (data[p] & 255) << 24)
+                    | ((long) (data[p + 1] & 255) << 16)
+                    | ((long) (data[p + 2] & 255) << 8)
+                    | (long) (data[p + 3] & 255);
+            p += 4;
+            return v;
+        }
+
+        byte[] bytes(int n) throws IOException {
+            need(n);
+            byte[] out = new byte[n];
+            System.arraycopy(data, p, out, 0, n);
+            p += n;
+            return out;
+        }
+
+        void skip(int n) throws IOException {
+            if (n < 0) throw new IOException("negative skip");
+            need(n);
+            p += n;
+        }
+
+        void need(int n) throws IOException {
+            if (p + n > data.length) throw new IOException("truncated class file");
+        }
     }
 }
