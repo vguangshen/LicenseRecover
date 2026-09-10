@@ -24,4 +24,6 @@ The supplied YT00138 and YT00129 WEB-INF samples use the same packed `ITMCReg.ja
 
 YT00138 falls through the application's own registration mapping to product `YT001` with required startup membership token `YT00138`. YT00129 is different: its application mapping selects product `QT04` and required registration token `QT0420`. Consequently Java persistence verification must preserve the target-proven RegStr token(s), not globally require the current SoftVersionID to appear inside RegStr.
 
+The branch smoke suite separately asserts this alias invariant: a persisted `QT0420` satisfies the YT00129 startup mapping even though the literal SoftVersionID `YT00129` is not present in that RegStr.
+
 The supplied YT00129 archive is WEB-INF-only and does not itself provide the site-root `systemConfig.yml`/config identity. Production detection remains fail-closed in that incomplete layout; tests may only add `YT00129` root identity as an explicit fixture when modelling the missing deployment root.
