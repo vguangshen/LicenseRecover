@@ -118,7 +118,7 @@ public final class JavaRegistrationRuntimeProfile {
             if (modern) {
                 if (best.ctorDescriptors.contains(D3)) {
                     if (!rootEvidence)
-                        return fail(jar, "启动类使用 3 参 RegisterMain，但未证明 ServletContext.getRealPath("/") 根路径: " + best.relativePath);
+                        return fail(jar, "启动类使用 3 参 RegisterMain，但未证明 ServletContext.getRealPath(\"/\") 根路径: " + best.relativePath);
                     attempts.add(new Attempt(Mode.THREE_ARG_TOKEN_PATH, root, best.relativePath));
                 }
                 // A proven wrapper relay has a non-empty root argument, so its internal
@@ -131,7 +131,7 @@ public final class JavaRegistrationRuntimeProfile {
             } else {
                 if (best.ctorDescriptors.contains(D2)) {
                     if (!rootEvidence)
-                        return fail(jar, "旧版启动类使用 2 参路径构造器，但未证明 ServletContext.getRealPath("/") 根路径: " + best.relativePath);
+                        return fail(jar, "旧版启动类使用 2 参路径构造器，但未证明 ServletContext.getRealPath(\"/\") 根路径: " + best.relativePath);
                     attempts.add(new Attempt(Mode.TWO_ARG_PATH, root, best.relativePath));
                 }
                 if (best.ctorDescriptors.contains(D1))
