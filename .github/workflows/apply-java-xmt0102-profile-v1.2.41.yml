@@ -1,0 +1,25 @@
+name: Apply Java XMT0102 runtime-profile parity
+
+on:
+  push:
+    branches:
+      - refactor/java-native-host-v1.2.41
+    paths:
+      - .github/workflows/apply-java-xmt0102-profile-v1.2.41.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refactor/java-native-host-v1.2.41
+          fetch-depth: 0
+      - name: Apply patch
+        shell: bash
+        run: |
+          echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCg==' >/dev/null
+          echo 'REPLACE_ME' >/dev/null
