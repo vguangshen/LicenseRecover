@@ -3,18 +3,10 @@ import javax.swing.border.TitledBorder;
 import java.awt.*;
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.FileVisitResult;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
+import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
+import java.util.*;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -30,15 +22,8 @@ public final class LicenseRecoverModernGUIBackupCleanup {
     private LicenseRecoverModernGUIBackupCleanup() { }
 
     static final class Candidate {
-        final Path path;
-        final String originalName;
-        final String timestamp;
-        final int sequence;
-        final long size;
-        Candidate(Path path, String originalName, String timestamp, int sequence, long size) {
-            this.path = path; this.originalName = originalName; this.timestamp = timestamp;
-            this.sequence = sequence; this.size = size;
-        }
+        final Path path; final String originalName; final String timestamp; final int sequence; final long size;
+        Candidate(Path p, String n, String t, int s, long z) { path=p; originalName=n; timestamp=t; sequence=s; size=z; }
         String groupKey() {
             Path parent = path.getParent();
             String p = parent == null ? "" : parent.toAbsolutePath().normalize().toString();
@@ -47,35 +32,22 @@ public final class LicenseRecoverModernGUIBackupCleanup {
     }
 
     public static final class Plan {
-        public final File root;
-        public final int keepNewest;
-        public final List<File> matched;
-        public final List<File> delete;
-        public final int keepCount;
-        public final long deleteBytes;
-        Plan(File root, int keepNewest, List<File> matched, List<File> delete, int keepCount, long deleteBytes) {
-            this.root = root; this.keepNewest = keepNewest;
-            this.matched = Collections.unmodifiableList(matched);
-            this.delete = Collections.unmodifiableList(delete);
-            this.keepCount = keepCount; this.deleteBytes = deleteBytes;
+        public final File root; public final int keepNewest; public final List<File> matched, delete;
+        public final int keepCount; public final long deleteBytes;
+        Plan(File r, int k, List<File> m, List<File> d, int kept, long bytes) {
+            root=r; keepNewest=k; matched=Collections.unmodifiableList(m); delete=Collections.unmodifiableList(d);
+            keepCount=kept; deleteBytes=bytes;
         }
     }
 
     public static final class DeleteResult {
-        public final int deleted;
-        public final int failed;
-        public final long freedBytes;
-        DeleteResult(int deleted, int failed, long freedBytes) {
-            this.deleted = deleted; this.failed = failed; this.freedBytes = freedBytes;
-        }
+        public final int deleted, failed; public final long freedBytes;
+        DeleteResult(int d, int f, long b) { deleted=d; failed=f; freedBytes=b; }
     }
 
     public static void installLater(String[] args) {
         if (contains(args, "--update-only")) return;
-        SwingUtilities.invokeLater(() -> {
-            JFrame frame = findMainFrame();
-            if (frame != null) install(frame);
-        });
+        SwingUtilities.invokeLater(() -> { JFrame f=findMainFrame(); if (f!=null) install(f); });
     }
 
     static void install(JFrame frame) {
@@ -83,333 +55,161 @@ public final class LicenseRecoverModernGUIBackupCleanup {
         JTabbedPane tabs = findTabs(frame.getContentPane());
         if (tabs == null) return;
         Component batch = null;
-        for (int i = 0; i < tabs.getTabCount(); i++) {
-            if ("批量应用".equals(tabs.getTitleAt(i))) { batch = tabs.getComponentAt(i); break; }
-        }
+        for (int i=0;i<tabs.getTabCount();i++) if ("批量应用".equals(tabs.getTitleAt(i))) { batch=tabs.getComponentAt(i); break; }
         if (batch == null) return;
         JPanel top = findBatchTopPanel(batch);
         final JTextField rootField = top == null ? null : findFirst(top, JTextField.class);
         if (top == null || rootField == null) return;
 
-        final JSpinner keepSpinner = new JSpinner(new SpinnerNumberModel(3, 0, 50, 1));
-        keepSpinner.setToolTipText("按每个原文件计算；0 表示删除全部受管理备份");
-        final JButton cleanup = new JButton("批量清理备份...");
-        cleanup.setName(CONTROL_NAME);
-        cleanup.setToolTipText("仅处理 LicenseRecover 生成的 prewrite / prepatch / preoneclick 和兼容旧版时间戳备份");
-        cleanup.addActionListener(e -> runCleanup(frame, rootField, keepSpinner, cleanup));
+        final JSpinner keep = new JSpinner(new SpinnerNumberModel(3, 0, 50, 1));
+        keep.setToolTipText("按每个原文件计算；0 表示删除全部受管理备份");
+        final JButton clean = new JButton("批量清理备份...");
+        clean.setName(CONTROL_NAME);
+        clean.setToolTipText("仅处理 LicenseRecover 生成的备份；普通 .bak 不处理");
+        clean.addActionListener(e -> runCleanup(frame, rootField, keep, clean));
 
-        JPanel controls = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        controls.add(new JLabel("每个原文件保留最近"));
-        controls.add(keepSpinner);
-        controls.add(new JLabel("份"));
-        controls.add(cleanup);
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        row.add(new JLabel("每个原文件保留最近")); row.add(keep); row.add(new JLabel("份")); row.add(clean);
         JLabel hint = new JLabel("（先预览，确认后删除；普通 .bak 不处理）");
-        hint.setForeground(new Color(0x57606a));
-        controls.add(hint);
+        hint.setForeground(new Color(0x57606a)); row.add(hint);
 
         GridBagConstraints c = new GridBagConstraints();
-        c.insets = new Insets(4, 6, 4, 6); c.fill = GridBagConstraints.HORIZONTAL; c.anchor = GridBagConstraints.WEST;
-        c.gridx = 0; c.gridy = 3; c.weightx = 0;
-        top.add(new JLabel("备份整理:"), c);
-        c.gridx = 1; c.gridwidth = 3; c.weightx = 1;
-        top.add(controls, c);
+        c.insets=new Insets(4,6,4,6); c.fill=GridBagConstraints.HORIZONTAL; c.anchor=GridBagConstraints.WEST;
+        c.gridx=0; c.gridy=3; c.weightx=0; top.add(new JLabel("备份整理:"),c);
+        c.gridx=1; c.gridwidth=3; c.weightx=1; top.add(row,c);
         top.revalidate(); top.repaint();
     }
 
-    private static void runCleanup(final JFrame frame, final JTextField rootField,
-                                   final JSpinner keepSpinner, final JButton button) {
+    private static void runCleanup(final JFrame frame, final JTextField rootField, final JSpinner keepSpinner, final JButton button) {
         final File root = new File(rootField.getText().trim());
         if (!root.isDirectory()) {
-            JOptionPane.showMessageDialog(frame, "请先在批量应用页选择有效的父目录。", "批量清理备份", JOptionPane.WARNING_MESSAGE);
-            return;
+            JOptionPane.showMessageDialog(frame,"请先在批量应用页选择有效的父目录。","批量清理备份",JOptionPane.WARNING_MESSAGE); return;
         }
-        JButton cancel = findButton(frame.getContentPane(), "取消");
-        if (cancel != null && cancel.isEnabled()) {
-            JOptionPane.showMessageDialog(frame, "当前有批量扫描/执行任务正在运行，请先等待完成或取消任务。", "批量清理备份", JOptionPane.WARNING_MESSAGE);
-            return;
+        JButton cancel=findButton(frame.getContentPane(),"取消");
+        if (cancel!=null && cancel.isEnabled()) {
+            JOptionPane.showMessageDialog(frame,"当前有批量扫描/执行任务正在运行，请先等待完成或取消任务。","批量清理备份",JOptionPane.WARNING_MESSAGE); return;
         }
-        final int keep = ((Number) keepSpinner.getValue()).intValue();
+        final int keep=((Number)keepSpinner.getValue()).intValue();
         button.setEnabled(false); button.setText("正在扫描备份...");
-        appendGuiLog(frame, "[备份清理] 扫描: " + root.getAbsolutePath() + "；每个原文件保留最近 " + keep + " 份。\n");
-        new SwingWorker<Plan, Void>() {
-            protected Plan doInBackground() throws Exception { return scan(root, keep); }
+        appendGuiLog(frame,"[备份清理] 扫描: "+root.getAbsolutePath()+"；每个原文件保留最近 "+keep+" 份。\n");
+        new SwingWorker<Plan,Void>() {
+            protected Plan doInBackground() throws Exception { return scan(root,keep); }
             protected void done() {
-                Plan plan;
-                try { plan = get(); }
-                catch (Exception ex) {
-                    resetButton(button);
-                    JOptionPane.showMessageDialog(frame, "扫描备份失败：\n" + safeMessage(ex), "批量清理备份", JOptionPane.ERROR_MESSAGE);
-                    appendGuiLog(frame, "[备份清理] 扫描失败: " + safeMessage(ex) + "\n");
-                    return;
+                final Plan plan;
+                try { plan=get(); } catch(Exception ex) {
+                    reset(button); JOptionPane.showMessageDialog(frame,"扫描备份失败：\n"+safe(ex),"批量清理备份",JOptionPane.ERROR_MESSAGE); return;
                 }
                 if (plan.matched.isEmpty()) {
-                    resetButton(button);
-                    JOptionPane.showMessageDialog(frame, "没有找到 LicenseRecover 管理的备份文件。\n普通 .bak 文件不会被匹配。",
-                            "批量清理备份", JOptionPane.INFORMATION_MESSAGE);
-                    return;
+                    reset(button); JOptionPane.showMessageDialog(frame,"没有找到 LicenseRecover 管理的备份文件。\n普通 .bak 文件不会被匹配。","批量清理备份",JOptionPane.INFORMATION_MESSAGE); return;
                 }
                 if (plan.delete.isEmpty()) {
-                    resetButton(button);
-                    JOptionPane.showMessageDialog(frame, "找到 " + plan.matched.size() + " 个 LicenseRecover 备份，当前保留策略无需删除。",
-                            "批量清理备份", JOptionPane.INFORMATION_MESSAGE);
-                    return;
+                    reset(button); JOptionPane.showMessageDialog(frame,"找到 "+plan.matched.size()+" 个 LicenseRecover 备份，当前保留策略无需删除。","批量清理备份",JOptionPane.INFORMATION_MESSAGE); return;
                 }
-                String warning = keep == 0 ? "\n\n注意：当前设置为保留 0 份，将删除扫描范围内全部受管理备份。" : "";
-                int answer = JOptionPane.showConfirmDialog(frame,
-                        "扫描目录：" + plan.root.getAbsolutePath()
-                                + "\n找到受管理备份：" + plan.matched.size() + " 个"
-                                + "\n保留：" + plan.keepCount + " 个"
-                                + "\n准备删除：" + plan.delete.size() + " 个"
-                                + "\n预计释放：" + humanBytes(plan.deleteBytes)
-                                + "\n\n仅匹配 LicenseRecover 的 prewrite / prepatch / preoneclick"
-                                + "\n以及旧版 config.xml / RegisterUtil / ITMCReg 时间戳备份；不会清理普通 .bak。"
-                                + warning + "\n\n确定执行删除吗？",
-                        "确认批量清理备份", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
-                if (answer != JOptionPane.OK_OPTION) {
-                    resetButton(button); appendGuiLog(frame, "[备份清理] 用户取消；未删除任何文件。\n"); return;
-                }
-                executeAsync(frame, plan, button);
+                String zero=keep==0?"\n\n注意：当前设置为保留 0 份，将删除扫描范围内全部受管理备份。":"";
+                int yes=JOptionPane.showConfirmDialog(frame,
+                        "扫描目录："+plan.root.getAbsolutePath()+"\n找到受管理备份："+plan.matched.size()+" 个"
+                        +"\n保留："+plan.keepCount+" 个\n准备删除："+plan.delete.size()+" 个\n预计释放："+humanBytes(plan.deleteBytes)
+                        +"\n\n只匹配 LicenseRecover 的 prewrite / prepatch / preoneclick 以及旧版受支持时间戳备份；不会清理普通 .bak。"
+                        +zero+"\n\n确定执行删除吗？","确认批量清理备份",JOptionPane.OK_CANCEL_OPTION,JOptionPane.WARNING_MESSAGE);
+                if (yes!=JOptionPane.OK_OPTION) { reset(button); appendGuiLog(frame,"[备份清理] 用户取消；未删除任何文件。\n"); return; }
+                button.setText("正在清理...");
+                new SwingWorker<DeleteResult,Void>() {
+                    protected DeleteResult doInBackground() {
+                        return LicenseRecoverModernGUIBackupCleanup.execute(plan,s -> appendGuiLog(frame,s));
+                    }
+                    protected void done() {
+                        reset(button);
+                        try {
+                            DeleteResult r=get();
+                            JOptionPane.showMessageDialog(frame,"清理完成。\n已删除："+r.deleted+" 个\n失败："+r.failed+" 个\n实际释放："+humanBytes(r.freedBytes),
+                                    "批量清理备份",r.failed==0?JOptionPane.INFORMATION_MESSAGE:JOptionPane.WARNING_MESSAGE);
+                            appendGuiLog(frame,"[备份清理] 完成：删除 "+r.deleted+"，失败 "+r.failed+"，释放 "+humanBytes(r.freedBytes)+"。\n");
+                        } catch(Exception ex) { JOptionPane.showMessageDialog(frame,"清理失败：\n"+safe(ex),"批量清理备份",JOptionPane.ERROR_MESSAGE); }
+                    }
+                }.execute();
             }
         }.execute();
     }
 
-    private static void executeAsync(final JFrame frame, final Plan plan, final JButton button) {
-        button.setText("正在清理...");
-        new SwingWorker<DeleteResult, Void>() {
-            protected DeleteResult doInBackground() { return execute(plan, s -> appendGuiLog(frame, s)); }
-            protected void done() {
-                resetButton(button);
-                try {
-                    DeleteResult result = get();
-                    int type = result.failed == 0 ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE;
-                    JOptionPane.showMessageDialog(frame,
-                            "清理完成。\n已删除：" + result.deleted + " 个\n失败：" + result.failed + " 个\n实际释放：" + humanBytes(result.freedBytes),
-                            "批量清理备份", type);
-                    appendGuiLog(frame, "[备份清理] 完成：删除 " + result.deleted + "，失败 " + result.failed
-                            + "，释放 " + humanBytes(result.freedBytes) + "。\n");
-                } catch (Exception ex) {
-                    JOptionPane.showMessageDialog(frame, "清理失败：\n" + safeMessage(ex), "批量清理备份", JOptionPane.ERROR_MESSAGE);
-                }
-            }
-        }.execute();
-    }
-
-    private static void resetButton(JButton button) { button.setEnabled(true); button.setText("批量清理备份..."); }
+    private static void reset(JButton b) { b.setEnabled(true); b.setText("批量清理备份..."); }
 
     public static Plan scan(File root, int keepNewest) throws IOException {
-        if (root == null || !root.isDirectory()) throw new IOException("清理根目录无效");
-        if (keepNewest < 0) throw new IllegalArgumentException("keepNewest 不能小于 0");
-        final Path rootPath = root.toPath().toAbsolutePath().normalize();
-        final List<Candidate> candidates = new ArrayList<Candidate>();
-        Files.walkFileTree(rootPath, new SimpleFileVisitor<Path>() {
-            @Override public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                if (!dir.equals(rootPath) && Files.isSymbolicLink(dir)) return FileVisitResult.SKIP_SUBTREE;
-                return FileVisitResult.CONTINUE;
+        if (root==null || !root.isDirectory()) throw new IOException("清理根目录无效");
+        if (keepNewest<0) throw new IllegalArgumentException("keepNewest 不能小于 0");
+        final Path rootPath=root.toPath().toAbsolutePath().normalize();
+        final List<Candidate> all=new ArrayList<Candidate>();
+        Files.walkFileTree(rootPath,new SimpleFileVisitor<Path>() {
+            @Override public FileVisitResult preVisitDirectory(Path dir,BasicFileAttributes attrs) {
+                return !dir.equals(rootPath)&&Files.isSymbolicLink(dir)?FileVisitResult.SKIP_SUBTREE:FileVisitResult.CONTINUE;
             }
-            @Override public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                if (attrs != null && attrs.isRegularFile() && !Files.isSymbolicLink(file)) {
-                    Candidate candidate = parse(file, attrs.size());
-                    if (candidate != null) candidates.add(candidate);
-                }
+            @Override public FileVisitResult visitFile(Path file,BasicFileAttributes attrs) {
+                if (attrs!=null&&attrs.isRegularFile()&&!Files.isSymbolicLink(file)) { Candidate c=parse(file,attrs.size()); if(c!=null) all.add(c); }
                 return FileVisitResult.CONTINUE;
             }
         });
-
-        LinkedHashMap<String, List<Candidate>> groups = new LinkedHashMap<String, List<Candidate>>();
-        for (Candidate candidate : candidates) {
-            List<Candidate> group = groups.get(candidate.groupKey());
-            if (group == null) { group = new ArrayList<Candidate>(); groups.put(candidate.groupKey(), group); }
-            group.add(candidate);
-        }
-        Comparator<Candidate> newestFirst = new Comparator<Candidate>() {
-            public int compare(Candidate a, Candidate b) {
-                int byStamp = b.timestamp.compareTo(a.timestamp); if (byStamp != 0) return byStamp;
-                int bySeq = Integer.compare(b.sequence, a.sequence); if (bySeq != 0) return bySeq;
-                return b.path.toString().compareToIgnoreCase(a.path.toString());
-            }
-        };
-        List<File> delete = new ArrayList<File>(); long bytes = 0L; int kept = 0;
-        for (List<Candidate> group : groups.values()) {
-            Collections.sort(group, newestFirst);
-            for (int i = 0; i < group.size(); i++) {
-                Candidate candidate = group.get(i);
-                if (i < keepNewest) kept++;
-                else { delete.add(candidate.path.toFile()); bytes += candidate.size; }
-            }
-        }
-        List<File> matched = new ArrayList<File>();
-        for (Candidate candidate : candidates) matched.add(candidate.path.toFile());
-        Comparator<File> byPath = Comparator.comparing(File::getAbsolutePath, String.CASE_INSENSITIVE_ORDER);
-        Collections.sort(matched, byPath); Collections.sort(delete, byPath);
-        return new Plan(rootPath.toFile(), keepNewest, matched, delete, kept, bytes);
+        Map<String,List<Candidate>> groups=new LinkedHashMap<String,List<Candidate>>();
+        for(Candidate c:all) groups.computeIfAbsent(c.groupKey(),k->new ArrayList<Candidate>()).add(c);
+        Comparator<Candidate> newest=(a,b)->{ int x=b.timestamp.compareTo(a.timestamp); if(x!=0)return x; x=Integer.compare(b.sequence,a.sequence); return x!=0?x:b.path.toString().compareToIgnoreCase(a.path.toString()); };
+        List<File> del=new ArrayList<File>(); int kept=0; long bytes=0;
+        for(List<Candidate> g:groups.values()) { Collections.sort(g,newest); for(int i=0;i<g.size();i++) { Candidate c=g.get(i); if(i<keepNewest)kept++; else {del.add(c.path.toFile());bytes+=c.size;} } }
+        List<File> matched=new ArrayList<File>(); for(Candidate c:all) matched.add(c.path.toFile());
+        Comparator<File> byPath=Comparator.comparing(File::getAbsolutePath,String.CASE_INSENSITIVE_ORDER);
+        Collections.sort(matched,byPath); Collections.sort(del,byPath);
+        return new Plan(rootPath.toFile(),keepNewest,matched,del,kept,bytes);
     }
 
     public static DeleteResult execute(Plan plan, Consumer<String> log) {
-        if (plan == null || plan.root == null) return new DeleteResult(0, 0, 0L);
-        Consumer<String> sink = log == null ? s -> { } : log;
-        Path root = plan.root.toPath().toAbsolutePath().normalize();
-        int deleted = 0, failed = 0; long freed = 0L;
-        for (File file : plan.delete) {
-            try {
-                Path path = file.toPath().toAbsolutePath().normalize();
-                if (!path.startsWith(root) || Files.isSymbolicLink(path) || !Files.isRegularFile(path)
-                        || parse(path, Files.size(path)) == null) {
-                    failed++; sink.accept("[备份清理] 跳过已变化/不安全路径: " + path + "\n"); continue;
-                }
-                long size = Files.size(path); Files.delete(path); deleted++; freed += size;
-                sink.accept("[备份清理] 已删除: " + path + "\n");
-            } catch (Exception ex) {
-                failed++; sink.accept("[备份清理] 删除失败: " + file.getAbsolutePath() + " : " + safeMessage(ex) + "\n");
-            }
-        }
-        return new DeleteResult(deleted, failed, freed);
+        if(plan==null||plan.root==null)return new DeleteResult(0,0,0);
+        Consumer<String> out=log==null?s->{}:log; Path root=plan.root.toPath().toAbsolutePath().normalize();
+        int deleted=0,failed=0; long freed=0;
+        for(File f:plan.delete) try {
+            Path p=f.toPath().toAbsolutePath().normalize();
+            if(!p.startsWith(root)||Files.isSymbolicLink(p)||!Files.isRegularFile(p)||parse(p,Files.size(p))==null) {failed++;out.accept("[备份清理] 跳过已变化/不安全路径: "+p+"\n");continue;}
+            long size=Files.size(p); Files.delete(p); deleted++; freed+=size; out.accept("[备份清理] 已删除: "+p+"\n");
+        } catch(Exception ex) {failed++;out.accept("[备份清理] 删除失败: "+f.getAbsolutePath()+" : "+safe(ex)+"\n");}
+        return new DeleteResult(deleted,failed,freed);
     }
 
     public static boolean isManagedBackupName(String name) {
-        return name != null && (MARKED.matcher(name).matches() || PRE_ONE_CLICK.matcher(name).matches() || LEGACY.matcher(name).matches());
+        return name!=null&&(MARKED.matcher(name).matches()||PRE_ONE_CLICK.matcher(name).matches()||LEGACY.matcher(name).matches());
+    }
+    private static Candidate parse(Path path,long size) {
+        String n=path.getFileName().toString(); Matcher m=MARKED.matcher(n);
+        if(m.matches())return new Candidate(path,m.group(1),m.group(3),0,size);
+        m=PRE_ONE_CLICK.matcher(n); if(m.matches()){int seq=0;try{if(m.group(3)!=null)seq=Integer.parseInt(m.group(3));}catch(Exception ignore){}return new Candidate(path,m.group(1),m.group(2),seq,size);}
+        m=LEGACY.matcher(n); return m.matches()?new Candidate(path,m.group(1),m.group(2),0,size):null;
     }
 
-    private static Candidate parse(Path path, long size) {
-        String name = path.getFileName().toString();
-        Matcher m = MARKED.matcher(name);
-        if (m.matches()) return new Candidate(path, m.group(1), m.group(3), 0, size);
-        m = PRE_ONE_CLICK.matcher(name);
-        if (m.matches()) {
-            int seq = 0; try { if (m.group(3) != null) seq = Integer.parseInt(m.group(3)); } catch (NumberFormatException ignore) { }
-            return new Candidate(path, m.group(1), m.group(2), seq, size);
-        }
-        m = LEGACY.matcher(name);
-        if (m.matches()) return new Candidate(path, m.group(1), m.group(2), 0, size);
-        return null;
-    }
+    private static JFrame findMainFrame(){for(Frame x:Frame.getFrames())if(x instanceof JFrame&&x.isDisplayable()){JFrame f=(JFrame)x;if("ITMC 离线授权恢复工具".equals(f.getTitle()))return f;}return null;}
+    private static JTabbedPane findTabs(Container r){if(r instanceof JTabbedPane)return(JTabbedPane)r;for(Component c:r.getComponents())if(c instanceof Container){JTabbedPane x=findTabs((Container)c);if(x!=null)return x;}return null;}
+    private static JPanel findBatchTopPanel(Component r){if(r instanceof JPanel){JPanel p=(JPanel)r;if(p.getLayout() instanceof GridBagLayout&&hasLabel(p,"父目录:"))return p;}if(r instanceof Container)for(Component c:((Container)r).getComponents()){JPanel p=findBatchTopPanel(c);if(p!=null)return p;}return null;}
+    private static boolean hasLabel(Container r,String s){for(Component c:r.getComponents())if(c instanceof JLabel&&s.equals(((JLabel)c).getText()))return true;return false;}
+    private static <T extends Component>T findFirst(Container r,Class<T> t){for(Component c:r.getComponents()){if(t.isInstance(c))return t.cast(c);if(c instanceof Container){T x=findFirst((Container)c,t);if(x!=null)return x;}}return null;}
+    private static Component findNamed(Container r,String n){for(Component c:r.getComponents()){if(n.equals(c.getName()))return c;if(c instanceof Container){Component x=findNamed((Container)c,n);if(x!=null)return x;}}return null;}
+    private static JButton findButton(Container r,String s){for(Component c:r.getComponents()){if(c instanceof JButton&&s.equals(((JButton)c).getText()))return(JButton)c;if(c instanceof Container){JButton x=findButton((Container)c,s);if(x!=null)return x;}}return null;}
+    private static void appendGuiLog(JFrame f,String s){if(f==null||s==null||s.isEmpty())return;Runnable r=()->{JTextArea a=findLogArea(f.getContentPane());if(a!=null){a.append(s);a.setCaretPosition(a.getDocument().getLength());}};if(SwingUtilities.isEventDispatchThread())r.run();else SwingUtilities.invokeLater(r);}
+    private static JTextArea findLogArea(Container r){if(r instanceof JPanel){JPanel p=(JPanel)r;if(p.getBorder() instanceof TitledBorder&&"运行日志".equals(((TitledBorder)p.getBorder()).getTitle()))return findFirst(p,JTextArea.class);}for(Component c:r.getComponents())if(c instanceof Container){JTextArea a=findLogArea((Container)c);if(a!=null)return a;}return null;}
+    private static String humanBytes(long b){if(b<1024)return b+" B";double v=b;String[]u={"KB","MB","GB","TB"};int i=-1;do{v/=1024;i++;}while(v>=1024&&i<u.length-1);return String.format(Locale.ROOT,"%.2f %s",v,u[i]);}
+    private static boolean contains(String[]a,String s){if(a!=null)for(String x:a)if(s.equals(x))return true;return false;}
+    private static String safe(Throwable e){Throwable x=e;while(x!=null&&x.getCause()!=null)x=x.getCause();String s=x==null?"未知错误":x.getMessage();return s==null||s.trim().isEmpty()?String.valueOf(x):s;}
 
-    private static JFrame findMainFrame() {
-        for (Frame frame : Frame.getFrames()) if (frame instanceof JFrame && frame.isDisplayable()) {
-            JFrame f = (JFrame) frame; if ("ITMC 离线授权恢复工具".equals(f.getTitle())) return f;
-        }
-        return null;
-    }
-    private static JTabbedPane findTabs(Container root) {
-        if (root instanceof JTabbedPane) return (JTabbedPane) root;
-        for (Component c : root.getComponents()) if (c instanceof Container) {
-            JTabbedPane found = findTabs((Container)c); if (found != null) return found;
-        }
-        return null;
-    }
-    private static JPanel findBatchTopPanel(Component root) {
-        if (root instanceof JPanel) {
-            JPanel p = (JPanel)root; if (p.getLayout() instanceof GridBagLayout && hasLabel(p, "父目录:")) return p;
-        }
-        if (root instanceof Container) for (Component c : ((Container)root).getComponents()) {
-            JPanel found = findBatchTopPanel(c); if (found != null) return found;
-        }
-        return null;
-    }
-    private static boolean hasLabel(Container root, String text) {
-        for (Component c : root.getComponents()) if (c instanceof JLabel && text.equals(((JLabel)c).getText())) return true;
-        return false;
-    }
-    private static <T extends Component> T findFirst(Container root, Class<T> type) {
-        for (Component c : root.getComponents()) {
-            if (type.isInstance(c)) return type.cast(c);
-            if (c instanceof Container) { T found = findFirst((Container)c, type); if (found != null) return found; }
-        }
-        return null;
-    }
-    private static Component findNamed(Container root, String name) {
-        for (Component c : root.getComponents()) {
-            if (name.equals(c.getName())) return c;
-            if (c instanceof Container) { Component found = findNamed((Container)c, name); if (found != null) return found; }
-        }
-        return null;
-    }
-    private static JButton findButton(Container root, String text) {
-        for (Component c : root.getComponents()) {
-            if (c instanceof JButton && text.equals(((JButton)c).getText())) return (JButton)c;
-            if (c instanceof Container) { JButton found = findButton((Container)c, text); if (found != null) return found; }
-        }
-        return null;
-    }
-    private static void appendGuiLog(JFrame frame, final String text) {
-        if (frame == null || text == null || text.isEmpty()) return;
-        Runnable r = () -> { JTextArea area = findLogArea(frame.getContentPane()); if (area != null) {
-            area.append(text); area.setCaretPosition(area.getDocument().getLength());
-        }};
-        if (SwingUtilities.isEventDispatchThread()) r.run(); else SwingUtilities.invokeLater(r);
-    }
-    private static JTextArea findLogArea(Container root) {
-        if (root instanceof JPanel) {
-            JPanel p = (JPanel)root;
-            if (p.getBorder() instanceof TitledBorder && "运行日志".equals(((TitledBorder)p.getBorder()).getTitle())) return findFirst(p, JTextArea.class);
-        }
-        for (Component c : root.getComponents()) if (c instanceof Container) {
-            JTextArea found = findLogArea((Container)c); if (found != null) return found;
-        }
-        return null;
-    }
-    private static String humanBytes(long bytes) {
-        if (bytes < 1024L) return bytes + " B";
-        double value = bytes; String[] units = {"KB", "MB", "GB", "TB"}; int unit = -1;
-        do { value /= 1024.0; unit++; } while (value >= 1024.0 && unit < units.length - 1);
-        return String.format(Locale.ROOT, "%.2f %s", value, units[unit]);
-    }
-    private static boolean contains(String[] args, String wanted) {
-        if (args != null) for (String arg : args) if (wanted.equals(arg)) return true; return false;
-    }
-    private static String safeMessage(Throwable ex) {
-        Throwable x = ex; while (x != null && x.getCause() != null) x = x.getCause();
-        String message = x == null ? "未知错误" : x.getMessage();
-        return message == null || message.trim().isEmpty() ? String.valueOf(x) : message;
-    }
-
-    /** CI self-test for matching, retention, deletion and unrelated-file safety. */
-    public static void main(String[] args) throws Exception {
-        if (!contains(args, "--self-test")) return;
-        Path root = Files.createTempDirectory("lrc-backup-cleanup-");
-        try {
-            Path app = root.resolve("app-a/WEB-INF/lib"); Files.createDirectories(app);
-            write(app.resolve("config.xml.20260901010101.bak"), 11);
-            write(app.resolve("config.xml.prewrite.20260902010101.bak"), 12);
-            write(app.resolve("config.xml.20260903010101.preoneclick.bak"), 13);
-            write(app.resolve("config.xml.20260904010101-2.preoneclick.bak"), 14);
-            write(app.resolve("ITMCReg.jar.20260901010101.bak"), 21);
-            write(app.resolve("ITMCReg.jar.prepatch.20260902010101.bak"), 22);
-            write(app.resolve("ITMCReg.jar.20260903010101.preoneclick.bak"), 23);
-            Path unrelated = app.resolve("database.20260901010101.bak");
-            Path ordinary = app.resolve("notes.bak"); write(unrelated, 31); write(ordinary, 32);
-
-            Plan plan = scan(root.toFile(), 2);
-            require(plan.matched.size() == 7, "managed backup match count");
-            require(plan.delete.size() == 3, "retention delete count");
-            require(plan.keepCount == 4, "retention keep count");
-            require(isManagedBackupName("x.prepatch.20260910121212.bak"), "prepatch matcher");
-            require(isManagedBackupName("config.xml.20260910121212.preoneclick.bak"), "preoneclick matcher");
-            require(!isManagedBackupName("database.20260910121212.bak"), "unrelated timestamp backup excluded");
-            require(!isManagedBackupName("notes.bak"), "ordinary bak excluded");
-            DeleteResult result = execute(plan, System.out::print);
-            require(result.deleted == 3 && result.failed == 0, "cleanup execution");
-            require(Files.exists(app.resolve("config.xml.20260904010101-2.preoneclick.bak")), "newest config backup retained");
-            require(Files.exists(app.resolve("config.xml.20260903010101.preoneclick.bak")), "second newest config backup retained");
-            require(!Files.exists(app.resolve("config.xml.20260901010101.bak")), "old config backup deleted");
-            require(Files.exists(unrelated) && Files.exists(ordinary), "unrelated backups preserved");
+    /** CI self-test: matching + retention + deletion + unrelated-file safety. */
+    public static void main(String[] args)throws Exception{
+        if(!contains(args,"--self-test"))return; Path root=Files.createTempDirectory("lrc-backup-cleanup-");
+        try{
+            Path app=root.resolve("app-a/WEB-INF/lib");Files.createDirectories(app);
+            write(app.resolve("config.xml.20260901010101.bak"),11);write(app.resolve("config.xml.prewrite.20260902010101.bak"),12);
+            write(app.resolve("config.xml.20260903010101.preoneclick.bak"),13);write(app.resolve("config.xml.20260904010101-2.preoneclick.bak"),14);
+            write(app.resolve("ITMCReg.jar.20260901010101.bak"),21);write(app.resolve("ITMCReg.jar.prepatch.20260902010101.bak"),22);write(app.resolve("ITMCReg.jar.20260903010101.preoneclick.bak"),23);
+            Path unrelated=app.resolve("database.20260901010101.bak"),ordinary=app.resolve("notes.bak");write(unrelated,31);write(ordinary,32);
+            Plan p=scan(root.toFile(),2); require(p.matched.size()==7,"managed backup match count");require(p.delete.size()==3,"retention delete count");require(p.keepCount==4,"retention keep count");
+            require(isManagedBackupName("x.prepatch.20260910121212.bak"),"prepatch matcher");require(isManagedBackupName("config.xml.20260910121212.preoneclick.bak"),"preoneclick matcher");require(!isManagedBackupName("database.20260910121212.bak"),"unrelated timestamp backup excluded");require(!isManagedBackupName("notes.bak"),"ordinary bak excluded");
+            DeleteResult r=LicenseRecoverModernGUIBackupCleanup.execute(p,System.out::print);require(r.deleted==3&&r.failed==0,"cleanup execution");
+            require(Files.exists(app.resolve("config.xml.20260904010101-2.preoneclick.bak")),"newest config backup retained");require(Files.exists(app.resolve("config.xml.20260903010101.preoneclick.bak")),"second newest config backup retained");require(!Files.exists(app.resolve("config.xml.20260901010101.bak")),"old config backup deleted");require(Files.exists(unrelated)&&Files.exists(ordinary),"unrelated backups preserved");
             System.out.println("BACKUP CLEANUP SELF-TEST PASSED");
-        } finally { deleteTree(root); }
+        }finally{deleteTree(root);}
     }
-    private static void write(Path path, int marker) throws IOException {
-        byte[] data = new byte[Math.max(1, marker)]; data[0] = (byte)marker; Files.write(path, data);
-    }
-    private static void require(boolean value, String message) {
-        if (!value) throw new AssertionError(message); System.out.println("PASS: " + message);
-    }
-    private static void deleteTree(Path root) {
-        if (root == null || !Files.exists(root)) return;
-        try { Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
-            @Override public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                Files.deleteIfExists(file); return FileVisitResult.CONTINUE;
-            }
-            @Override public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
-                Files.deleteIfExists(dir); return FileVisitResult.CONTINUE;
-            }
-        }); } catch (IOException ignore) { }
-    }
+    private static void write(Path p,int n)throws IOException{byte[]b=new byte[Math.max(1,n)];b[0]=(byte)n;Files.write(p,b);}
+    private static void require(boolean ok,String s){if(!ok)throw new AssertionError(s);System.out.println("PASS: "+s);}
+    private static void deleteTree(Path root){if(root==null||!Files.exists(root))return;try{Files.walkFileTree(root,new SimpleFileVisitor<Path>(){@Override public FileVisitResult visitFile(Path f,BasicFileAttributes a)throws IOException{Files.deleteIfExists(f);return FileVisitResult.CONTINUE;}@Override public FileVisitResult postVisitDirectory(Path d,IOException e)throws IOException{Files.deleteIfExists(d);return FileVisitResult.CONTINUE;}});}catch(IOException ignore){}}
 }
