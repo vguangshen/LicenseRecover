@@ -1,0 +1,304 @@
+name: Apply v1.2.39 SoftVersionID RegStr fix
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/apply-v1.2.39-softversion-regstr.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Patch source, regression tests and v1.2.39 metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def read(path):
+              return Path(path).read_text(encoding='utf-8')
+
+          def write(path, text):
+              Path(path).write_text(text, encoding='utf-8', newline='\n')
+
+          def replace_once(path, old, new):
+              text = read(path)
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one replacement target, found {count}')
+              write(path, text.replace(old, new, 1))
+
+          version = read('VERSION.txt').strip()
+          if version != '1.2.38':
+              raise SystemExit(f'Unexpected starting VERSION.txt: {version}')
+
+          # 1) Unified .NET RegStr construction: current target SoftVersionID is the
+          # primary mode, then merge existing local-license and target DLL modes.
+          auto_path = 'src/main/java/LicenseRecoverModernGUIAutoRecovery.java'
+          auto = read(auto_path)
+          start_marker = '''    /**
+           * Resolve .NET RegStr only from the selected application directory.'''
+          end_marker = '    static String recoverDotNetLocalRegStr(File root, File runtimeDir, String product) {'
+          start = auto.find(start_marker)
+          end = auto.find(end_marker, start if start >= 0 else 0)
+          if start < 0 or end < 0:
+              raise SystemExit('AutoRecovery: RegStr resolver block markers not found')
+          new_block = '''    /**
+           * Resolve .NET RegStr only from the selected application directory.
+           *
+           * The current target config.xml SoftVersionID is the site's primary mode
+           * identity and must be present in the generated RegStr.  Existing local
+           * regName values and product IDs proven from this target ITMC.Web.dll are
+           * compatibility additions; they are merged without replacing the current
+           * system version.  Folder names and global/default product lists are never
+           * used as executable evidence.
+           */
+          static String detectDotNetRegStr(Detection d) {
+              if (d == null || blank(d.productName) || d.runtimeDir == null) return null;
+              LinkedHashSet<String> out = new LinkedHashSet<String>();
+
+              String current = readVersion(d.appRoot, d.runtimeDir);
+              if (!blank(current) && !blank(d.versionId)
+                      && current.trim().equalsIgnoreCase(d.versionId.trim())
+                      && validRegistrationToken(current.trim())) {
+                  out.add(current.trim().toUpperCase(Locale.ROOT));
+              }
+
+              // Keep the stricter native-page identity proof when it is available.
+              addRegStrTokens(out, detectDirectDotNetRegStr(d));
+              // Preserve already-proven compatibility modes from a valid local license.
+              addRegStrTokens(out, recoverDotNetLocalRegStr(d.appRoot, d.runtimeDir, d.productName));
+              // Finally add same-family modes embedded in this target ITMC.Web.dll.
+              addRegStrTokens(out, detectProductList(new File(d.runtimeDir, "ITMC.Web.dll"), d.productName));
+              return joinRegStrTokens(out);
+          }
+
+          static void addRegStrTokens(LinkedHashSet<String> out, String raw) {
+              if (out == null || blank(raw)) return;
+              String normalized = normalizeProductCsv(raw);
+              if (blank(normalized)) return;
+              for (String token : normalized.split(",")) out.add(token);
+          }
+
+          static String joinRegStrTokens(LinkedHashSet<String> tokens) {
+              if (tokens == null || tokens.isEmpty()) return null;
+              StringBuilder b = new StringBuilder();
+              for (String token : tokens) {
+                  if (b.length() > 0) b.append(',');
+                  b.append(token);
+              }
+              return b.toString();
+          }
+
+          static boolean containsRegStrToken(String raw, String wanted) {
+              if (blank(raw) || blank(wanted)) return false;
+              for (String token : raw.split(",")) {
+                  if (wanted.trim().equalsIgnoreCase(token.trim())) return true;
+              }
+              return false;
+          }
+
+          '''
+          auto = auto[:start] + new_block + auto[end:]
+
+          old_guard = '''        String regStr = detectDotNetRegStr(d);
+                  if (blank(regStr))
+                      return Result.fail("Target application directory did not prove RegStr products; VersionID/default-list fallback is disabled.", d);
+          '''
+          new_guard = '''        String regStr = detectDotNetRegStr(d);
+                  if (blank(regStr))
+                      return Result.fail("Target application directory did not prove a usable current SoftVersionID/RegStr.", d);
+                  if (!blank(d.versionId) && !containsRegStrToken(regStr, d.versionId))
+                      return Result.fail("[MODE] current SoftVersionID is missing from RegStr: " + d.versionId, d);
+                  if (!blank(d.versionId))
+                      log.accept("[dotnet-mode] current SoftVersionID=" + d.versionId + " merged RegStr=" + regStr + "\\n");
+          '''
+          if auto.count(old_guard) != 1:
+              raise SystemExit(f'AutoRecovery: expected one one-click RegStr guard, found {auto.count(old_guard)}')
+          auto = auto.replace(old_guard, new_guard, 1)
+          write(auto_path, auto)
+
+          # 2) Legacy/CLI .NET gencode now uses exactly the same resolver as one-click.
+          core_path = 'src/main/java/LicenseRecover.java'
+          core_old = '''            directoryRegStr = LicenseRecoverModernGUIAutoRecovery.detectProductList(
+                              new File(binDir, "ITMC.Web.dll"), directoryProduct);
+                      if (directoryRegStr == null || directoryRegStr.trim().isEmpty()) {
+                          System.err.println("[错误] 目标 ITMC.Web.dll 未解析出 RegStr 产品项，禁止使用版本号/默认列表兜底。");
+          '''
+          core_new = '''            directoryRegStr = LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(nd);
+                      if (directoryRegStr == null || directoryRegStr.trim().isEmpty()) {
+                          System.err.println("[错误] 目标目录未解析出包含当前 SoftVersionID 的 RegStr，禁止生成授权码。");
+          '''
+          replace_once(core_path, core_old, core_new)
+
+          # 3) Regression: emulate YX030308 where ITMC.Web.dll proves YX0303 and
+          # compatibility modes, but the current YX030308 token is absent from the DLL list.
+          test_path = 'src/test/java/RefactorSmokeTest.java'
+          test_marker = '''        check(LicenseRecoverModernGUIAutoRecovery.detectProductList(
+                                  noRegStrFixture.toFile(), "YX0303").isEmpty(),
+                          ".NET directory parser returns empty instead of inventing RegStr");
+          '''
+          test_insert = test_marker + '''
+                  Path yx030308ModeRoot = base.resolve("dotnet-YX030308-mode-merge");
+                  Path yx030308ModeBin = yx030308ModeRoot.resolve("bin");
+                  Files.createDirectories(yx030308ModeBin);
+                  writeUtf16Fixture(yx030308ModeBin.resolve("ITMC.Web.dll"),
+                          "YX0303", "YX030301", "YX030321", "SoftVersionID", "ProName");
+                  Files.write(yx030308ModeBin.resolve("ITMC.Regedit.dll"), new byte[]{1});
+                  Files.write(yx030308ModeRoot.resolve("config.xml"), Arrays.asList(
+                          "<ROOT><reg/><SystemSoft><SoftVersionID>YX030308</SoftVersionID></SystemSoft></ROOT>"),
+                          StandardCharsets.UTF_8);
+                  LicenseRecoverModernGUIAutoRecovery.Detection yx030308ModeDetection =
+                          LicenseRecoverModernGUIAutoRecovery.detect(yx030308ModeRoot.toFile());
+                  check("YX030308".equals(yx030308ModeDetection.versionId)
+                                  && "YX0303".equals(yx030308ModeDetection.productName),
+                          ".NET mode-merge fixture proves current SoftVersionID and YX0303 family from target directory");
+                  check("YX030301,YX030321".equals(LicenseRecoverModernGUIAutoRecovery.detectProductList(
+                                  yx030308ModeBin.resolve("ITMC.Web.dll").toFile(), "YX0303")),
+                          "legacy DLL mode scan intentionally lacks the current YX030308 token");
+                  check("YX030308,YX030301,YX030321".equals(
+                                  LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(yx030308ModeDetection)),
+                          ".NET RegStr injects current SoftVersionID first and preserves proven compatibility modes");
+                  check(LicenseRecoverModernGUIAutoRecovery.containsRegStrToken(
+                                  LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(yx030308ModeDetection), "YX030308"),
+                          ".NET final RegStr explicitly contains the current system version mode");
+          '''
+          replace_once(test_path, test_marker, test_insert)
+
+          # 4) Update source-level CI policy so the old "never use VersionID" rule is
+          # replaced by the safer rule: use the target config's current version, never a folder/default guess.
+          verify_path = 'scripts/verify.ps1'
+          verify_old = "if (-not $autoSource.Contains('VersionID/default-list fallback is disabled')) { throw '.NET fail-closed guard is missing.' }"
+          verify_new = """if (-not $autoSource.Contains('[MODE] current SoftVersionID is missing from RegStr')) { throw '.NET current SoftVersionID inclusion guard is missing.' }
+          if (-not $autoSource.Contains('addRegStrTokens(out, detectProductList')) { throw '.NET target-DLL compatibility mode merge is missing.' }
+          if (-not $coreSource.Contains('LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(nd)')) { throw '.NET CLI gencode is not using the unified RegStr resolver.' }"""
+          replace_once(verify_path, verify_old, verify_new)
+
+          # 5) Versioned documentation and release metadata.
+          write('VERSION.txt', '1.2.39\n')
+
+          readme = read('README.md')
+          if '当前稳定版本：**v1.2.38**' not in readme:
+              raise SystemExit('README stable-version marker missing')
+          readme = readme.replace('当前稳定版本：**v1.2.38**', '当前稳定版本：**v1.2.39**', 1)
+          readme_anchor = '这样 `AppDomain.BaseDirectory` 保持网站根目录，避免大写组件误从 `bin` 读取 `config.xml` / `Register.xml`。'
+          readme_note = (' v1.2.39 起，.NET `RegStr` 统一把目标站点 `config.xml` 中的当前 `SoftVersionID` 作为首个主模式，'
+                         '再合并有效本地授权与目标 `ITMC.Web.dll` 中证明的同族兼容模式；一键恢复与 CLI `gencode` 共用同一解析器，'
+                         '避免授权数据库/本地注册写入成功但当前系统代号未进入 `RegStr`，最终出现“系统不支持任何模式”。')
+          if readme_anchor not in readme:
+              raise SystemExit('README .NET v1.2.38 anchor missing')
+          readme = readme.replace(readme_anchor, readme_anchor + readme_note, 1)
+          write('README.md', readme)
+
+          readme_txt = read('README.txt')
+          if readme_txt.startswith('LicenseRecover v1.2.12'):
+              readme_txt = readme_txt.replace('LicenseRecover v1.2.12', 'LicenseRecover v1.2.39', 1)
+          txt_anchor = '软件自动更新\n------------\n'
+          txt_note = '''v1.2.39 .NET 当前版本模式修复
+          -------------------------------
+          - 当前站点 config.xml 的 SoftVersionID 固定作为 .NET RegStr 首个主模式；
+          - 原有有效本地授权与 ITMC.Web.dll 中证明的同族模式继续合并保留；
+          - GUI 一键恢复与 CLI gencode 共用同一 RegStr 解析器；
+          - 当前 SoftVersionID 未进入最终 RegStr 时直接阻止执行，避免数据库写入成功却显示“系统不支持任何模式”。
+
+          '''
+          if txt_anchor not in readme_txt:
+              raise SystemExit('README.txt software-update anchor missing')
+          readme_txt = readme_txt.replace(txt_anchor, txt_note + txt_anchor, 1)
+          write('README.txt', readme_txt)
+
+          changelog = read('CHANGELOG.md')
+          entry = '''## [1.2.39] - 2026-09-10
+
+          ### Fixed
+
+          - 修复 .NET 本地注册能够成功创建/写入授权数据，但当前站点 `SoftVersionID` 未必进入最终 `RegStr`，导致应用启动后仍显示“系统不支持任何模式”的问题。现在只从目标站点自己的 `config.xml` / `bin/config.xml` 读取当前 `SoftVersionID`，验证它与检测结果一致后，将其作为 `RegStr` 首个主模式。
+          - 不再让“已有本地 RegStr”或 `ITMC.Web.dll` 字符串扫描结果覆盖当前系统版本；两者改为兼容模式来源，与当前 `SoftVersionID` 去重合并。仍不使用目录名、全局默认列表或跨项目推断作为执行证据。
+          - `.NET` CLI `gencode` 从直接调用 `detectProductList()` 改为与 GUI 一键恢复共用 `detectDotNetRegStr()`，避免不同入口生成不同的模式集合。
+          - 生成前新增当前 `SoftVersionID` 必须存在于最终 `RegStr` 的硬性检查；若缺失则以 `[MODE]` 失败，不再继续进入目标 `gencode / DoRegistry / CheckReInfo`。
+
+          ### Regression
+
+          - 新增 YX030308 风格回归夹具：目标 `ITMC.Web.dll` 只包含 `YX030301`、`YX030321` 等兼容模式而故意不包含当前 `YX030308`，测试要求最终 RegStr 精确为 `YX030308,YX030301,YX030321`。
+          - CI 增加统一 RegStr 解析器、当前版本包含检查和目标 DLL 兼容模式合并的源码门禁。
+
+          '''
+          if changelog.startswith('## [1.2.39]'):
+              raise SystemExit('CHANGELOG already contains v1.2.39')
+          write('CHANGELOG.md', entry + changelog)
+
+          notes = '''# LicenseRecover v1.2.39
+
+          本版修复 .NET 授权已经能够正常执行 `gencode -> DoRegistry -> CheckReInfo`、甚至创建本地授权数据库，但应用仍提示“系统不支持任何模式”的最后一层问题。
+
+          ## 根因
+
+          v1.2.38 的 ASP.NET Hosted AppDomain、大小写 `itmcRegedit.dll` / `ITMC.Regedit.dll` 注册链已经能够正常运行，但 `RegStr` 的来源仍可能被旧本地授权或 `ITMC.Web.dll` 中扫描出的兼容模式列表决定。若当前站点自己的 `SoftVersionID` 恰好没有出现在这些列表里，就会出现“授权写入成功、原生 CheckReInfo 通过、业务层模式判断仍不命中”的情况。
+
+          ## 修复
+
+          - 当前目标站点 `config.xml`（站点根优先、bin 兼容）的 `SystemSoft/SoftVersionID` 现在固定作为 .NET `RegStr` 的首个主模式。
+          - 只有该值与当前目标目录检测得到的 `Detection.versionId` 一致且格式合法时才采用；不会从目录名或默认产品表猜测。
+          - 已存在的有效本地授权 `RegStr` 与目标 `ITMC.Web.dll` 中证明的同族产品项改为兼容模式，追加到当前版本之后并自动去重。
+          - GUI 一键恢复和 CLI `gencode` 统一调用同一个 `detectDotNetRegStr()`，不再存在一个入口注入版本、另一个入口只扫描 DLL 的分叉。
+          - 在调用目标注册组件前增加硬性门禁：只要检测到 `SoftVersionID`，最终 `RegStr` 必须明确包含它；否则以 `[MODE]` 失败并停止写入。
+
+          ## 回归验证
+
+          新增 YX030308 风格夹具：`ITMC.Web.dll` 只暴露 `YX030301` 与 `YX030321` 两个兼容模式，故意不暴露当前 `YX030308`。测试要求最终结果为：
+
+          `YX030308,YX030301,YX030321`
+
+          这样可直接覆盖此前“数据库激活成功但当前模式缺失”的场景。
+
+          ## 保持不变
+
+          - v1.2.37/v1.2.38 的真实 ASP.NET Hosted AppDomain 与站点根路径绑定不变；
+          - 小写 `itmcRegedit.dll` 优先、大写 `ITMC.Regedit.dll` 回退规则不变；
+          - `registrationProduct` 与应用 `ProName`/`RegStr` 继续分离；
+          - PRE-BLOCK FIRST、备份、失败回滚和默认授权联网隔离不变；
+          - 不修改目标注册 DLL，也不改变目标组件自己的申请号、`DoRegistry()`、`CheckReInfo()` 算法。
+          '''
+          notes = '\n'.join(line[10:] if line.startswith('          ') else line for line in notes.splitlines()) + '\n'
+          Path('release-notes/v1.2.39.md').write_text(notes, encoding='utf-8', newline='\n')
+
+          docs_path = 'docs/DOTNET_ONE_CLICK_COMPATIBILITY.md'
+          docs = read(docs_path)
+          docs_append = '''
+
+          ## v1.2.39 current-mode RegStr rule
+
+          For modern .NET targets, the target site's own `config.xml` `SystemSoft/SoftVersionID` is now the primary RegStr mode. A valid existing local RegStr and same-family IDs extracted from that target `ITMC.Web.dll` are compatibility additions, not replacements for the current version. The resolver rejects folder/default-list guessing and one-click refuses to invoke the native registration chain if a detected current SoftVersionID is absent from the final RegStr.
+          '''
+          docs_append = '\n'.join(line[10:] if line.startswith('          ') else line for line in docs_append.splitlines())
+          if '## v1.2.39 current-mode RegStr rule' not in docs:
+              write(docs_path, docs.rstrip() + docs_append + '\n')
+
+          print('v1.2.39 patch applied successfully')
+          PY
+
+          git diff --check
+          git status --short
+
+      - name: Commit v1.2.39 to main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add VERSION.txt README.md README.txt CHANGELOG.md docs/DOTNET_ONE_CLICK_COMPATIBILITY.md \
+            release-notes/v1.2.39.md scripts/verify.ps1 \
+            src/main/java/LicenseRecover.java \
+            src/main/java/LicenseRecoverModernGUIAutoRecovery.java \
+            src/test/java/RefactorSmokeTest.java
+          git commit -m 'fix: include current SoftVersionID in .NET RegStr (v1.2.39)'
+          git push origin HEAD:main
