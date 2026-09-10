@@ -1,0 +1,31 @@
+name: Finalize v1.2.41 metadata
+
+on:
+  push:
+    branches:
+      - refactor/java-native-host-v1.2.41
+    paths:
+      - .github/workflows/finalize-v1.2.41-metadata.yml
+      - scripts/finalize-v1.2.41-metadata.py
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refactor/java-native-host-v1.2.41
+          fetch-depth: 0
+      - run: python3 scripts/finalize-v1.2.41-metadata.py
+      - run: git diff --check
+      - name: Commit metadata
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git rm .github/workflows/finalize-v1.2.41-metadata.yml scripts/finalize-v1.2.41-metadata.py
+          git add README.md README.txt CHANGELOG.md
+          git commit -m "docs: finalize v1.2.41 release metadata"
+          git push origin HEAD:refactor/java-native-host-v1.2.41
