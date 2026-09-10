@@ -1,1 +1,0 @@
-Temporary branch note for PR trigger; remove before merge if desired.
