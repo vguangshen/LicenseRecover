@@ -12,6 +12,7 @@ This note records the runtime ABI evidence used by the Java target-native regist
 | YT00138 | `SysParamInit.getRealPath("/") -> RegisterUtil.checkRegister(root) -> (String product, String token, String configPath)` | explicit webapp-root path; product `YT001`, RegStr `YT00138` | yes |
 | YT00129 | same wrapper/root relay and three-arg token/path ABI | explicit webapp-root path; product alias `QT04`, RegStr alias `QT0420` | yes |
 | QT40101 | `RegisterListener -> SystemInitService.getRegisterMain(product,path) -> (String product, String token, String configPath)` | classpath root (`WEB-INF/classes`); startup consumes `getRegInfo()` without `checkReInfo()`; product `QT401`, RegStr `QT40101` | no (`ITMCReg-1.0.5.jar`) |
+| XMT0102 | `ServletContext.getRealPath("/") -> RegisterListener.getRegisterMain(product,root,request) -> (String product, String token, String configPath)` | webapp-root path; family `XMT01`, startup ProductID `XMT0102`, RegStr `QT100110,QT100106` | yes |
 
 The supplied DS3110 registration component has SHA-256 `ef00e4751fcbc5ea6c100e4bbaf73f60094310d26c1894ca3906e70c73f45cfa`, identical to the DS2802 `ITMCReg.jar` sample. Its two-argument constructor derives the configuration directory from the registration class CodeSource, so the isolated host must preserve the original JAR CodeSource when restoring protected classes in memory.
 
@@ -33,3 +34,10 @@ The supplied YT00129 archive is WEB-INF-only and does not itself provide the sit
 ## QT40101 classpath-root generation
 
 The supplied QT40101 sample stores registration XML under `WEB-INF/classes/config.xml`. `config1.xml` proves registration product `QT401` while the concrete system is `QT40101`. Startup obtains the exploded classpath root with `ClassUtils.getDefaultClassLoader().getResource("").getPath()`, passes that path through `SystemInitService.getRegisterMain(product,path)`, and then consumes `RegisterMain.getRegInfo().getRegStr()`; this startup path does not call `RegisterMain.checkReInfo()`. The target-native verifier therefore mirrors RegInfo-only validation for this proven profile rather than forcing an API the application does not use at startup.
+
+
+## XMT0102 JSON RegStr consumer
+
+The supplied XMT0102 sample uses the packed ITMCReg generation shared with DS2802/DS3110/YT001xx. `WEB-INF/classes/config.xml` declares `SoftVersionID=XMT0102` and `regInfo=QT100110,QT100106`. Startup constructs `RegisterMain` with concrete `SystemInfo.registerId` (`XMT0102`) and the Servlet webapp root. It reads RegStr by serializing `getRegInfo()` through Fastjson and fetching the lower-case `regStr` property, so concrete runtime-product proof accepts this target-proven consumer shape in addition to direct `getRegStr()` callers.
+
+The sample's existing local payload is family-keyed as `XMT01`; the real startup constructor uses `XMT0102`. A target-native write using ProductID `XMT0102`, webapp-root path, and RegStr `QT100110,QT100106` passes fresh `checkReInfo()` and the application `RegisterListener.checkReInfoNew()` flow.

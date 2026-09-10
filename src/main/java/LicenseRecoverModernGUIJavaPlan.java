@@ -426,9 +426,19 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 + "register" + File.separator + "utils" + File.separator + "SystemInfo.class");
         File listener = new File(classes, "com" + File.separator + "itmc" + File.separator
                 + "register" + File.separator + "service" + File.separator + "RegisterListener.class");
-        if (classFileContainsAll(systemInfo, "config.xml", "SystemSoft", "registerId")
-                && classFileContainsAll(listener, "com/itmc/register/utils/SystemInfo", "registerId",
-                "itmc/regedit/RegisterMain", "getRegStr", "versionID", "contains")) return concrete;
+        if (classFileContainsAll(systemInfo, "config.xml", "SystemSoft", "registerId")) {
+            boolean directGetter = classFileContainsAll(listener,
+                    "com/itmc/register/utils/SystemInfo", "registerId",
+                    "itmc/regedit/RegisterMain", "getRegStr", "versionID", "contains");
+            // XMT0102 serializes RegeditInfo through Fastjson and reads the lower-case
+            // regStr property instead of invoking RegeditInfo.getRegStr() directly.
+            boolean jsonGetter = classFileContainsAll(listener,
+                    "com/itmc/register/utils/SystemInfo", "registerId",
+                    "itmc/regedit/RegisterMain", "checkReInfo", "getRegInfo",
+                    "com/alibaba/fastjson/JSONObject", "toJSONString", "parseObject",
+                    "regStr", "versionID", "contains");
+            if (directGetter || jsonGetter) return concrete;
+        }
 
         // Another target-owned generation (for example YX0305xx) loads
         // classes/config.xml SoftVersionID into PRODUCT_ALL_NUM and its startup runner

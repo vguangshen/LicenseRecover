@@ -356,6 +356,34 @@ public final class RefactorSmokeTest {
                         && xmtPlan.automaticRecoveryReady,
                 "XMT family becomes executable only after exact token appears in target bytecode");
 
+        Path xmt0102Root = base.resolve("java-XMT0102-json-regstr");
+        Path xmt0102Lib = xmt0102Root.resolve("WEB-INF/lib");
+        Path xmt0102Classes = xmt0102Root.resolve("WEB-INF/classes");
+        Files.createDirectories(xmt0102Lib);
+        Files.createDirectories(xmt0102Classes.resolve("com/itmc/register/utils"));
+        Files.createDirectories(xmt0102Classes.resolve("com/itmc/register/service"));
+        Files.write(xmt0102Lib.resolve("ITMCReg.jar"), new byte[]{1});
+        Files.write(xmt0102Root.resolve("systemConfig.yml"),
+                Arrays.asList("global.system.VersionID=XMT0102"), StandardCharsets.UTF_8);
+        Files.write(xmt0102Classes.resolve("config.xml"), Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>XMT0102</SoftVersionID><regInfo>QT100110,QT100106</regInfo></SystemSoft></ROOT>"),
+                StandardCharsets.UTF_8);
+        Files.write(xmt0102Classes.resolve("RegistrationEvidence.class"),
+                "XMT01".getBytes(StandardCharsets.US_ASCII));
+        Files.write(xmt0102Classes.resolve("com/itmc/register/utils/SystemInfo.class"),
+                "config.xml SystemSoft registerId".getBytes(StandardCharsets.US_ASCII));
+        Files.write(xmt0102Classes.resolve("com/itmc/register/service/RegisterListener.class"),
+                "com/itmc/register/utils/SystemInfo registerId itmc/regedit/RegisterMain checkReInfo getRegInfo "
+                        .concat("com/alibaba/fastjson/JSONObject toJSONString parseObject regStr versionID contains")
+                        .getBytes(StandardCharsets.US_ASCII));
+        LicenseRecoverModernGUIJavaPlan xmt0102Plan =
+                LicenseRecoverModernGUIJavaPlan.inspect(xmt0102Root.toFile());
+        check("XMT01".equals(xmt0102Plan.authorizationFamily)
+                        && "XMT0102".equals(xmt0102Plan.runtimeProductId)
+                        && "QT100110,QT100106".equals(xmt0102Plan.regStr)
+                        && xmt0102Plan.automaticRecoveryReady,
+                "XMT0102 proves concrete startup ProductID when RegStr is consumed through JSONObject");
+
         Path ds501Root = base.resolve("java-DS50109");
         Path ds501Lib = ds501Root.resolve("WEB-INF/lib");
         Path ds501Classes = ds501Root.resolve("WEB-INF/classes");
