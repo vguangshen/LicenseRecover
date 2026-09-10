@@ -1,0 +1,112 @@
+name: Apply Java XMT0102 runtime-profile parity
+
+on:
+  push:
+    branches:
+      - refactor/java-native-host-v1.2.41
+    paths:
+      - .github/workflows/apply-java-xmt0102-profile-v1.2.41.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: refactor/java-native-host-v1.2.41
+          fetch-depth: 0
+      - name: Apply XMT0102 target-startup evidence fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('src/main/java/LicenseRecoverModernGUIJavaPlan.java')
+          s = p.read_text(encoding='utf-8')
+          old = '''        if (classFileContainsAll(systemInfo, "config.xml", "SystemSoft", "registerId")
+                && classFileContainsAll(listener, "com/itmc/register/utils/SystemInfo", "registerId",
+                "itmc/regedit/RegisterMain", "getRegStr", "versionID", "contains")) return concrete;
+'''
+          new = '''        if (classFileContainsAll(systemInfo, "config.xml", "SystemSoft", "registerId")) {
+            boolean directGetter = classFileContainsAll(listener,
+                    "com/itmc/register/utils/SystemInfo", "registerId",
+                    "itmc/regedit/RegisterMain", "getRegStr", "versionID", "contains");
+            // XMT0102-style startup serializes RegeditInfo to JSONObject and reads the
+            // lower-case \"regStr\" property instead of invoking getRegStr() directly.
+            // Accept that only when the selected target proves the complete local chain.
+            boolean jsonGetter = classFileContainsAll(listener,
+                    "com/itmc/register/utils/SystemInfo", "registerId",
+                    "itmc/regedit/RegisterMain", "checkReInfo", "getRegInfo",
+                    "com/alibaba/fastjson/JSONObject", "toJSONString", "parseObject",
+                    "regStr", "versionID", "contains");
+            if (directGetter || jsonGetter) return concrete;
+        }
+'''
+          if old not in s:
+              raise SystemExit('JavaPlan target block not found')
+          p.write_text(s.replace(old, new, 1), encoding='utf-8')
+
+          p = Path('src/test/java/RefactorSmokeTest.java')
+          s = p.read_text(encoding='utf-8')
+          anchor = '''        check("XMT01".equals(xmtPlan.authorizationFamily)
+                        && "XMT01".equals(xmtPlan.runtimeProductId)
+                        && xmtPlan.automaticRecoveryReady,
+                "XMT family becomes executable only after exact token appears in target bytecode");
+'''
+          block = anchor + '''
+        Path xmt0102Root = base.resolve("java-XMT0102-json-regstr");
+        Path xmt0102Lib = xmt0102Root.resolve("WEB-INF/lib");
+        Path xmt0102Classes = xmt0102Root.resolve("WEB-INF/classes");
+        Files.createDirectories(xmt0102Lib);
+        Files.createDirectories(xmt0102Classes.resolve("com/itmc/register/utils"));
+        Files.createDirectories(xmt0102Classes.resolve("com/itmc/register/service"));
+        Files.write(xmt0102Lib.resolve("ITMCReg.jar"), new byte[]{1});
+        Files.write(xmt0102Root.resolve("systemConfig.yml"),
+                Arrays.asList("global.system.VersionID=XMT0102"), StandardCharsets.UTF_8);
+        Files.write(xmt0102Classes.resolve("config.xml"), Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>XMT0102</SoftVersionID><regInfo>QT100110,QT100106</regInfo></SystemSoft></ROOT>"),
+                StandardCharsets.UTF_8);
+        Files.write(xmt0102Classes.resolve("RegistrationEvidence.class"),
+                "XMT01".getBytes(StandardCharsets.US_ASCII));
+        Files.write(xmt0102Classes.resolve("com/itmc/register/utils/SystemInfo.class"),
+                "config.xml SystemSoft registerId".getBytes(StandardCharsets.US_ASCII));
+        Files.write(xmt0102Classes.resolve("com/itmc/register/service/RegisterListener.class"),
+                "com/itmc/register/utils/SystemInfo registerId itmc/regedit/RegisterMain checkReInfo getRegInfo "
+                        .concat("com/alibaba/fastjson/JSONObject toJSONString parseObject regStr versionID contains")
+                        .getBytes(StandardCharsets.US_ASCII));
+        LicenseRecoverModernGUIJavaPlan xmt0102Plan =
+                LicenseRecoverModernGUIJavaPlan.inspect(xmt0102Root.toFile());
+        check("XMT01".equals(xmt0102Plan.authorizationFamily)
+                        && "XMT0102".equals(xmt0102Plan.runtimeProductId)
+                        && "QT100110,QT100106".equals(xmt0102Plan.regStr)
+                        && xmt0102Plan.automaticRecoveryReady,
+                "XMT0102 proves concrete startup ProductID even when RegStr is read through JSONObject rather than getRegStr()");
+'''
+          if anchor not in s:
+              raise SystemExit('RefactorSmokeTest XMT anchor not found')
+          p.write_text(s.replace(anchor, block, 1), encoding='utf-8')
+
+          p = Path('docs/java-runtime-profile-v1.2.41.md')
+          s = p.read_text(encoding='utf-8')
+          row = '| QT40101 | `RegisterListener -> SystemInitService.getRegisterMain(product,path) -> (String product, String token, String configPath)` | classpath root (`WEB-INF/classes`); startup consumes `getRegInfo()` without `checkReInfo()`; product `QT401`, RegStr `QT40101` | no (`ITMCReg-1.0.5.jar`) |\n'
+          add = row + '| XMT0102 | `ServletContext.getRealPath("/") -> RegisterListener.getRegisterMain(product,root,request) -> (String product, String token, String configPath)` | explicit webapp-root path; authorization family `XMT01`, startup ProductID `XMT0102`, RegStr `QT100110,QT100106` | yes |\n'
+          if row not in s:
+              raise SystemExit('runtime-profile matrix anchor not found')
+          s = s.replace(row, add, 1)
+          s += '''\n\n## XMT0102 JSON RegStr consumer\n\nThe supplied XMT0102 sample uses the same packed ITMCReg generation as DS2802/DS3110/YT001xx. `WEB-INF/classes/config.xml` declares `SoftVersionID=XMT0102` and `regInfo=QT100110,QT100106`. Startup first constructs `RegisterMain` with the concrete `SystemInfo.registerId` (`XMT0102`) and the Servlet webapp root. Unlike some sibling generations, it serializes `getRegInfo()` through Fastjson and reads the lower-case `regStr` property instead of calling `RegeditInfo.getRegStr()` directly. Runtime-product proof therefore accepts either target-proven consumer shape; it must not fall back to the broader `XMT01` family solely because the direct getter symbol is absent.\n\nThe supplied root/lib local payload decrypts under `XMT01` with RegStr `QT100110,QT100106`, but that family-keyed payload is rejected by the real startup constructor using `XMT0102`. A target-native write using ProductID `XMT0102`, webapp-root path and the same RegStr passes fresh `checkReInfo()` and the application `RegisterListener.checkReInfoNew()` flow (`CHECK_REG=true`, `AUTHORIZE_FLAG=true`).\n'''
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Commit patch and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/apply-java-xmt0102-profile-v1.2.41.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/main/java/LicenseRecoverModernGUIJavaPlan.java src/test/java/RefactorSmokeTest.java docs/java-runtime-profile-v1.2.41.md .github/workflows/apply-java-xmt0102-profile-v1.2.41.yml
+          git commit -m 'fix: mirror XMT0102 JSON RegStr startup flow'
+          git push origin HEAD:refactor/java-native-host-v1.2.41
