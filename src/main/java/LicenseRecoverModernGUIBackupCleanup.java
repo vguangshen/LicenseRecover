@@ -189,7 +189,8 @@ public final class LicenseRecoverModernGUIBackupCleanup {
     private static JButton findButton(Container r,String s){for(Component c:r.getComponents()){if(c instanceof JButton&&s.equals(((JButton)c).getText()))return(JButton)c;if(c instanceof Container){JButton x=findButton((Container)c,s);if(x!=null)return x;}}return null;}
     private static void appendGuiLog(JFrame f,String s){if(f==null||s==null||s.isEmpty())return;Runnable r=()->{JTextArea a=findLogArea(f.getContentPane());if(a!=null){a.append(s);a.setCaretPosition(a.getDocument().getLength());}};if(SwingUtilities.isEventDispatchThread())r.run();else SwingUtilities.invokeLater(r);}
     private static JTextArea findLogArea(Container r){if(r instanceof JPanel){JPanel p=(JPanel)r;if(p.getBorder() instanceof TitledBorder&&"运行日志".equals(((TitledBorder)p.getBorder()).getTitle()))return findFirst(p,JTextArea.class);}for(Component c:r.getComponents())if(c instanceof Container){JTextArea a=findLogArea((Container)c);if(a!=null)return a;}return null;}
-    private static String humanBytes(long b){if(b<1024)return b+" B";double v=b;String[]u={"KB","MB","GB","TB"};int i=-1;do{v/=1024;i++;}while(v>=1024&&i<u.length-1);return String.format(Locale.ROOT,"%.2f %s",v,u[i]);}
+    static String formatBytes(long b){if(b<1024)return b+" B";double v=b;String[]u={"KB","MB","GB","TB"};int i=-1;do{v/=1024;i++;}while(v>=1024&&i<u.length-1);return String.format(Locale.ROOT,"%.2f %s",v,u[i]);}
+    private static String humanBytes(long b){return formatBytes(b);}
     private static boolean contains(String[]a,String s){if(a!=null)for(String x:a)if(s.equals(x))return true;return false;}
     private static String safe(Throwable e){Throwable x=e;while(x!=null&&x.getCause()!=null)x=x.getCause();String s=x==null?"未知错误":x.getMessage();return s==null||s.trim().isEmpty()?String.valueOf(x):s;}
 
