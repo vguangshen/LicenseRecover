@@ -63,6 +63,8 @@ public final class LicenseRecoverModernGUI {
     private final List<BatchTarget> batchTargets = new ArrayList<BatchTarget>();
     private final JRadioButton batchWay1 = new JRadioButton("一键恢复授权（推荐）", true);
     private final JRadioButton batchWay3 = new JRadioButton("方式三：移除联网授权代码");
+    private final JRadioButton batchCleanup = new JRadioButton("批量删除备份");
+    private final JSpinner batchCleanupKeep = new JSpinner(new SpinnerNumberModel(3, 0, 50, 1));
     private final JCheckBox batchBackupCheck = new JCheckBox("写入前备份", true);
     private final JCheckBox batchBlockNetCheck = new JCheckBox("同时阻止残留联网", true);
     private final JCheckBox batchDryRunCheck = new JCheckBox("只预览，不写入", false);
@@ -316,12 +318,14 @@ public final class LicenseRecoverModernGUI {
         ButtonGroup group = new ButtonGroup();
         group.add(batchWay1);
         group.add(batchWay3);
+        group.add(batchCleanup);
         c.gridx = 0; c.gridy = 1; c.weightx = 0;
         top.add(new JLabel("操作:"), c);
         c.gridx = 1; c.gridwidth = 2; c.weightx = 1;
         JPanel methods = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         methods.add(batchWay1);
         methods.add(batchWay3);
+        methods.add(batchCleanup);
         top.add(methods, c);
         c.gridx = 3; c.gridwidth = 1; c.weightx = 0;
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
@@ -339,7 +343,18 @@ public final class LicenseRecoverModernGUI {
         batchOptions.add(batchBackupCheck);
         batchOptions.add(batchBlockNetCheck);
         batchOptions.add(batchDryRunCheck);
+        batchOptions.add(Box.createHorizontalStrut(12));
+        batchOptions.add(new JLabel("清理时每个原文件保留最近"));
+        batchCleanupKeep.setPreferredSize(new Dimension(58, batchCleanupKeep.getPreferredSize().height));
+        batchCleanupKeep.setToolTipText("仅用于‘批量删除备份’；0 表示删除全部受管理备份");
+        batchOptions.add(batchCleanupKeep);
+        batchOptions.add(new JLabel("份"));
         top.add(batchOptions, c);
+
+        batchWay1.addActionListener(e -> updateBatchOperationUi());
+        batchWay3.addActionListener(e -> updateBatchOperationUi());
+        batchCleanup.addActionListener(e -> updateBatchOperationUi());
+        updateBatchOperationUi();
         root.add(top, BorderLayout.NORTH);
 
         batchTable.setFillsViewportHeight(true);
@@ -352,6 +367,18 @@ public final class LicenseRecoverModernGUI {
         batchProgress.setString("未开始");
         root.add(batchProgress, BorderLayout.SOUTH);
         return root;
+    }
+
+    private void updateBatchOperationUi() {
+        boolean cleanup = batchCleanup.isSelected();
+        batchBackupCheck.setEnabled(!cleanup);
+        batchBlockNetCheck.setEnabled(!cleanup);
+        batchDryRunCheck.setEnabled(!cleanup);
+        batchCleanupKeep.setEnabled(cleanup);
+        batchRunButton.setText(cleanup ? "批量删除备份" : "批量执行");
+        batchRunButton.setToolTipText(cleanup
+                ? "扫描所选父目录并清理 LicenseRecover 管理的历史备份"
+                : null);
     }
 
     private JComponent buildLogPanel() {
@@ -743,6 +770,10 @@ public final class LicenseRecoverModernGUI {
             setStatus("请等待当前批量任务完成，或先取消当前任务", false);
             return;
         }
+        if (batchCleanup.isSelected()) {
+            runBatchBackupCleanup();
+            return;
+        }
         if (batchTargets.isEmpty()) {
             scanBatch(true);
             return;
@@ -826,6 +857,129 @@ public final class LicenseRecoverModernGUI {
             }
         };
         batchWorker.execute();
+    }
+
+    private void runBatchBackupCleanup() {
+        final File root = new File(batchRootField.getText().trim());
+        if (!root.isDirectory()) {
+            setStatus("批量父目录无效", false);
+            JOptionPane.showMessageDialog(frame, "请先选择有效的批量父目录。",
+                    "批量删除备份", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        final int keep = ((Number) batchCleanupKeep.getValue()).intValue();
+        batchRunButton.setEnabled(false);
+        batchScanButton.setEnabled(false);
+        batchCancelButton.setEnabled(false);
+        batchProgress.setIndeterminate(true);
+        batchProgress.setString("正在扫描受管理备份...");
+        setStatusInfo("正在扫描 LicenseRecover 历史备份");
+        appendLog("[备份清理] 扫描: " + root.getAbsolutePath()
+                + "；每个原文件保留最近 " + keep + " 份。\n");
+
+        batchWorker = new SwingWorker<LicenseRecoverModernGUIBackupCleanup.Plan, Void>() {
+            protected LicenseRecoverModernGUIBackupCleanup.Plan doInBackground() throws Exception {
+                return LicenseRecoverModernGUIBackupCleanup.scan(root, keep);
+            }
+
+            protected void done() {
+                final LicenseRecoverModernGUIBackupCleanup.Plan plan;
+                try {
+                    plan = get();
+                } catch (Exception ex) {
+                    finishBatchBackupCleanup("备份扫描失败", false);
+                    JOptionPane.showMessageDialog(frame, "扫描备份失败：\n" + safeBatchCleanupError(ex),
+                            "批量删除备份", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+
+                batchProgress.setIndeterminate(false);
+                batchProgress.setMinimum(0);
+                batchProgress.setMaximum(Math.max(1, plan.matched.size()));
+                batchProgress.setValue(plan.matched.size());
+                batchProgress.setString("受管理备份 " + plan.matched.size() + "；拟删除 " + plan.delete.size());
+
+                if (plan.matched.isEmpty()) {
+                    finishBatchBackupCleanup("没有找到受管理备份", true);
+                    JOptionPane.showMessageDialog(frame,
+                            "没有找到 LicenseRecover 管理的备份文件。\n普通 .bak 文件不会被匹配。",
+                            "批量删除备份", JOptionPane.INFORMATION_MESSAGE);
+                    return;
+                }
+                if (plan.delete.isEmpty()) {
+                    finishBatchBackupCleanup("当前保留策略无需删除", true);
+                    JOptionPane.showMessageDialog(frame,
+                            "找到 " + plan.matched.size() + " 个 LicenseRecover 备份，当前保留策略无需删除。",
+                            "批量删除备份", JOptionPane.INFORMATION_MESSAGE);
+                    return;
+                }
+
+                String zero = keep == 0
+                        ? "\n\n注意：当前设置为保留 0 份，将删除扫描范围内全部受管理备份。"
+                        : "";
+                int yes = JOptionPane.showConfirmDialog(frame,
+                        "扫描目录：" + plan.root.getAbsolutePath()
+                                + "\n找到受管理备份：" + plan.matched.size() + " 个"
+                                + "\n保留：" + plan.keepCount + " 个"
+                                + "\n准备删除：" + plan.delete.size() + " 个"
+                                + "\n预计释放：" + LicenseRecoverModernGUIBackupCleanup.formatBytes(plan.deleteBytes)
+                                + "\n\n只匹配 LicenseRecover 生成的备份；普通 .bak 不处理。"
+                                + zero + "\n\n确定执行删除吗？",
+                        "确认批量删除备份", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
+                if (yes != JOptionPane.OK_OPTION) {
+                    appendLog("[备份清理] 用户取消；未删除任何文件。\n");
+                    finishBatchBackupCleanup("已取消，未删除任何文件", true);
+                    return;
+                }
+
+                batchProgress.setIndeterminate(true);
+                batchProgress.setString("正在删除历史备份...");
+                setStatusInfo("正在批量删除历史备份");
+                batchWorker = new SwingWorker<LicenseRecoverModernGUIBackupCleanup.DeleteResult, Void>() {
+                    protected LicenseRecoverModernGUIBackupCleanup.DeleteResult doInBackground() {
+                        return LicenseRecoverModernGUIBackupCleanup.execute(plan, LicenseRecoverModernGUI.this::appendLog);
+                    }
+
+                    protected void done() {
+                        try {
+                            LicenseRecoverModernGUIBackupCleanup.DeleteResult r = get();
+                            String message = "清理完成。\n已删除：" + r.deleted + " 个"
+                                    + "\n失败：" + r.failed + " 个"
+                                    + "\n实际释放：" + LicenseRecoverModernGUIBackupCleanup.formatBytes(r.freedBytes);
+                            finishBatchBackupCleanup(r.failed == 0 ? "备份清理完成" : "备份清理完成（存在失败）",
+                                    r.failed == 0);
+                            JOptionPane.showMessageDialog(frame, message, "批量删除备份",
+                                    r.failed == 0 ? JOptionPane.INFORMATION_MESSAGE : JOptionPane.WARNING_MESSAGE);
+                        } catch (Exception ex) {
+                            finishBatchBackupCleanup("备份清理失败", false);
+                            JOptionPane.showMessageDialog(frame, "清理失败：\n" + safeBatchCleanupError(ex),
+                                    "批量删除备份", JOptionPane.ERROR_MESSAGE);
+                        }
+                    }
+                };
+                batchWorker.execute();
+            }
+        };
+        batchWorker.execute();
+    }
+
+    private void finishBatchBackupCleanup(String text, boolean success) {
+        batchWorker = null;
+        batchRunButton.setEnabled(true);
+        batchScanButton.setEnabled(true);
+        batchCancelButton.setEnabled(false);
+        batchProgress.setIndeterminate(false);
+        batchProgress.setValue(0);
+        batchProgress.setString(text);
+        setStatus(text, success);
+        updateBatchOperationUi();
+    }
+
+    private static String safeBatchCleanupError(Throwable ex) {
+        Throwable x = ex;
+        while (x != null && x.getCause() != null) x = x.getCause();
+        String s = x == null ? "未知错误" : x.getMessage();
+        return s == null || s.trim().isEmpty() ? String.valueOf(x) : s;
     }
 
     private String recommendedBatchBlockReason(BatchTarget target) {
