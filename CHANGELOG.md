@@ -1,3 +1,18 @@
+## [1.2.41] - 2026-09-11
+
+### Changed
+- Java 一键恢复重构为 target-native 运行链：按目标应用自身启动字节码证明的 `RegisterMain` 构造器、路径语义和 RegStr 消费方式执行，不再把所有 Java 产品当成同一注册布局。
+- 目标 `WEB-INF/classes` / `WEB-INF/lib` 改由隔离 child-first loader 加载；Virbox 注册类仅在 helper 内存中恢复，并保留原始注册 JAR CodeSource。
+- 授权族、具体 Runtime ProductID 与目标启动所需 RegStr token 分离，支持 `SoftVersionID != RegStr token` 以及 Fastjson `regStr` 消费等真实变体。
+
+### Verification
+- Java `doRegistry()` 成功不再直接视为最终成功。写入后必须启动全新 JVM，按目标启动 profile 重新创建 `RegisterMain` 并完成目标校验。
+- 只有 fresh-JVM 验证确认注册状态、持久化 RegStr 包含全部目标证明 token、且非空 ProName 与 Runtime ProductID 一致后才显示最终 `OK`；失败时保持非 OK 并回滚注册文件快照。
+
+### Regression
+- 回归矩阵覆盖 DS50109、DS2406、QT30103、DS2802、DS3110、YT00138、YT00129、QT40101、QT100101、YX030506、XMT0102、XMT0103 以及未知布局 fail-closed。
+- 增加源码门禁，禁止 GUI 在 fresh-JVM 验证前返回最终成功，并禁止 JavaHost 在 `checkReInfo` / RegStr / ProName 验证之前输出最终 `RESULT: OK`。
+
 ## [1.2.40] - 2026-09-10
 
 ### Fixed

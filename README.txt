@@ -1,4 +1,4 @@
-LicenseRecover v1.2.40
+LicenseRecover v1.2.41
 =====================
 
 ITMC 云实训平台离线授权恢复工具
@@ -76,6 +76,17 @@ v1.2.39 .NET 当前版本模式修复
 - 原有有效本地授权与 ITMC.Web.dll 中证明的同族模式继续合并保留；
 - GUI 一键恢复与 CLI gencode 共用同一 RegStr 解析器；
 - 当前 SoftVersionID 未进入最终 RegStr 时直接阻止执行，避免数据库写入成功却显示“系统不支持任何模式”。
+
+v1.2.41 Java target-native 一键恢复
+----------------------------------
+- Java 授权恢复按目标应用真实 RegisterMain 构造器、路径来源和 RegStr 消费方式执行；
+- 支持 webapp 根、WEB-INF/classes、CodeSource/default 等已验证路径语义；
+- Virbox 注册类只在隔离 helper 内存中恢复，原目标 JAR 不改写，并保留原始 CodeSource；
+- 授权族、Tomcat 实际 Runtime ProductID 与 RegStr token 分开验证；
+- doRegistry 成功不再等于最终成功：必须 fresh JVM 重建目标启动链并通过 checkReInfo/RegInfo、RegStr 与 ProName 校验后才显示 OK；
+- 任一阶段失败保持失败状态并回滚注册文件快照；
+- 回归覆盖 DS50109、DS2406、QT30103、DS2802、DS3110、YT00138、YT00129、QT40101、XMT0102、XMT0103 等样本模型。
+
 
 v1.2.40 .NET 注册链一致性修复
 ----------------------------

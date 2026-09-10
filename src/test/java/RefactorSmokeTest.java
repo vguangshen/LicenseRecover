@@ -11,6 +11,8 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -50,6 +52,38 @@ public final class RefactorSmokeTest {
 
         check("fwq".equals(LicenseRecover.LOCAL_AUTH_USER_ID),
                 "local authorization UserID fixed to fwq");
+        Set<String> oneDefault = new LinkedHashSet<String>(Arrays.asList(JavaRegistrationRuntimeProfile.D1));
+        Set<String> legacyPath = new LinkedHashSet<String>(Arrays.asList(JavaRegistrationRuntimeProfile.D2));
+        Set<String> modernThreeArg = new LinkedHashSet<String>(Arrays.asList(JavaRegistrationRuntimeProfile.D3));
+        Set<String> modernRootFallback = new LinkedHashSet<String>(Arrays.asList(JavaRegistrationRuntimeProfile.D3, JavaRegistrationRuntimeProfile.D2));
+        Set<String> modernDefault = new LinkedHashSet<String>(Arrays.asList(JavaRegistrationRuntimeProfile.D2));
+        check(JavaRegistrationRuntimeProfile.chooseModes(false, oneDefault, false).get(0)
+                        == JavaRegistrationRuntimeProfile.Mode.ONE_ARG_DEFAULT,
+                "DS50109-style startup keeps legacy one-arg target-default constructor");
+        check(JavaRegistrationRuntimeProfile.chooseModes(false, legacyPath, true).get(0)
+                        == JavaRegistrationRuntimeProfile.Mode.TWO_ARG_PATH,
+                "DS2406-style startup keeps legacy two-arg explicit root path");
+        check(JavaRegistrationRuntimeProfile.chooseModes(true, modernThreeArg, true).get(0)
+                        == JavaRegistrationRuntimeProfile.Mode.THREE_ARG_TOKEN_PATH,
+                "QT30103-style startup keeps modern three-arg token/root constructor");
+        List<JavaRegistrationRuntimeProfile.Mode> ds28Modes =
+                JavaRegistrationRuntimeProfile.chooseModes(true, modernRootFallback, true);
+        check(ds28Modes.size() == 2
+                        && ds28Modes.get(0) == JavaRegistrationRuntimeProfile.Mode.THREE_ARG_TOKEN_PATH
+                        && ds28Modes.get(1) == JavaRegistrationRuntimeProfile.Mode.TWO_ARG_TOKEN_DEFAULT,
+                "DS2802-style startup preserves explicit-root then default-path fallback order");
+        check(JavaRegistrationRuntimeProfile.chooseModes(true, modernDefault, false).get(0)
+                        == JavaRegistrationRuntimeProfile.Mode.TWO_ARG_TOKEN_DEFAULT,
+                "DS3110-style startup keeps modern two-arg target-default constructor");
+        List<JavaRegistrationRuntimeProfile.Mode> ytWrapperModes =
+                JavaRegistrationRuntimeProfile.chooseModes(true, modernRootFallback, true, true);
+        check(ytWrapperModes.size() == 1
+                        && ytWrapperModes.get(0) == JavaRegistrationRuntimeProfile.Mode.THREE_ARG_TOKEN_PATH,
+                "YT001xx wrapper consumes proven servlet root without inventing two-token fallback");
+        check(LicenseRecoverJavaHost.containsAllCsv("QT0420,QT0437", "QT0420"),
+                "Java persisted-mode verification accepts target-proven alias token");
+        check(!LicenseRecoverJavaHost.containsAllCsv("QT0420", "YT00129"),
+                "YT00129 SoftVersionID is distinct from its QT0420 startup registration alias");
         check("YT001".equals(LegacyJavaRegistrationMetadata.selectFallbackPrefix(
                         Arrays.asList("QT1001", "DS26", "YT001", "YT00129"), "YT00138")),
                 "legacy runtime family is derived from target RegisterUtil constants");
@@ -321,6 +355,62 @@ public final class RefactorSmokeTest {
                         && "XMT01".equals(xmtPlan.runtimeProductId)
                         && xmtPlan.automaticRecoveryReady,
                 "XMT family becomes executable only after exact token appears in target bytecode");
+
+        Path xmt0102Root = base.resolve("java-XMT0102-json-regstr");
+        Path xmt0102Lib = xmt0102Root.resolve("WEB-INF/lib");
+        Path xmt0102Classes = xmt0102Root.resolve("WEB-INF/classes");
+        Files.createDirectories(xmt0102Lib);
+        Files.createDirectories(xmt0102Classes.resolve("com/itmc/register/utils"));
+        Files.createDirectories(xmt0102Classes.resolve("com/itmc/register/service"));
+        Files.write(xmt0102Lib.resolve("ITMCReg.jar"), new byte[]{1});
+        Files.write(xmt0102Root.resolve("systemConfig.yml"),
+                Arrays.asList("global.system.VersionID=XMT0102"), StandardCharsets.UTF_8);
+        Files.write(xmt0102Classes.resolve("config.xml"), Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>XMT0102</SoftVersionID><regInfo>QT100110,QT100106</regInfo></SystemSoft></ROOT>"),
+                StandardCharsets.UTF_8);
+        Files.write(xmt0102Classes.resolve("RegistrationEvidence.class"),
+                "XMT01".getBytes(StandardCharsets.US_ASCII));
+        Files.write(xmt0102Classes.resolve("com/itmc/register/utils/SystemInfo.class"),
+                "config.xml SystemSoft registerId".getBytes(StandardCharsets.US_ASCII));
+        Files.write(xmt0102Classes.resolve("com/itmc/register/service/RegisterListener.class"),
+                "com/itmc/register/utils/SystemInfo registerId itmc/regedit/RegisterMain checkReInfo getRegInfo "
+                        .concat("com/alibaba/fastjson/JSONObject toJSONString parseObject regStr versionID contains")
+                        .getBytes(StandardCharsets.US_ASCII));
+        LicenseRecoverModernGUIJavaPlan xmt0102Plan =
+                LicenseRecoverModernGUIJavaPlan.inspect(xmt0102Root.toFile());
+        check("XMT01".equals(xmt0102Plan.authorizationFamily)
+                        && "XMT0102".equals(xmt0102Plan.runtimeProductId)
+                        && "QT100110,QT100106".equals(xmt0102Plan.regStr)
+                        && xmt0102Plan.automaticRecoveryReady,
+                "XMT0102 proves concrete startup ProductID when RegStr is consumed through JSONObject");
+
+        Path xmt0103Root = base.resolve("java-XMT0103-json-regstr");
+        Path xmt0103Lib = xmt0103Root.resolve("WEB-INF/lib");
+        Path xmt0103Classes = xmt0103Root.resolve("WEB-INF/classes");
+        Files.createDirectories(xmt0103Lib);
+        Files.createDirectories(xmt0103Classes.resolve("com/itmc/register/utils"));
+        Files.createDirectories(xmt0103Classes.resolve("com/itmc/register/service"));
+        Files.write(xmt0103Lib.resolve("ITMCReg.jar"), new byte[]{1});
+        Files.write(xmt0103Root.resolve("systemConfig.yml"),
+                Arrays.asList("global.system.VersionID=XMT0103"), StandardCharsets.UTF_8);
+        Files.write(xmt0103Classes.resolve("config.xml"), Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>XMT0103</SoftVersionID><regInfo>QT100102</regInfo></SystemSoft></ROOT>"),
+                StandardCharsets.UTF_8);
+        Files.write(xmt0103Classes.resolve("RegistrationEvidence.class"),
+                "XMT01".getBytes(StandardCharsets.US_ASCII));
+        Files.write(xmt0103Classes.resolve("com/itmc/register/utils/SystemInfo.class"),
+                "config.xml SystemSoft registerId".getBytes(StandardCharsets.US_ASCII));
+        Files.write(xmt0103Classes.resolve("com/itmc/register/service/RegisterListener.class"),
+                "com/itmc/register/utils/SystemInfo registerId itmc/regedit/RegisterMain checkReInfo getRegInfo "
+                        .concat("com/alibaba/fastjson/JSONObject toJSONString parseObject regStr versionID contains")
+                        .getBytes(StandardCharsets.US_ASCII));
+        LicenseRecoverModernGUIJavaPlan xmt0103Plan =
+                LicenseRecoverModernGUIJavaPlan.inspect(xmt0103Root.toFile());
+        check("XMT01".equals(xmt0103Plan.authorizationFamily)
+                        && "XMT0103".equals(xmt0103Plan.runtimeProductId)
+                        && "QT100102".equals(xmt0103Plan.regStr)
+                        && xmt0103Plan.automaticRecoveryReady,
+                "XMT0103 reuses the XMT Fastjson startup profile without a product-specific exception");
 
         Path ds501Root = base.resolve("java-DS50109");
         Path ds501Lib = ds501Root.resolve("WEB-INF/lib");
@@ -754,6 +844,27 @@ public final class RefactorSmokeTest {
         int verifyAt = autoRecoverySource.indexOf("verify.add(\"verify\")");
         check(preBlockAt >= 0 && generateAt > preBlockAt && applyAt > generateAt && verifyAt > applyAt,
                 ".NET pre-block guard is established before gencode, DoRegistry and CheckReInfo in source order");
+
+        int javaDoRegAt = autoRecoverySource.indexOf("[java-stage] DOREG: OK");
+        int javaFreshVerifyAt = autoRecoverySource.indexOf("[java-stage] VERIFY_FRESH: OK");
+        int javaSuccessAt = autoRecoverySource.indexOf("Java local authorization was applied through the target-native registration chain");
+        check(javaDoRegAt >= 0 && javaFreshVerifyAt > javaDoRegAt && javaSuccessAt > javaFreshVerifyAt,
+                "Java final success is emitted only after fresh-JVM target verification, never after DoRegistry alone");
+        check(autoRecoverySource.contains("containsAllRegStrTokens(persisted, regStr)")
+                        && autoRecoverySource.contains("verifiedAttempt == null"),
+                "Java final success requires persisted target RegStr and a successful startup-derived verifier attempt");
+
+        String javaHostSource = new String(Files.readAllBytes(
+                Paths.get("src/main/java/LicenseRecoverJavaHost.java")), StandardCharsets.UTF_8);
+        int javaVerifyMethodAt = javaHostSource.indexOf("static int verify");
+        int javaVerifyOkAt = javaHostSource.indexOf("[java-stage] VERIFY_FRESH: OK", javaVerifyMethodAt);
+        int javaResultOkAt = javaHostSource.indexOf("RESULT: OK", javaVerifyMethodAt);
+        check(javaHostSource.contains("Boolean.TRUE.equals(unregistered)")
+                        && javaHostSource.contains("containsAllCsv(regStr, o.regStr)")
+                        && javaHostSource.contains("persisted ProName mismatch")
+                        && javaVerifyMethodAt >= 0 && javaVerifyOkAt > javaVerifyMethodAt
+                        && javaResultOkAt > javaVerifyOkAt,
+                "Java host prints final RESULT: OK only after checkReInfo/RegStr/ProName verification passes");
         check(autoRecoverySource.contains("action=block")
                         && autoRecoverySource.contains("program=\" + helper.getAbsolutePath()")
                         && autoRecoverySource.contains("HTTP_PROXY")
@@ -989,9 +1100,19 @@ public final class RefactorSmokeTest {
         Path targetRuntime = Files.createTempDirectory("lrc-target-lib-");
         String recoveryCp = LicenseRecoverModernGUIAutoRecovery.buildJavaRecoveryClasspath(
                 toolCpDir.toFile(), targetRuntime.toFile());
-        check(recoveryCp.startsWith(toolCpWithOverlay + File.pathSeparator)
-                        && recoveryCp.endsWith(targetRuntime.toFile().getAbsolutePath() + File.separator + "*"),
-                "Java recovery child classpath keeps tool overlay/core ahead of target WEB-INF/lib");
+        check(recoveryCp.equals(toolCpWithOverlay),
+                "Java recovery helper system classpath stays tool-only; target jars are isolated child-first");
+        check(LicenseRecoverJavaHost.instantiateRegisterMainCompatible(
+                        ModernRegisterMain3.class, "QT30103", "native-token", "D:/app/") instanceof ModernRegisterMain3,
+                "Java native host supports target 3-arg RegisterMain constructor");
+        check(LicenseRecoverJavaHost.instantiateRegisterMainCompatible(
+                        LegacyRegisterMain2.class, "DS24", "ignored", "D:/app/WEB-INF/lib/") instanceof LegacyRegisterMain2,
+                "Java native host supports target 2-arg RegisterMain constructor");
+        check(LicenseRecoverJavaHost.instantiateRegisterMainCompatible(
+                        LegacyRegisterMain1.class, "DS50109", "ignored", "D:/app/") instanceof LegacyRegisterMain1,
+                "Java native host supports target 1-arg RegisterMain constructor");
+        check(LicenseRecoverJavaHost.containsCsv("DS2406,DS2407", "ds2406"),
+                "Java native fresh verifier checks exact current SoftVersionID token");
 
         String autoSource230 = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIAutoRecovery.java")), StandardCharsets.UTF_8);
         check(autoSource230.contains("LicenseRecover.NET.AspNetHost.exe"), "lowercase .NET chain uses ASP.NET host helper");

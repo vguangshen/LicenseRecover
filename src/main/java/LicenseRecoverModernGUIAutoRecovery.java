@@ -101,30 +101,278 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     private static Result recoverJava(Detection d, boolean backup, boolean blockNet, boolean dryRun, Consumer<String> log) throws Exception {
         LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(d.appRoot);
         if (plan.detected) log.accept(plan.logSummary());
-        if (plan.detected && !plan.automaticRecoveryReady) {
-            return Result.fail("自动恢复已阻止：" + plan.recoveryReadiness + "。未修改任何文件。", d);
+        if (!plan.detected || !plan.automaticRecoveryReady)
+            return Result.fail("自动恢复已阻止：" + (plan.detected ? plan.recoveryReadiness : "未识别 Java 注册结构") + "。未修改任何文件。", d);
+        if (blank(plan.runtimeProductId))
+            return Result.fail("[JAVA_CHAIN] 目标目录未确认运行注册ID。", d);
+
+        JavaRegistrationRuntimeProfile runtimeProfile = JavaRegistrationRuntimeProfile.inspect(d.appRoot, d.runtimeDir);
+        log.accept(runtimeProfile.logSummary());
+        if (!runtimeProfile.supported)
+            return Result.fail("[JAVA_RUNTIME_ABI] " + runtimeProfile.failureReason + "。未修改任何文件。", d);
+        List<JavaRegistrationRuntimeProfile.Attempt> attempts = runtimeProfile.attempts;
+
+        String product = plan.runtimeProductId.trim();
+        String version = blank(plan.softVersionId) ? d.versionId : plan.softVersionId.trim();
+        log.accept("[java-chain] target-native isolated helper; product=" + product
+                + " version=" + valueOrPending(version) + " runtime=" + runtimeProfile.evidence + "\n");
+        log.accept("[java-chain] helper system classpath=tool-only; target WEB-INF/classes/lib are child-first isolated\n");
+
+        String regStr = normalizeProductCsv(plan.regStr);
+        boolean regStrFromPlan = !blank(regStr);
+        if (blank(regStr)) {
+            for (JavaRegistrationRuntimeProfile.Attempt attempt : attempts) {
+                log.accept("[java-stage] PROBE: start ctor=" + attempt.summary() + "\n");
+                NativeProcessResult probed = runJavaHost(d, "probe", attempt, product, version,
+                        null, null, null, log);
+                if (probed.exitCode != 0) {
+                    log.accept("[java-stage] PROBE: rejected ctor=" + attempt.summary()
+                            + " output=" + compactNativeOutput(probed.output) + "\n");
+                    continue;
+                }
+                String candidate = normalizeProductCsv(firstValue(probed.output, "TARGET_REGSTR="));
+                if (blank(candidate)) continue;
+                if (!blank(version) && !containsRegStrToken(candidate, version)) {
+                    log.accept("[java-stage] PROBE: RegStr missing current SoftVersionID at ctor="
+                            + attempt.summary() + ": " + candidate + "\n");
+                    continue;
+                }
+                regStr = candidate;
+                log.accept("[java-stage] PROBE: OK RegStr=" + regStr + "\n");
+                break;
+            }
         }
-        File cli=new File(toolDir(),"LicenseRecover.jar");
-        if (!cli.isFile()) return Result.fail("LicenseRecover.jar was not found.",d);
-        List<String> cmd=new ArrayList<String>();
-        cmd.add(javaExe()); cmd.add("-Dfile.encoding=UTF-8"); cmd.add("-cp");
-        String childCp = buildJavaRecoveryClasspath(toolDir(), d.runtimeDir);
-        log.accept("[java-plan] child classpath order=tool overlay/core -> target WEB-INF/lib\n");
-        cmd.add(childCp);
-        cmd.add("LicenseRecover"); cmd.add(d.appRoot.getAbsolutePath());
-        if (dryRun) cmd.add("--dry-run"); if (!backup) cmd.add("--no-backup"); if (!blockNet) cmd.add("--no-block-net");
-        int rc=run(cmd,log);
-        if (dryRun) log.accept("[java-plan] native verify=PREVIEW (write-back check not executed)\n");
-        else log.accept(rc==0
-                ? "[java-plan] native verify=PASS (RegisterMain.checkReInfo())\n"
-                : "[java-plan] native verify=FAILED (see CLI log)\n");
-        return new Result(rc==0,rc==0?"Java local authorization recovery completed and native self-check passed.":"Java recovery failed; see log.",d,null,null,null);
+        if (blank(regStr))
+            return Result.fail("[JAVA_MODE] 目标目录及目标 RegisterMain 均未证明可用 RegStr。", d);
+        // If the target plan proved a startup alias (for example YT00129 -> QT0420),
+        // do not replace it with or require the current SoftVersionID. Dynamic probes
+        // remain conservative and must contain the current version token.
+        if (!regStrFromPlan && !blank(version) && !containsRegStrToken(regStr, version))
+            return Result.fail("[JAVA_MODE] 动态 RegStr 未包含当前 SoftVersionID: " + version + "; RegStr=" + regStr, d);
+        if (regStrFromPlan && !blank(version) && !containsRegStrToken(regStr, version))
+            log.accept("[java-mode] current SoftVersionID=" + version + " startup-mapped RegStr=" + regStr + "\n");
+        else
+            log.accept("[java-mode] current SoftVersionID=" + valueOrPending(version) + " RegStr=" + regStr + "\n");
+
+        JavaRegistrationRuntimeProfile.Attempt primary = attempts.get(0);
+        log.accept("[java-stage] GENCODE: start\n");
+        NativeProcessResult generated = runJavaHost(d, "gencode", primary, product, version,
+                regStr, null, null, log);
+        if (generated.exitCode != 0)
+            throw nativeFailure("JAVA_GENCODE", "target-native request/auth generation failed", generated);
+        String request = findLabeledHex(generated.output, "注册申请号", "申请号");
+        String auth = findLabeledHex(generated.output, "离线授权码", "授权码");
+        if (blank(request) || blank(auth))
+            throw new IOException("[JAVA_GENCODE_PARSE] helper returned success but request/auth fields were not parsed; output="
+                    + compactNativeOutput(generated.output));
+        String machine = firstValue(generated.output, "TARGET_MACHINE=");
+        log.accept("[java-stage] GENCODE_PARSE: OK\n");
+
+        if (dryRun) {
+            log.accept("[dry-run] Java target-native codes generated under process isolation; no target file was changed.\n");
+            return new Result(true, "Java target-native preview completed; no file was changed.",
+                    d, machine, request, auth);
+        }
+
+        LinkedHashMap<File, byte[]> originals = snapshotJavaRegistrationFiles(d);
+        if (backup) backupJavaRegistrationFiles(originals, log);
+        IOException lastFailure = null;
+        for (int i = 0; i < attempts.size(); i++) {
+            JavaRegistrationRuntimeProfile.Attempt writeAttempt = attempts.get(i);
+            if (i > 0) restoreJavaRegistrationFiles(originals, log);
+            try {
+                log.accept("[java-stage] DOREG: start ctor=" + writeAttempt.summary() + "\n");
+                NativeProcessResult applied = runJavaHost(d, "doreg", writeAttempt, product, version,
+                        regStr, request, auth, log);
+                if (applied.exitCode != 0)
+                    throw nativeFailure("JAVA_DOREG", "target RegisterMain.doRegistry() failed for ctor="
+                            + writeAttempt.summary(), applied);
+                log.accept("[java-stage] DOREG: OK ctor=" + writeAttempt.summary() + "\n");
+
+                if (blockNet) blockJavaAuthorizationConfigs(d, log);
+
+                // Re-run the exact startup constructor sequence in fresh JVMs. For
+                // generations such as DS28, Tomcat itself tries explicit-root first and
+                // target-default-path second; only those proven call-site modes are allowed.
+                NativeProcessResult checked = null;
+                JavaRegistrationRuntimeProfile.Attempt verifiedAttempt = null;
+                for (JavaRegistrationRuntimeProfile.Attempt verifyAttempt : attempts) {
+                    log.accept("[java-stage] VERIFY_FRESH: start ctor=" + verifyAttempt.summary() + "\n");
+                    checked = runJavaHost(d, "verify", verifyAttempt, product, version,
+                            regStr, null, null, log);
+                    if (checked.exitCode == 0) {
+                        verifiedAttempt = verifyAttempt;
+                        break;
+                    }
+                    log.accept("[java-stage] VERIFY_FRESH: rejected ctor=" + verifyAttempt.summary()
+                            + " output=" + compactNativeOutput(checked.output) + "\n");
+                }
+                if (verifiedAttempt == null)
+                    throw nativeFailure("JAVA_VERIFY", "fresh target startup constructor sequence rejected write-back", checked);
+                String persisted = normalizeProductCsv(firstValue(checked.output, "TARGET_REGSTR="));
+                if (blank(persisted) || !containsAllRegStrTokens(persisted, regStr))
+                    throw new IOException("[JAVA_MODE_VERIFY] fresh verifier did not preserve target startup RegStr="
+                            + regStr + "; persisted=" + valueOrPending(persisted));
+                log.accept("[java-stage] VERIFY_FRESH: OK ctor=" + verifiedAttempt.summary()
+                        + " persisted RegStr=" + persisted + "\n");
+                return new Result(true,
+                        "Java local authorization was applied through the target-native registration chain and passed the target startup constructor sequence in a fresh JVM. Restart Tomcat.",
+                        d, machine, request, auth);
+            } catch (IOException ex) {
+                lastFailure = ex;
+                log.accept("[java-candidate-failed] " + ex.getMessage() + "\n");
+            }
+        }
+
+        restoreJavaRegistrationFiles(originals, log);
+        if (lastFailure != null) throw lastFailure;
+        throw new IOException("[JAVA_CHAIN] no runtime-derived registration constructor completed write-back + fresh verification");
     }
 
     static String buildJavaRecoveryClasspath(File toolDir, File runtimeDir) {
         if (runtimeDir == null) throw new IllegalArgumentException("runtimeDir is required");
-        return LicenseRecover.toolRuntimeClasspath(toolDir)
-                + File.pathSeparator + runtimeDir.getAbsolutePath() + File.separator + "*";
+        // The helper itself runs only from tool jars. Target libraries are loaded by
+        // LicenseRecoverJavaHost through its isolated child-first class loader.
+        return LicenseRecover.toolRuntimeClasspath(toolDir);
+    }
+
+    private static NativeProcessResult runJavaHost(Detection d, String mode,
+                                                    JavaRegistrationRuntimeProfile.Attempt attempt,
+                                                    String product, String version, String regStr,
+                                                    String request, String auth, Consumer<String> log) throws Exception {
+        ArrayList<String> cmd = new ArrayList<String>();
+        cmd.add(javaExe());
+        cmd.add("-Dfile.encoding=UTF-8");
+        cmd.add("-cp");
+        cmd.add(buildJavaRecoveryClasspath(toolDir(), d.runtimeDir));
+        cmd.add("LicenseRecoverJavaHost");
+        cmd.add(mode);
+        cmd.add(d.appRoot.getAbsolutePath());
+        cmd.add(d.runtimeDir.getAbsolutePath());
+        if (attempt != null && attempt.baseDir != null) {
+            cmd.add("--base"); cmd.add(attempt.baseDir.getAbsolutePath());
+        }
+        if (attempt == null) throw new IllegalArgumentException("Java runtime constructor attempt is required");
+        cmd.add("--ctor"); cmd.add(attempt.mode.cliName);
+        if (!attempt.checkReInfo) cmd.add("--reginfo-only");
+        cmd.add("--product"); cmd.add(product);
+        if (!blank(version)) { cmd.add("--version"); cmd.add(version); }
+        if (!blank(regStr)) { cmd.add("--regstr"); cmd.add(regStr); }
+        if (!blank(request)) { cmd.add("--seq"); cmd.add(request); }
+        if (!blank(auth)) { cmd.add("--code"); cmd.add(auth); }
+        return runNativeCapture(cmd, d.appRoot, log);
+    }
+
+    static List<File> javaRegistrationBases(Detection d, LicenseRecoverModernGUIJavaPlan plan) {
+        ArrayList<File> out = new ArrayList<File>();
+        File root = d.appRoot;
+        File lib = d.runtimeDir;
+        File classes = new File(root, "WEB-INF" + File.separator + "classes");
+        File data = new File(root, "data");
+        String generation = plan == null || plan.generation == null ? "" : plan.generation.toLowerCase(Locale.ROOT);
+        if (generation.contains("data-config")) addJavaBase(out, data);
+        else if (generation.contains("classes-config")) addJavaBase(out, classes);
+        else addJavaBase(out, lib);
+        if (plan != null && plan.rootConfigStyle) addJavaBase(out, root);
+        addJavaBase(out, lib);
+        addJavaBase(out, root);
+        addJavaBase(out, classes);
+        addJavaBase(out, data);
+        return out;
+    }
+
+    private static void addJavaBase(List<File> out, File base) {
+        if (base == null || !base.isDirectory()) return;
+        try {
+            String key = base.getCanonicalPath();
+            for (File existing : out) if (existing.getCanonicalPath().equalsIgnoreCase(key)) return;
+        } catch (IOException ignore) {
+            for (File existing : out) if (existing.getAbsolutePath().equalsIgnoreCase(base.getAbsolutePath())) return;
+        }
+        out.add(base);
+    }
+
+    private static String javaBaseSummary(List<File> bases) {
+        StringBuilder b = new StringBuilder();
+        for (File base : bases) { if (b.length() > 0) b.append(" | "); b.append(base.getAbsolutePath()); }
+        return b.toString();
+    }
+
+    private static LinkedHashMap<File, byte[]> snapshotJavaRegistrationFiles(Detection d) throws IOException {
+        LinkedHashMap<File, byte[]> out = new LinkedHashMap<File, byte[]>();
+        ArrayList<File> candidates = new ArrayList<File>();
+        File classes = new File(d.appRoot, "WEB-INF" + File.separator + "classes");
+        File data = new File(d.appRoot, "data");
+        Collections.addAll(candidates,
+                new File(d.appRoot, "config.xml"), new File(d.runtimeDir, "config.xml"),
+                new File(classes, "config.xml"), new File(data, "config.xml"),
+                new File(d.appRoot, "Register.xml"), new File(d.runtimeDir, "Register.xml"),
+                new File(classes, "Register.xml"), new File(data, "Register.xml"));
+        HashSet<String> seen = new HashSet<String>();
+        for (File f : candidates) {
+            String key;
+            try { key = f.getCanonicalPath().toLowerCase(Locale.ROOT); }
+            catch (IOException ex) { key = f.getAbsolutePath().toLowerCase(Locale.ROOT); }
+            if (!seen.add(key)) continue;
+            out.put(f, f.isFile() ? Files.readAllBytes(f.toPath()) : null);
+        }
+        return out;
+    }
+
+    private static void backupJavaRegistrationFiles(LinkedHashMap<File, byte[]> originals, Consumer<String> log) throws IOException {
+        for (Map.Entry<File, byte[]> e : originals.entrySet()) {
+            if (e.getValue() == null) continue;
+            File bak = uniqueBackup(e.getKey());
+            Files.write(bak.toPath(), e.getValue());
+            if (log != null) log.accept("[backup-java] " + bak.getAbsolutePath() + "\n");
+        }
+    }
+
+    private static void restoreJavaRegistrationFiles(LinkedHashMap<File, byte[]> originals, Consumer<String> log) {
+        for (Map.Entry<File, byte[]> e : originals.entrySet()) {
+            try {
+                File f = e.getKey();
+                if (e.getValue() == null) Files.deleteIfExists(f.toPath());
+                else Files.write(f.toPath(), e.getValue());
+                if (log != null) log.accept("[rollback-java] restored " + f.getAbsolutePath() + "\n");
+            } catch (Throwable ex) {
+                if (log != null) log.accept("[rollback-java-warning] " + e.getKey().getAbsolutePath()
+                        + ": " + safe(ex) + "\n");
+            }
+        }
+    }
+
+    static void blockJavaAuthorizationConfigs(Detection d, Consumer<String> log) throws Exception {
+        File classes = new File(d.appRoot, "WEB-INF" + File.separator + "classes");
+        File data = new File(d.appRoot, "data");
+        File[] files = new File[]{ new File(d.appRoot, "config.xml"), new File(d.runtimeDir, "config.xml"),
+                new File(classes, "config.xml"), new File(data, "config.xml") };
+        HashSet<String> seen = new HashSet<String>();
+        Pattern regBlock = Pattern.compile("(?is)<reg\\b[^>]*>.*?</reg\\s*>");
+        Pattern service = Pattern.compile("(?is)(<Service\\b[^>]*>)(.*?)(</Service\\s*>)");
+        for (File f : files) {
+            if (!f.isFile()) continue;
+            String key = f.getCanonicalPath().toLowerCase(Locale.ROOT);
+            if (!seen.add(key)) continue;
+            String xml = readUtf8(f);
+            Matcher regMatcher = regBlock.matcher(xml);
+            StringBuffer all = new StringBuffer();
+            boolean changed = false;
+            while (regMatcher.find()) {
+                String block = regMatcher.group();
+                Matcher sm = service.matcher(block);
+                String updated = sm.find()
+                        ? sm.replaceFirst("$1" + Matcher.quoteReplacement(BLOCK_ENDPOINT) + "$3")
+                        : block;
+                if (!block.equals(updated)) changed = true;
+                regMatcher.appendReplacement(all, Matcher.quoteReplacement(updated));
+            }
+            regMatcher.appendTail(all);
+            if (!changed) continue;
+            validateXml(all.toString());
+            Files.write(f.toPath(), all.toString().getBytes(StandardCharsets.UTF_8));
+            if (log != null) log.accept("[block-net-java] " + f.getAbsolutePath() + "\n");
+        }
     }
 
     private static Result recoverDotNet(Detection d, boolean backup, boolean blockNet, boolean dryRun, Consumer<String> log) throws Exception {
@@ -1040,6 +1288,16 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             b.append(token);
         }
         return b.toString();
+    }
+
+    static boolean containsAllRegStrTokens(String actual, String expected) {
+        if (blank(expected)) return true;
+        if (blank(actual)) return false;
+        String normalized = normalizeProductCsv(expected);
+        if (blank(normalized)) return true;
+        for (String token : normalized.split(","))
+            if (!containsRegStrToken(actual, token)) return false;
+        return true;
     }
 
     static boolean containsRegStrToken(String raw, String wanted) {

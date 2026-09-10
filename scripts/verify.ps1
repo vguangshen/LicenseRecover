@@ -254,6 +254,8 @@ Write-Host 'Verifying directory-only registration identity policy...'
 $coreSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecover.java') -Raw
 $planSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUIJavaPlan.java') -Raw
 $autoSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUIAutoRecovery.java') -Raw
+$javaHostSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverJavaHost.java') -Raw
+$javaRuntimeProfileSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'JavaRegistrationRuntimeProfile.java') -Raw
 $legacyNetSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LegacyDotNetProtocol.java') -Raw
 $legacyGuiSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverGUI.java') -Raw
 $modernGuiSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecoverModernGUI.java') -Raw
@@ -303,6 +305,20 @@ if ($javaPlanSource.Contains('return "DS2406"')) { throw 'Java plan still synthe
 if ($javaPlanSource.Contains('return "QT40101"')) { throw 'Java plan still synthesizes QT40101 RegStr.' }
 if (-not $javaPlanSource.Contains('No product-family/runtime-id guessing here')) { throw 'Strict Java directory identity marker missing.' }
 
+if (-not $javaHostSource.Contains('class ChildFirstLoader') -or -not $javaHostSource.Contains('checkConnect(String host, int port)')) { throw 'Java target-native isolated host/network guard is missing.' }
+if (-not $javaHostSource.Contains('ProtectionDomain') -or -not $javaHostSource.Contains('NetRemover.unpackVirbox')) { throw 'Packed Java registration host does not preserve original target CodeSource.' }
+if (-not $javaHostSource.Contains('target RegisterMain.doRegistry() returned false')) { throw 'Java native doRegistry false-return guard is missing.' }
+if (-not $javaRuntimeProfileSource.Contains('RegisterMain') -or -not $javaRuntimeProfileSource.Contains('checkReInfo') -or -not $javaRuntimeProfileSource.Contains('getRealPath')) { throw 'Java startup constructor ABI profile is incomplete.' }
+if (-not $javaRuntimeProfileSource.Contains('findClasspathFactoryRelay') -or -not $javaRuntimeProfileSource.Contains('getRegInfo-only')) { throw 'QT401 classpath-root/getRegInfo-only startup profile is missing.' }
+if (-not $javaHostSource.Contains('--reginfo-only')) { throw 'Java target host cannot mirror RegInfo-only startup validation.' }
+if (-not $autoSource.Contains('attempt.checkReInfo')) { throw 'Java coordinator does not pass startup verification semantics.' }
+if (-not $javaPlanSource.Contains('confirmedQt401PrimaryRegStr')) { throw 'QT401 target-owned RegStr proof is missing.' }
+if (-not $javaRuntimeProfileSource.Contains('findServletRootRelay')) { throw 'Java runtime profile cannot prove Servlet root relayed through a registration wrapper.' }
+if (-not $javaHostSource.Contains('containsAllCsv(regStr, o.regStr)')) { throw 'Java fresh verifier still assumes SoftVersionID instead of target startup RegStr.' }
+if (-not $autoSource.Contains('containsAllRegStrTokens(persisted, regStr)')) { throw 'Java coordinator does not verify persisted target startup RegStr tokens.' }
+if (-not $autoSource.Contains('JavaRegistrationRuntimeProfile.inspect') -or -not $autoSource.Contains('[java-stage] VERIFY_FRESH: start')) { throw 'Java one-click is not wired to runtime-derived fresh-JVM verification.' }
+if ($autoSource.Contains('runtimeDir.getAbsolutePath() + File.separator + "*";')) { throw 'Java helper system classpath still contains target jars.' }
+
 Write-Host 'Building deterministic runtime overlay...'
 $classPrefixes = @(
     'AppDetector',
@@ -312,6 +328,8 @@ $classPrefixes = @(
     'BatchTarget',
     'ConfigSafety',
     'LicenseRecoverModernGUI',
+    'LicenseRecoverJavaHost',
+    'JavaRegistrationRuntimeProfile',
     'OperationResult',
     'PatchSafety',
     'ProcessRunner',
@@ -369,6 +387,12 @@ if ($overlayEntries -notcontains 'LicenseRecoverModernGUIJavaPlan.class') {
 }
 if ($overlayEntries -notcontains 'LicenseRecoverModernGUIAutoRecovery.class') {
     throw 'Overlay is missing LicenseRecoverModernGUIAutoRecovery.class.'
+}
+if ($overlayEntries -notcontains 'LicenseRecoverJavaHost.class') {
+    throw 'Overlay is missing LicenseRecoverJavaHost.class; Java target-native recovery cannot run.'
+}
+if ($overlayEntries -notcontains 'JavaRegistrationRuntimeProfile.class') {
+    throw 'Overlay is missing JavaRegistrationRuntimeProfile.class; Tomcat constructor ABI detection cannot run.'
 }
 
 Write-Host 'Assembling application-only distribution...'
