@@ -1,0 +1,206 @@
+name: Dual registration DLL Windows integration v3
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  dual-hosted-chain:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build dual-assembly fixture and hosted helpers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $test = Join-Path $PWD 'build\dual-host-integration-v3'
+          $app = Join-Path $test 'YX030308'
+          $bin = Join-Path $app 'bin'
+          $tool = Join-Path $test 'tool'
+          New-Item -ItemType Directory -Force -Path $bin,$tool | Out-Null
+
+          Set-Content -LiteralPath (Join-Path $app 'Register.xml') -Value '<ROOT />' -Encoding UTF8
+          Set-Content -LiteralPath (Join-Path $app 'config.xml') -Value '<ROOT><reg><regType>1</regType><Service>http://127.0.0.1:9/Service.asmx</Service></reg><SystemSoft><SoftVersionID>YX030308</SoftVersionID></SystemSoft></ROOT>' -Encoding UTF8
+          @'
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <system.web>
+              <httpRuntime targetFramework="4.5" />
+              <compilation targetFramework="4.5" />
+            </system.web>
+          </configuration>
+          '@ | Set-Content -LiteralPath (Join-Path $app 'web.config') -Encoding UTF8
+
+          @'
+          using System;
+          using System.IO;
+          using System.Security.Cryptography;
+          using System.Text;
+          using System.Web.Security;
+
+          namespace ITMC.Regedit
+          {
+              public sealed class RegeditInfo
+              {
+                  public string RegStr { get; set; }
+                  public int ClassNum { get; set; }
+                  public string RegID { get; set; }
+                  public string UserID { get; set; }
+                  public string ProName { get; set; }
+                  public DateTime BeginDate { get; set; }
+                  public DateTime EndDate { get; set; }
+                  public int TotalTimes { get; set; }
+                  public int UserTimes { get; set; }
+                  public bool Net { get; set; }
+                  public int MaxCon { get; set; }
+                  public int CountDay { get; set; }
+              }
+
+              public sealed class RegeditMain
+              {
+                  private readonly string product;
+                  public RegeditMain(string productName, string encryptedCheck)
+                  {
+                      product = productName;
+                      AssertRoot("ctor");
+                      if (string.IsNullOrEmpty(encryptedCheck)) throw new InvalidOperationException("encrypted constructor check missing");
+                  }
+
+                  private static string Root()
+                  {
+                      string root = Environment.GetEnvironmentVariable("LR_EXPECTED_APP_ROOT");
+                      if (string.IsNullOrEmpty(root)) throw new InvalidOperationException("LR_EXPECTED_APP_ROOT missing");
+                      return Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                  }
+
+                  private static void AssertRoot(string stage)
+                  {
+                      string expected = Root();
+                      string actual = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                      Console.WriteLine("[FAKE_UPPER] " + stage + " BaseDirectory=" + actual);
+                      if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException(stage + " wrong BaseDirectory");
+                      if (!File.Exists(Path.Combine(actual, "config.xml")) || !File.Exists(Path.Combine(actual, "Register.xml"))) throw new FileNotFoundException(stage + " site-root files missing");
+                  }
+
+                  private static string DesEncrypt(string plain, string password)
+                  {
+                      using (DESCryptoServiceProvider des = new DESCryptoServiceProvider())
+                      {
+                          string md5 = FormsAuthentication.HashPasswordForStoringInConfigFile(password, "md5");
+                          byte[] key = Encoding.ASCII.GetBytes(md5.Substring(0, 8));
+                          des.Key = key; des.IV = key;
+                          byte[] input = Encoding.Default.GetBytes(plain);
+                          using (MemoryStream ms = new MemoryStream())
+                          using (CryptoStream cs = new CryptoStream(ms, des.CreateEncryptor(), CryptoStreamMode.Write))
+                          {
+                              cs.Write(input, 0, input.Length); cs.FlushFinalBlock();
+                              StringBuilder sb = new StringBuilder();
+                              foreach (byte b in ms.ToArray()) sb.AppendFormat("{0:X2}", b);
+                              return sb.ToString();
+                          }
+                      }
+                  }
+
+                  public string RegID { get { AssertRoot("get_RegID"); return getRegNo(); } }
+                  public string getRegNo()
+                  {
+                      AssertRoot("getRegNo");
+                      if (!string.Equals(product, "YX0303", StringComparison.Ordinal)) throw new InvalidOperationException("wrong product=" + product);
+                      return "F000606A59904719";
+                  }
+                  public string NewRegistry()
+                  {
+                      AssertRoot("NewRegistry");
+                      string plain = "1234" + getRegNo() + "5678" + DateTime.Now.ToString("yyyy-MM-dd HH-mm-ss") + "9012";
+                      return DesEncrypt(plain, "itmcsoft");
+                  }
+                  public bool DoRegistry(string seq, string code)
+                  {
+                      AssertRoot("DoRegistry");
+                      if (string.IsNullOrEmpty(seq) || string.IsNullOrEmpty(code)) return false;
+                      File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "uppercase-doreg.marker"), product);
+                      return true;
+                  }
+                  public bool CheckReInfo(ref RegeditInfo info)
+                  {
+                      AssertRoot("CheckReInfo");
+                      if (!File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "uppercase-doreg.marker"))) throw new InvalidOperationException("DoRegistry marker missing");
+                      info = new RegeditInfo { RegStr = "YX030308", RegID = RegID, ProName = product, ClassNum = -1, UserID = "fwq", BeginDate = DateTime.Today, EndDate = new DateTime(2099,12,31), TotalTimes = -1, UserTimes = 1, Net = true, MaxCon = -1, CountDay = 10 };
+                      return false;
+                  }
+              }
+          }
+          '@ | Set-Content -LiteralPath (Join-Path $test 'FakeUpperRegedit.cs') -Encoding UTF8
+
+          @'
+          using System;
+          namespace itmcRegedit
+          {
+              public sealed class RegeditMain
+              {
+                  public RegeditMain(string productName, string encryptedCheck)
+                  {
+                      throw new InvalidOperationException("LOWERCASE DECOY MUST NOT BE SELECTED");
+                  }
+              }
+          }
+          '@ | Set-Content -LiteralPath (Join-Path $test 'FakeLowerRegedit.cs') -Encoding UTF8
+
+          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          if (-not (Test-Path $csc)) { $csc = "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe" }
+          & $csc /nologo /target:library /r:System.Web.dll /out:$bin\ITMC.Regedit.dll (Join-Path $test 'FakeUpperRegedit.cs')
+          if ($LASTEXITCODE -ne 0) { throw "upper fixture compile failed: $LASTEXITCODE" }
+          & $csc /nologo /target:library /out:$bin\itmcRegedit.dll (Join-Path $test 'FakeLowerRegedit.cs')
+          if ($LASTEXITCODE -ne 0) { throw "lower decoy compile failed: $LASTEXITCODE" }
+          & $csc /nologo /target:library /r:System.Web.dll /out:$tool\LicenseRecover.NET.AspNetBridge.dll src\dotnet\LicenseRecover.AspNetBridge.cs
+          if ($LASTEXITCODE -ne 0) { throw "bridge compile failed: $LASTEXITCODE" }
+          & $csc /nologo /target:exe /r:System.Web.dll /out:$tool\LicenseRecover.NET.AspNetHost.exe src\dotnet\LicenseRecover.AspNetHost.cs
+          if ($LASTEXITCODE -ne 0) { throw "host compile failed: $LASTEXITCODE" }
+          python scripts\prepare-dotnet-modern-helper.py LicenseRecover.NET\LicenseRecover.NET.exe $tool\LicenseRecover.NET.Modern.exe
+          if ($LASTEXITCODE -ne 0) { throw "modern helper generation failed: $LASTEXITCODE" }
+
+          "LR_EXPECTED_APP_ROOT=$app" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "APP_ROOT=$app" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "APP_BIN=$bin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "TOOL_DIR=$tool" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Prove uppercase chain wins in dual-DLL deployment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = & "$env:TOOL_DIR\LicenseRecover.NET.AspNetHost.exe" gencode "$env:APP_BIN" --product YX0303 --regstr YX030308 2>&1
+          $exit = $LASTEXITCODE
+          $text = ($out -join "`n")
+          Write-Host $text
+          if ($exit -ne 0) { throw "gencode failed: $exit" }
+          foreach ($needle in @('target registration chain=uppercase-ITMC.Regedit','preload target registration assembly=','chain=uppercase-ITMC.Regedit','[FAKE_UPPER] get_RegID BaseDirectory=','helperDispatch=RunDirect/hosted-AppDomain','RESULT: OK')) {
+            if ($text.IndexOf($needle,[StringComparison]::OrdinalIgnoreCase) -lt 0) { throw "missing marker: $needle" }
+          }
+          if ($text.IndexOf('target registration chain=lowercase-itmcRegedit',[StringComparison]::OrdinalIgnoreCase) -ge 0) { throw 'lowercase decoy stole helper selection' }
+          $seq = [regex]::Match($text, '注册申请号\s*[:：]\s*([0-9A-Fa-f]+)').Groups[1].Value
+          $code = [regex]::Match($text, '离线授权码\s*[:：]\s*([0-9A-Fa-f]+)').Groups[1].Value
+          if ([string]::IsNullOrWhiteSpace($seq) -or [string]::IsNullOrWhiteSpace($code)) { throw 'request/auth parse failed' }
+          "UPPER_SEQ=$seq" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "UPPER_CODE=$code" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Run doreg and verify through uppercase chain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $doreg = & "$env:TOOL_DIR\LicenseRecover.NET.AspNetHost.exe" doreg "$env:APP_BIN" --seq "$env:UPPER_SEQ" --code "$env:UPPER_CODE" --product YX0303 --no-block-net 2>&1
+          $doregExit = $LASTEXITCODE
+          $doregText = ($doreg -join "`n")
+          Write-Host $doregText
+          if ($doregExit -ne 0) { throw "doreg failed: $doregExit" }
+
+          $verify = & "$env:TOOL_DIR\LicenseRecover.NET.AspNetHost.exe" verify "$env:APP_BIN" --product YX0303 2>&1
+          $verifyExit = $LASTEXITCODE
+          $verifyText = ($verify -join "`n")
+          Write-Host $verifyText
+          if ($verifyExit -ne 0) { throw "verify failed: $verifyExit" }
+          if ($doregText.IndexOf('[FAKE_UPPER] DoRegistry BaseDirectory=',[StringComparison]::OrdinalIgnoreCase) -lt 0) { throw 'DoRegistry did not run through uppercase component' }
+          if ($verifyText.IndexOf('[FAKE_UPPER] CheckReInfo BaseDirectory=',[StringComparison]::OrdinalIgnoreCase) -lt 0) { throw 'CheckReInfo did not run through uppercase component' }
+          if (-not (Test-Path (Join-Path $env:APP_ROOT 'uppercase-doreg.marker'))) { throw 'site-root marker missing' }
+          Write-Host 'DUAL-ASSEMBLY UPPERCASE-PREFERRED HOSTED CHAIN PASSED'
