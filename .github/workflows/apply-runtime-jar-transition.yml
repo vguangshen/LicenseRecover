@@ -1,0 +1,33 @@
+name: Apply runtime jar transition
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/apply-runtime-jar-transition.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Apply runtime transition source changes
+        run: python3 scripts/apply-runtime-jar-transition.py
+      - name: Validate patch
+        run: git diff --check
+      - name: Commit source changes without publishing a new stable version
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          rm -f .github/workflows/apply-runtime-jar-transition.yml
+          rm -f scripts/apply-runtime-jar-transition.py
+          git add -A
+          git commit -m "fix: add transition-safe runtime jar and verified updater"
+          git push origin HEAD:main
