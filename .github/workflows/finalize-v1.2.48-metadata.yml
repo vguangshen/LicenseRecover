@@ -60,3 +60,5 @@ jobs:
           git diff --cached --check
           git commit -m 'docs: finalize v1.2.48 metadata'
           git push origin HEAD:main
+
+# Existing-on-main trigger: second push intentionally starts this one-time workflow.
