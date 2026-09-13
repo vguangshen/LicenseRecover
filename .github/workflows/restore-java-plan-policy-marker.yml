@@ -1,0 +1,51 @@
+name: Restore Java plan policy marker
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/restore-java-plan-policy-marker.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+      - name: Restore strict identity policy marker
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('src/main/java/LicenseRecoverModernGUIJavaPlan.java')
+          s = p.read_text(encoding='utf-8')
+          anchor = '        String binaryFamily = confirmedBinaryAuthorizationFamily(\n'
+          marker = '''        // No product-family/runtime-id guessing here. Executable identity must be\n        // supported by target-directory configuration and/or target-owned bytecode evidence.\n'''
+          if 'No product-family/runtime-id guessing here' not in s:
+              if anchor not in s:
+                  raise SystemExit('anchor not found')
+              s = s.replace(anchor, marker + anchor, 1)
+              p.write_text(s, encoding='utf-8')
+      - name: Compile and smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf build/marker-check
+          mkdir -p build/marker-check/main build/marker-check/test
+          javac -encoding UTF-8 -cp LicenseRecoverGUI.jar -d build/marker-check/main src/main/java/*.java
+          javac -encoding UTF-8 -cp "build/marker-check/main:LicenseRecoverGUI.jar" -d build/marker-check/test src/test/java/RefactorSmokeTest.java
+          java -cp "build/marker-check/main:build/marker-check/test:LicenseRecoverGUI.jar" RefactorSmokeTest
+      - name: Commit restored marker and remove workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm -f .github/workflows/restore-java-plan-policy-marker.yml
+          git add src/main/java/LicenseRecoverModernGUIJavaPlan.java
+          git diff --cached --check
+          git commit -m 'fix: restore strict Java identity policy marker'
+          git push origin HEAD:main
