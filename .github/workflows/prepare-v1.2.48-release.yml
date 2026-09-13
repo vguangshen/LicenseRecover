@@ -1,0 +1,101 @@
+name: Prepare v1.2.48 release
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/prepare-v1.2.48-release.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+      - name: Prepare v1.2.48 metadata
+        shell: python
+        run: |
+          from pathlib import Path
+
+          Path('VERSION.txt').write_text('1.2.48\n', encoding='utf-8')
+
+          readme = Path('README.md')
+          text = readme.read_text(encoding='utf-8')
+          old = '当前稳定版本：**v1.2.47**'
+          if old not in text:
+              raise SystemExit('README stable version anchor missing')
+          readme.write_text(text.replace(old, '当前稳定版本：**v1.2.48**', 1), encoding='utf-8')
+
+          changelog = Path('CHANGELOG.md')
+          oldlog = changelog.read_text(encoding='utf-8')
+          if oldlog.startswith('## 1.2.48'):
+              raise SystemExit('CHANGELOG already contains v1.2.48')
+          entry = '''## 1.2.48 - 2026-09-13
+
+### Fixed
+- 修复真实部署版 `YX030506` 仍显示“待确认”的问题：该版本的 `systemConfig.yml` 使用应用模式 `YX030506`，而 `WEB-INF/classes/config.xml` 的 `SoftVersionID` 实际是启动注册产品列表 `YX0305,QT1001`，二者不应被强制判定为同一个 ID。
+- 对该 PRODUCT_ALL_NUM 代际，将应用模式、授权族、主运行注册产品与 RegStr 分开处理：应用模式保持 `YX030506`，授权族/主 RegisterMain 产品由目标证据确认成 `YX0305`，RegStr 保持 `QT100101,QT100102`。
+- 仍保持 fail-closed：只有目标配置枚举当前 `YX030506`、`PRODUCT_ALL_NUM` 启动循环、`RegisterMain.checkReInfo/writeRegisterUser` 流程以及 `RegisterHttpServlet` 对 `YX0305` 的本地注册调用同时成立时才进入“待处理”；缺任一证据仍为“待确认”。
+
+### Verification
+- 使用用户提供的精简真实部署样本 `YX030506(2).zip` 核对配置和目标 class 字节码证据，并新增对应回归夹具。
+- 预期批量计划：`AuthorizationFamily=YX0305`, `RuntimeProductID=YX0305`, `RegStr=QT100101,QT100102`, `automaticRecoveryReady=true`。
+- 完整 Java 8 回归、备份安全测试、原生 EXE 打包及完整 Verify source 门禁通过后才发布本版本。
+
+'''
+          changelog.write_text(entry + oldlog, encoding='utf-8')
+
+          notes = Path('release-notes/v1.2.48.md')
+          notes.write_text('''# LicenseRecover v1.2.48
+
+本版针对用户当前服务器中的真实 YX030506 部署结构修复批量扫描“待确认”。
+
+## 根因
+
+真实部署版同时存在两层身份：
+
+- `systemConfig.yml`: 应用模式 `YX030506`；
+- `WEB-INF/classes/config.xml` 的 `SoftVersionID`: `YX0305,QT1001`，这是启动时逐项送入 RegisterMain 的产品列表；
+- `regInfo`: `QT100101,QT100102`。
+
+旧逻辑要求 classes/config 的 SoftVersionID 与应用模式完全相等，因此虽然授权族和 RegStr 已识别，运行校验 ID 仍为空。
+
+## 修复
+
+- 不再把 `YX030506` 应用模式与 `YX0305,QT1001` 注册产品列表混为一个字段。
+- 对该真实 PRODUCT_ALL_NUM 结构，主运行注册产品确认成 `YX0305`；应用模式仍保持 `YX030506`，RegStr 仍为 `QT100101,QT100102`。
+- 只有以下目标自身证据全部成立才允许自动恢复：当前 System 枚举、PRODUCT_ALL_NUM 解析/循环、RegisterMain.checkReInfo/writeRegisterUser 链，以及 RegisterHttpServlet 对 YX0305 的 ProjectSourcesPath/RegisterMain 调用。
+- 删除任一关键启动证据的回归测试必须继续得到 BLOCKED，避免把 VersionID 前缀当白名单。
+
+## 真实样本验证
+
+用户提供的精简服务器样本预期并已作为回归目标验证：
+
+`AuthorizationFamily=YX0305`  
+`RuntimeProductID=YX0305`  
+`RegStr=QT100101,QT100102`  
+`automaticRecoveryReady=true`
+''', encoding='utf-8')
+      - name: Validate metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(tr -d '\r\n[:space:]' < VERSION.txt)" = '1.2.48'
+          test -f release-notes/v1.2.48.md
+          grep -q '当前稳定版本：\*\*v1.2.48\*\*' README.md
+          git diff --check
+      - name: Commit prepared release and remove workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm -f .github/workflows/prepare-v1.2.48-release.yml
+          git add VERSION.txt README.md CHANGELOG.md release-notes/v1.2.48.md
+          git diff --cached --check
+          git commit -m 'release: prepare v1.2.48 for deployed YX030506 layout'
+          git push origin HEAD:main
