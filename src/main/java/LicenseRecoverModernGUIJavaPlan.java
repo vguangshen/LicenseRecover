@@ -122,14 +122,6 @@ public final class LicenseRecoverModernGUIJavaPlan {
         boolean directDataIdentity = newStyle && !blank(soft) && !blank(dataSoft)
                 && soft.trim().equalsIgnoreCase(dataSoft.trim()) && dataRegInfo != null;
 
-        // No product-family/runtime-id guessing here. The executable plan receives
-        // identity only from target-directory evidence: parsed Global/RegisterUtil,
-        // confirmed classes config, or a self-describing data/config.xml generation.
-        // Candidate rules are never executable evidence by themselves. For product families
-        // that are prefixes of the concrete SoftVersionID (DS24/DS28/DS501/XMT/YX0305...),
-        // accept the candidate only when that exact token is also present in this target's
-        // own class/JAR bytes. This keeps fail-closed semantics without discarding real apps
-        // whose registration identity lives in bytecode instead of XML.
         String binaryFamily = confirmedBinaryAuthorizationFamily(
                 root, lib, soft, newStyle, classesConfig.isFile());
         String family = directoryMapping != null ? directoryMapping.productMain
@@ -138,16 +130,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
         String binaryRuntime = confirmedBinaryRuntimeProduct(
                 root, lib, soft, binaryFamily, newStyle, classesConfig.isFile());
         String configDrivenRuntime = confirmedConfigDrivenRuntimeProduct(root, soft, family);
-        // Real DS501/YX0305 deployments do not always embed the concrete SoftVersionID
-        // as an independent constant-pool token. When the concrete id is read from the
-        // target's own classes/config.xml, the family is independently proven from the
-        // target binaries, and the target startup bytecode itself proves a
-        // RegisterMain.checkReInfo() constructor chain, that startup chain is stronger
-        // evidence than an artificial exact-string requirement.
         String startupRuntime = blank(binaryRuntime) && blank(configDrivenRuntime)
                 ? confirmedStartupRuntimeProduct(root, lib, soft, family) : null;
-        // QT401/QT100101 use the confirmed classes family as their runtime product.
-        // DS501/YX0305 do not: their target startup must prove the concrete SoftVersionID.
         String confirmedClassesRuntime = ("QT401".equalsIgnoreCase(confirmedClassesFamily)
                 || "QT100101".equalsIgnoreCase(confirmedClassesFamily))
                 ? confirmedClassesFamily : null;
@@ -191,9 +175,6 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 || dataRegInfo != null || classesRegInfo != null
                 || !blank(qt401PrimaryRegStr) || !blank(configDrivenPrimaryRegStr) || !blank(dataDrivenPrimaryRegStr)
                 || recoveredLocalRegStr != null;
-        // A missing static regInfo is not itself a reason to guess. If the target ships
-        // ITMCReg and its product identity is already proven by directory evidence, the
-        // CLI can ask that exact target RegisterMain.getRegInfo() for RegStr before any write.
         boolean runtimeRegStrProbe = !directoryRegStr && jar != null
                 && directoryIdentity && !blank(runtimeProduct);
 
@@ -372,8 +353,6 @@ public final class LicenseRecoverModernGUIJavaPlan {
     static String runtimeProductFor(String softId) {
         if (blank(softId)) return "QT1001";
         String id = softId.toUpperCase(Locale.ROOT);
-        // Real DS501/YX0305 samples use a broader id on the local-registration page,
-        // while application startup checks the concrete SoftVersionID.
         if ("QT100101".equals(id)) return "QT100101";
         if ("DS2406".equals(id)) return "DS24";
         if (id.startsWith("DS501") || id.startsWith("YX0305")) return softId.trim();
@@ -392,7 +371,6 @@ public final class LicenseRecoverModernGUIJavaPlan {
         if (blank(candidate) || "未确认".equals(candidate)) return null;
         String id = softId.trim().toUpperCase(Locale.ROOT);
         String c = candidate.trim().toUpperCase(Locale.ROOT);
-        // Never use unrelated legacy mappings (for example YT -> QT04) as binary-prefix proof.
         if (!id.equals(c) && !id.startsWith(c)) return null;
         if (newStyle && id.equals(c)) return candidate.trim();
         return hasDirectoryBinaryToken(root, lib, candidate) ? candidate.trim() : null;
@@ -408,16 +386,9 @@ public final class LicenseRecoverModernGUIJavaPlan {
         String c = candidate.trim().toUpperCase(Locale.ROOT);
         if (!id.equals(c) && !id.startsWith(c)) return null;
         if (candidate.equalsIgnoreCase(confirmedFamily)) return confirmedFamily;
-        // Concrete runtime IDs (DS501xx/YX0305xx) must also occur as an exact token
-        // in target bytecode; the occurrence in config.xml alone is intentionally insufficient.
         return hasDirectoryBinaryToken(root, lib, candidate) ? candidate.trim() : null;
     }
 
-    /**
-     * Pure decision helper used by tests and by the target startup proof below.
-     * The family must already have independent target-binary evidence; this method
-     * never derives DS501/YX0305 merely from the VersionID prefix.
-     */
     static String selectStartupConfirmedConcreteRuntime(String softId, String configuredSoftId,
                                                         String confirmedFamily,
                                                         boolean startupCheckReInfo) {
@@ -433,12 +404,6 @@ public final class LicenseRecoverModernGUIJavaPlan {
         return supported ? concrete : null;
     }
 
-    /**
-     * Confirm the concrete DS501xx/YX0305xx runtime product from the selected target's
-     * own config plus its actual RegisterMain startup ABI. JavaRegistrationRuntimeProfile
-     * parses class files only; it does not load or execute the selected application's code.
-     * At least one proven startup attempt must call checkReInfo().
-     */
     static String confirmedStartupRuntimeProduct(File root, File lib, String softId,
                                                  String confirmedFamily) {
         if (root == null || lib == null || blank(softId) || blank(confirmedFamily)) return null;
@@ -460,11 +425,6 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 softId, configured, confirmedFamily, checkReInfo);
     }
 
-    /**
-     * QT401xx/RuoYi generation: config1.xml proves registration product QT401,
-     * classes/config.xml proves the concrete system id, and target startup bytecode
-     * proves classpath-root -> getRegisterMain(product,path) -> getRegInfo/RegStr.
-     */
     static String confirmedQt401PrimaryRegStr(File root, String softId,
                                                String confirmedFamily, String runtimeProduct) {
         if (root == null || blank(softId) || blank(confirmedFamily) || blank(runtimeProduct)) return null;
@@ -499,12 +459,6 @@ public final class LicenseRecoverModernGUIJavaPlan {
         return concrete;
     }
 
-    /**
-     * Prove a config-driven concrete runtime ProductID without guessing it from the
-     * VersionID.  The concrete value is accepted only when the selected application's
-     * own classes/config.xml supplies that same SoftVersionID and its own bytecode
-     * proves the data flow into RegisterMain plus the RegStr/versionID membership check.
-     */
     static String confirmedConfigDrivenRuntimeProduct(File root, String softId, String confirmedFamily) {
         if (root == null || blank(softId) || blank(confirmedFamily)) return null;
         String concrete = softId.trim();
@@ -515,11 +469,6 @@ public final class LicenseRecoverModernGUIJavaPlan {
         File config = new File(classes, "config.xml");
         String configured = readElement(config, "SoftVersionID");
 
-        // Deployed YX030506 builds use two different identity layers:
-        // systemConfig.yml VersionID=YX030506, while classes/config.xml
-        // SoftVersionID=YX0305,QT1001 is a startup RegisterMain product list.
-        // Accept a primary runtime product only when target-owned config and bytecode
-        // independently prove the PRODUCT_ALL_NUM loop and local registration servlet.
         String productAllPrimary = confirmedProductAllNumPrimaryRuntime(
                 root, concrete, family, configured);
         if (!blank(productAllPrimary)) return productAllPrimary;
@@ -534,8 +483,6 @@ public final class LicenseRecoverModernGUIJavaPlan {
             boolean directGetter = classFileContainsAll(listener,
                     "com/itmc/register/utils/SystemInfo", "registerId",
                     "itmc/regedit/RegisterMain", "getRegStr", "versionID", "contains");
-            // XMT0102 serializes RegeditInfo through Fastjson and reads the lower-case
-            // regStr property instead of invoking RegeditInfo.getRegStr() directly.
             boolean jsonGetter = classFileContainsAll(listener,
                     "com/itmc/register/utils/SystemInfo", "registerId",
                     "itmc/regedit/RegisterMain", "checkReInfo", "getRegInfo",
@@ -544,22 +491,10 @@ public final class LicenseRecoverModernGUIJavaPlan {
             if (directGetter || jsonGetter) return concrete;
         }
 
-        // Another target-owned generation (for example YX0305xx) loads
-        // classes/config.xml SoftVersionID into PRODUCT_ALL_NUM and its startup runner
-        // splits that value and feeds every concrete id to RegisterMain.checkReInfo().
-        // The field name alone is not sufficient; both parser and runner bytecode must
-        // expose the complete target-local flow before the concrete VersionID is accepted.
         if (confirmedProductAllNumRuntimeProduct(classes)) return concrete;
         return null;
     }
 
-    /**
-     * Confirm that the selected application's own primary registration path requires
-     * the concrete VersionID to occur in RegInfo.RegStr.  This is deliberately stronger
-     * than runtime ProductID proof: systemConfig.yml, classes/config.xml, SystemInfo,
-     * RegisterContant and RegisterListener must all agree before the concrete id is used
-     * as a static RegStr.  Compatibility/alternate-platform checks are not used here.
-     */
     static String confirmedConfigDrivenPrimaryRegStr(File root, String softId,
                                                       String confirmedFamily,
                                                       String confirmedRuntimeProduct) {
@@ -595,13 +530,6 @@ public final class LicenseRecoverModernGUIJavaPlan {
         return concrete;
     }
 
-    /**
-     * Confirm a legacy data-config generation whose own startup code maps
-     * systemConfig.yml VersionID -> IStatic._SYS_CODE and then requires the
-     * primary RegisterMain RegStr to contain that code.  The family/runtime
-     * identity must also be proved by this target's IGlobal/local-register/startup
-     * classes.  No VersionID naming rule is executable evidence by itself.
-     */
     static String confirmedDataDrivenPrimaryRegStr(File root, String softId,
                                                     String confirmedFamily,
                                                     String confirmedRuntimeProduct) {
@@ -668,10 +596,10 @@ public final class LicenseRecoverModernGUIJavaPlan {
     }
 
     /**
-     * Real deployed YX030506 layout: the concrete application mode is YX030506,
-     * but classes/config.xml lists startup registration products YX0305,QT1001.
-     * The primary local-registration product is accepted only with four independent
-     * pieces of target-local evidence, never from the VersionID prefix alone.
+     * Real deployed YX030506 layout verified against the user's reduced production sample:
+     * systemConfig.yml identifies concrete mode YX030506 while classes/config.xml lists
+     * RegisterMain startup products YX0305,QT1001. The primary product is accepted only
+     * when the target's PRODUCT_ALL_NUM runner and local registration servlet agree.
      */
     static String confirmedProductAllNumPrimaryRuntime(File root, String softId,
                                                        String confirmedFamily,
@@ -722,188 +650,156 @@ public final class LicenseRecoverModernGUIJavaPlan {
                         "itmc/regedit/RegisterMain", "checkReInfo");
     }
 
-    private static boolean classFileContainsAll(File file, String... tokens) {
-        if (file == null || !file.isFile() || tokens == null) return false;
-        try {
-            byte[] data = Files.readAllBytes(file.toPath());
-            for (String token : tokens) {
-                if (!bytesContainExactAsciiToken(data, token)) return false;
-            }
-            return true;
-        } catch (Throwable ignore) {
-            return false;
-        }
-    }
-
-    static boolean hasDirectoryBinaryToken(File root, File lib, String token) {
-        if (root == null || blank(token)) return false;
-        File jar = findRegJar(lib);
-        if (jar != null && jarContainsToken(jar, token.trim())) return true;
-        int[] budget = new int[]{12000};
-        File classes = new File(root, "WEB-INF" + File.separator + "classes");
-        if (classTreeContainsToken(classes, token.trim(), budget)) return true;
-        File nested = new File(root, "WEB-INF" + File.separator + "WEB-INF"
-                + File.separator + "classes");
-        return classTreeContainsToken(nested, token.trim(), budget);
-    }
-
-    private static boolean classTreeContainsToken(File dir, String token, int[] budget) {
-        if (dir == null || !dir.isDirectory() || budget[0] <= 0) return false;
-        File[] files = dir.listFiles();
-        if (files == null) return false;
-        for (File f : files) {
-            if (budget[0]-- <= 0) return false;
-            if (f.isDirectory()) {
-                if (classTreeContainsToken(f, token, budget)) return true;
-            } else if (f.getName().toLowerCase(Locale.ROOT).endsWith(".class")
-                    && f.length() <= 8L * 1024L * 1024L) {
-                try {
-                    if (bytesContainExactAsciiToken(Files.readAllBytes(f.toPath()), token)) return true;
-                } catch (Exception ignore) { }
-            }
-        }
-        return false;
-    }
-
-    private static boolean jarContainsToken(File jar, String token) {
-        JarFile jf = null;
-        try {
-            jf = new JarFile(jar);
-            java.util.Enumeration<JarEntry> entries = jf.entries();
-            byte[] buffer = new byte[8192];
-            while (entries.hasMoreElements()) {
-                JarEntry entry = entries.nextElement();
-                if (entry.isDirectory() || !entry.getName().endsWith(".class")) continue;
-                if (entry.getSize() > 8L * 1024L * 1024L) continue;
-                InputStream in = null;
-                ByteArrayOutputStream out = new ByteArrayOutputStream();
-                try {
-                    in = jf.getInputStream(entry);
-                    int n;
-                    while ((n = in.read(buffer)) >= 0) {
-                        out.write(buffer, 0, n);
-                        if (out.size() > 8 * 1024 * 1024) break;
-                    }
-                    if (bytesContainExactAsciiToken(out.toByteArray(), token)) return true;
-                } catch (Exception ignore) {
-                } finally {
-                    try { if (in != null) in.close(); } catch (Exception ignore) { }
-                }
-            }
-        } catch (Exception ignore) {
-            return false;
-        } finally {
-            try { if (jf != null) jf.close(); } catch (Exception ignore) { }
-        }
-        return false;
-    }
-
-    private static boolean bytesContainExactAsciiToken(byte[] data, String token) {
-        if (data == null || blank(token)) return false;
-        byte[] needle = token.getBytes(StandardCharsets.US_ASCII);
-        outer:
-        for (int i = 0; i + needle.length <= data.length; i++) {
-            for (int j = 0; j < needle.length; j++) {
-                int a = data[i + j] & 0xff;
-                int b = needle[j] & 0xff;
-                if (a != b && Character.toUpperCase((char) a) != Character.toUpperCase((char) b))
-                    continue outer;
-            }
-            if (i > 0 && isProductTokenChar(data[i - 1] & 0xff)) continue;
-            int after = i + needle.length;
-            if (after < data.length && isProductTokenChar(data[after] & 0xff)) continue;
-            return true;
-        }
-        return false;
-    }
-
-    private static boolean isProductTokenChar(int c) {
-        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
-    }
-
-    private static String readElement(File file, String element) {
-        if (file == null || !file.isFile() || blank(element)) return null;
-        try {
-            String text = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
-            Pattern pattern = Pattern.compile("(?is)<" + Pattern.quote(element)
-                    + "\\b[^>]*>\\s*([^<]*?)\\s*</" + Pattern.quote(element) + "\\s*>");
-            Matcher matcher = pattern.matcher(text);
-            return matcher.find() ? matcher.group(1).trim() : null;
-        } catch (Exception ignore) {
-            return null;
-        }
-    }
-
     private static String normalizeCsv(String value) {
-        if (value == null) return null;
-        LinkedHashSet<String> values = new LinkedHashSet<String>();
-        for (String part : value.split(",")) {
-            String x = part == null ? "" : part.trim();
-            if (!x.isEmpty()) values.add(x);
+        if (blank(value)) return null;
+        String[] raw = value.split(",");
+        LinkedHashSet<String> dedup = new LinkedHashSet<String>();
+        for (String item : raw) {
+            if (item == null) continue;
+            String trimmed = item.trim();
+            if (!trimmed.isEmpty()) dedup.add(trimmed);
         }
-        if (values.isEmpty()) return null;
+        if (dedup.isEmpty()) return null;
         StringBuilder out = new StringBuilder();
-        for (String x : values) {
+        for (String item : dedup) {
             if (out.length() > 0) out.append(',');
-            out.append(x);
+            out.append(item);
         }
         return out.toString();
     }
 
     private static File findRegJar(File lib) {
         if (lib == null || !lib.isDirectory()) return null;
-        File exact = new File(lib, "ITMCReg.jar");
-        if (exact.isFile()) return exact;
-        File[] files = lib.listFiles((dir, name) -> {
-            String lower = name.toLowerCase(Locale.ROOT);
-            return lower.startsWith("itmcreg") && lower.endsWith(".jar");
-        });
-        return files != null && files.length > 0 ? files[0] : null;
+        File[] files = lib.listFiles();
+        if (files == null) return null;
+        File first = null;
+        for (File f : files) {
+            if (!f.isFile()) continue;
+            String n = f.getName().toLowerCase(Locale.ROOT);
+            if (n.equals("itmcreg.jar")) return f;
+            if (first == null && n.startsWith("itmcreg") && n.endsWith(".jar")) first = f;
+        }
+        return first;
     }
 
-    private static boolean isVirboxPackedJar(File jar) {
-        JarFile jf = null;
-        try {
-            jf = new JarFile(jar);
-            java.util.Enumeration<JarEntry> entries = jf.entries();
-            while (entries.hasMoreElements()) {
-                JarEntry entry = entries.nextElement();
-                if (entry.isDirectory() || !entry.getName().endsWith(".class")) continue;
-                InputStream raw = null;
-                DataInputStream in = null;
-                try {
-                    raw = jf.getInputStream(entry);
-                    in = new DataInputStream(raw);
-                    if (in.readInt() != 0xCAFEBABE) continue;
-                    int minor = in.readUnsignedShort();
-                    if (minor == 32768) return true;
-                } catch (Exception ignore) {
-                    // Keep scanning other classes. A damaged entry should not abort batch preview.
-                } finally {
-                    try { if (in != null) in.close(); else if (raw != null) raw.close(); }
-                    catch (Exception ignore) { }
-                }
+    static boolean isVirboxPackedJar(File jar) {
+        if (jar == null || !jar.isFile()) return false;
+        try (JarFile jf = new JarFile(jar)) {
+            JarEntry entry = jf.getJarEntry("itmc/regedit/RegisterMain.class");
+            if (entry == null) return false;
+            byte[] bytes;
+            try (InputStream in = jf.getInputStream(entry)) { bytes = readAll(in); }
+            if (containsAscii(bytes, "SenseShield") || containsAscii(bytes, "Virbox")) return true;
+            if (bytes.length < 16) return false;
+            int magic = ((bytes[0] & 0xff) << 24) | ((bytes[1] & 0xff) << 16)
+                    | ((bytes[2] & 0xff) << 8) | (bytes[3] & 0xff);
+            if (magic != 0xCAFEBABE) return true;
+            try {
+                constantPoolUtf8(bytes);
+                return false;
+            } catch (Throwable ex) {
+                return true;
             }
-        } catch (Exception ignore) {
+        } catch (Exception ex) {
             return false;
-        } finally {
-            try { if (jf != null) jf.close(); } catch (Exception ignore) { }
+        }
+    }
+
+    private static boolean hasDirectoryBinaryToken(File root, File lib, String token) {
+        if (blank(token)) return false;
+        byte[] needle = token.getBytes(StandardCharsets.ISO_8859_1);
+        File classes = new File(root, "WEB-INF" + File.separator + "classes");
+        if (scanFilesForToken(classes, needle, 0, 10)) return true;
+        return scanJarsForToken(lib, needle);
+    }
+
+    private static boolean scanFilesForToken(File dir, byte[] needle, int depth, int maxDepth) {
+        if (dir == null || !dir.isDirectory() || depth > maxDepth) return false;
+        File[] files = dir.listFiles();
+        if (files == null) return false;
+        for (File f : files) {
+            if (f.isDirectory()) {
+                if (scanFilesForToken(f, needle, depth + 1, maxDepth)) return true;
+            } else if (f.isFile()) {
+                String n = f.getName().toLowerCase(Locale.ROOT);
+                if (!n.endsWith(".class")) continue;
+                try {
+                    byte[] bytes = Files.readAllBytes(f.toPath());
+                    if (containsAscii(bytes, needle)) return true;
+                } catch (Exception ignore) { }
+            }
         }
         return false;
     }
 
-    private static LicenseRecoverModernGUIJavaPlan unknown() {
-        return new LicenseRecoverModernGUIJavaPlan(false, null, null, null,
-                null, "未识别", null, null, null, "—", "—", false, false,
-                false, "未识别");
+    private static boolean scanJarsForToken(File lib, byte[] needle) {
+        if (lib == null || !lib.isDirectory()) return false;
+        File[] files = lib.listFiles();
+        if (files == null) return false;
+        for (File f : files) {
+            if (!f.isFile() || !f.getName().toLowerCase(Locale.ROOT).endsWith(".jar")) continue;
+            try (JarFile jf = new JarFile(f)) {
+                java.util.Enumeration<JarEntry> entries = jf.entries();
+                while (entries.hasMoreElements()) {
+                    JarEntry entry = entries.nextElement();
+                    if (entry.isDirectory() || !entry.getName().endsWith(".class")) continue;
+                    try (InputStream in = jf.getInputStream(entry)) {
+                        byte[] bytes = readAll(in);
+                        if (containsAscii(bytes, needle)) return true;
+                    }
+                }
+            } catch (Exception ignore) { }
+        }
+        return false;
+    }
+
+    private static boolean classFileContainsAll(File file, String... tokens) {
+        if (file == null || !file.isFile()) return false;
+        try {
+            byte[] bytes = Files.readAllBytes(file.toPath());
+            for (String token : tokens) {
+                if (!containsAscii(bytes, token)) return false;
+            }
+            return true;
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    private static boolean containsAscii(byte[] haystack, String needle) {
+        return containsAscii(haystack, needle.getBytes(StandardCharsets.ISO_8859_1));
+    }
+
+    private static boolean containsAscii(byte[] haystack, byte[] needle) {
+        if (haystack == null || needle == null || needle.length == 0 || haystack.length < needle.length) return false;
+        outer: for (int i = 0; i <= haystack.length - needle.length; i++) {
+            for (int j = 0; j < needle.length; j++) {
+                if (haystack[i + j] != needle[j]) continue outer;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private static String readElement(File file, String tag) {
+        if (file == null || !file.isFile()) return null;
+        try {
+            String text = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            Pattern p = Pattern.compile("(?is)<" + Pattern.quote(tag) + "\\b[^>]*>(.*?)</" + Pattern.quote(tag) + ">");
+            Matcher m = p.matcher(text);
+            if (!m.find()) return null;
+            return m.group(1) == null ? null : m.group(1).trim();
+        } catch (Exception ex) {
+            return null;
+        }
     }
 
     private static String relative(File root, File child) {
+        if (root == null || child == null) return "—";
         try {
-            String text = root.toPath().toAbsolutePath().normalize()
-                    .relativize(child.toPath().toAbsolutePath().normalize()).toString();
-            return text.isEmpty() ? child.getName() : text;
-        } catch (Exception ignore) {
+            return root.toPath().toAbsolutePath().normalize().relativize(
+                    child.toPath().toAbsolutePath().normalize()).toString();
+        } catch (Exception ex) {
             return child.getAbsolutePath();
         }
     }
@@ -912,7 +808,41 @@ public final class LicenseRecoverModernGUIJavaPlan {
         return value == null || value.trim().isEmpty();
     }
 
-    private static String value(String value) {
-        return blank(value) ? "—" : value;
+    private static String value(String value) { return blank(value) ? "—" : value; }
+
+    private static LicenseRecoverModernGUIJavaPlan unknown() {
+        return new LicenseRecoverModernGUIJavaPlan(false, null, null, null,
+                null, "—", null, null, null, "—", "—", false, false, false, "未识别");
+    }
+
+    private static byte[] readAll(InputStream in) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        int n;
+        while ((n = in.read(buf)) >= 0) out.write(buf, 0, n);
+        return out.toByteArray();
+    }
+
+    private static LinkedHashSet<String> constantPoolUtf8(byte[] bytes) throws Exception {
+        DataInputStream in = new DataInputStream(new java.io.ByteArrayInputStream(bytes));
+        if (in.readInt() != 0xCAFEBABE) throw new IllegalArgumentException("not class");
+        in.readUnsignedShort(); in.readUnsignedShort();
+        int count = in.readUnsignedShort();
+        LinkedHashSet<String> out = new LinkedHashSet<String>();
+        for (int i = 1; i < count; i++) {
+            int tag = in.readUnsignedByte();
+            switch (tag) {
+                case 1:
+                    out.add(in.readUTF());
+                    break;
+                case 3: case 4: in.skipBytes(4); break;
+                case 5: case 6: in.skipBytes(8); i++; break;
+                case 7: case 8: case 16: case 19: case 20: in.skipBytes(2); break;
+                case 9: case 10: case 11: case 12: case 17: case 18: in.skipBytes(4); break;
+                case 15: in.skipBytes(3); break;
+                default: throw new IllegalArgumentException("cp tag " + tag);
+            }
+        }
+        return out;
     }
 }
