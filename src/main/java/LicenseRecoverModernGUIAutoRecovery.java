@@ -60,9 +60,10 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (bin != null) {
             File root = "bin".equalsIgnoreCase(bin.getName()) && bin.getParentFile()!=null ? bin.getParentFile() : bin;
             String version = readVersion(root, bin);
+            File webDll = new File(bin, "ITMC.Web.dll");
             String configuredProduct = detectConfiguredDotNetProduct(root, bin, version);
-            String product = !blank(configuredProduct)
-                    ? configuredProduct : detectProduct(new File(bin,"ITMC.Web.dll"), version);
+            String assemblyProduct = detectProduct(webDll, version);
+            String product = selectDotNetRegistrationProduct(version, configuredProduct, assemblyProduct);
             // DS01xx uses the legacy funpublic protocol. Some deployments also carry an
             // uppercase ITMC.Regedit.dll compatibility assembly, which is not proof of the
             // modern JSON/DoRegistry protocol and must not override the version evidence.
@@ -82,6 +83,30 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     }
 
     private static Detection unknownDetection(File s) { return new Detection(Kind.UNKNOWN,s,null,null,null,null); }
+
+    /**
+     * Select the product actually used by the target registration runtime.
+     *
+     * Some YX03xx sites keep a broad application-group value such as "YX03" in
+     * Web.config while the protected ITMC.Web runtime constructs RegeditMain with
+     * the concrete registration family (for example YX0303 for YX030308).  Using
+     * the broad Web.config value makes the helper write regName with the wrong
+     * *ITMC<ProName>OK* key: the helper can verify its own write, but the real web
+     * startup later cannot decrypt it.  For the eight-character YX mode family,
+     * prefer the family proven by this target ITMC.Web.dll; keep configured product
+     * identity authoritative for older/direct products such as YX0102 -> YS01.
+     */
+    static String selectDotNetRegistrationProduct(String version, String configuredProduct,
+                                                   String assemblyProduct) {
+        String v = blank(version) ? null : version.trim();
+        String configured = blank(configuredProduct) ? null : configuredProduct.trim();
+        String assembly = blank(assemblyProduct) ? null : assemblyProduct.trim();
+        if (v != null && v.matches("(?i)^YX\\d{6}$")
+                && assembly != null && assembly.matches("(?i)^YX\\d{4}$")) {
+            return assembly;
+        }
+        return configured != null ? configured : assembly;
+    }
 
     public static Result recover(File selected, boolean backup, boolean blockNet, boolean dryRun, Consumer<String> logger) {
         Consumer<String> log = logger == null ? x -> { } : logger;

@@ -860,6 +860,37 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                         LicenseRecoverModernGUIAutoRecovery.detectProductList(
                                 productFixture.toFile(), "YX0303")),
                 "one-click derives YX0303 local product list");
+
+        check("YX0303".equals(LicenseRecoverModernGUIAutoRecovery.selectDotNetRegistrationProduct(
+                        "YX030308", "YX03", "YX0303")),
+                "YX030308 registration uses target ITMC.Web family instead of broad Web.config YX03");
+        check("YX0302".equals(LicenseRecoverModernGUIAutoRecovery.selectDotNetRegistrationProduct(
+                        "YX030107", "YX03", "YX0302")),
+                "YX030107 keeps target-owned YX0302 registration family when version prefix is misleading");
+        check("YS01".equals(LicenseRecoverModernGUIAutoRecovery.selectDotNetRegistrationProduct(
+                        "YX0102", "YS01", "YX0102")),
+                "direct YX0102 keeps configured YS01 identity outside the YX03xx mode-family rule");
+
+        Path yx030308BroadConfigRoot = base.resolve("dotnet-YX030308-broad-webconfig");
+        Path yx030308BroadConfigBin = yx030308BroadConfigRoot.resolve("bin");
+        Files.createDirectories(yx030308BroadConfigBin);
+        writeUtf16Fixture(yx030308BroadConfigBin.resolve("ITMC.Web.dll"),
+                "YX03", "YX0303", "YX030308", "RegeditNew", "NewRegistry", "DoRegistry",
+                "ProName", "SoftVersionID", "GetProVersion", "CheckSoftVersionID");
+        Files.write(yx030308BroadConfigBin.resolve("ITMC.Regedit.dll"), new byte[]{1});
+        Files.write(yx030308BroadConfigRoot.resolve("config.xml"), Arrays.asList(
+                "<ROOT><reg/><SystemSoft><SoftVersionID>YX030308</SoftVersionID></SystemSoft></ROOT>"),
+                StandardCharsets.UTF_8);
+        Files.write(yx030308BroadConfigRoot.resolve("Web.config"), Arrays.asList(
+                "<configuration><appSettings><add key=\"productName\" value=\"YX03\" /></appSettings></configuration>"),
+                StandardCharsets.UTF_8);
+        LicenseRecoverModernGUIAutoRecovery.Detection yx030308BroadDetection =
+                LicenseRecoverModernGUIAutoRecovery.detect(yx030308BroadConfigRoot.toFile());
+        check("YX03".equals(LicenseRecoverModernGUIAutoRecovery.detectConfiguredDotNetProduct(
+                        yx030308BroadConfigRoot.toFile(), yx030308BroadConfigBin.toFile(), "YX030308")),
+                "YX030308 regression fixture reproduces misleading broad Web.config productName=YX03");
+        check("YX0303".equals(yx030308BroadDetection.productName),
+                "YX030308 detection selects the target runtime registration family YX0303");
         Path noRegStrFixture = base.resolve("YX0303-no-products-Web.dll");
         writeUtf16Fixture(noRegStrFixture, "YX0303", "SoftVersionID", "ProName");
         check(LicenseRecoverModernGUIAutoRecovery.detectProductList(
