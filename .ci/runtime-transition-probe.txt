@@ -1,1 +1,0 @@
-Pre-release CI probe for the transition-safe runtime jar. Pass 2: updater smoke fixture included. Remove before the next stable release.

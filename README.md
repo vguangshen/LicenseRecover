@@ -2,7 +2,7 @@
 
 ITMC 云实训平台离线授权恢复工具，支持 Java 与 .NET 应用。项目面向原授权服务不可用后的本地恢复场景，保留 Java 8 / Windows 7 / Windows Server 2008 兼容边界。
 
-当前稳定版本：**v1.2.46**
+当前稳定版本：**v1.2.47**
 
 ## 下载
 
@@ -49,6 +49,7 @@ CI 构建正式 portable ZIP 时会下载该固定 runtime、校验 SHA-256，�
 - v1.2.4 起进度总大小直接取 GitHub Release 资产元数据，不再依赖下载节点是否返回 Content-Length；进度条从 0% 到 100% 对应实际收到的字节数。
 - v1.2.4 起下载连接启用更长超时、4 次自动重试与 Range 断点续传，并让内置 Java 使用 Windows 系统代理设置。
 - v1.2.18 起下载链升级为多线路：Java 系统代理 / HTTPS_PROXY / 直接连接，并手动安全跟随 GitHub HTTPS 重定向；Java 链全部失败后自动切换 Windows WinINet 系统网络栈，继续保留文件长度与 SHA-256 双校验。
+- v1.2.47 起自更新增加 `LicenseRecoverRuntime.jar` 过渡运行层：原生入口与二级 JVM 优先加载该文件，旧 `LicenseRecoverOverlay.jar` 仅作兼容回退；更新器在关键运行文件逐字节校验通过后才最后推进 `VERSION.txt`，避免“版本号已更新但运行字节码仍是旧版”。
 - v1.2.1 起新 updater 安装完成后直接重新启动 `LicenseRecoverGUI.exe`，不再通过 `cmd.exe` + BAT 完成重启。
 - 为兼容 v1.1.x/v1.2.0 已安装客户端，轻量更新包暂时保留一个最小 `run_gui.bat` 过渡文件；旧 updater 用它完成最后一次 BAT 式重启后，新程序会清理旧入口。
 - 因为旧客户端在下载 v1.2.1 时仍运行旧 updater 代码，所以“第一次从旧版升级到 v1.2.1”的下载本身不会凭空出现新进度条；升级成功后，后续更新都会使用新进度 UI。
@@ -123,6 +124,7 @@ v1.2.3 修复了批量扫描在第一个 Java 项目处因 GUI classpath 耦合�
 LicenseRecoverGUI.exe            # 唯一用户启动入口
 LicenseRecover.jar
 LicenseRecoverGUI.jar
+LicenseRecoverRuntime.jar          # 更新过渡安全运行层（与 Overlay 字节一致，优先加载）
 LicenseRecoverOverlay.jar
 LicenseRecover.NET/              # 内部 .NET 兼容辅助组件
 jre/                             # Amazon Corretto 8 Windows x64 JRE

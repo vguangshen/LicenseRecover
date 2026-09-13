@@ -1,3 +1,15 @@
+## 1.2.47 - 2026-09-13
+
+### Fixed
+- 使用用户提供的真实 `DS50109(3).zip` 与 `YX030506.zip` 在本地直接运行正式构建逻辑，二者均可得到 `automaticRecoveryReady=true`；因此截图中“v1.2.46 但运行校验ID仍为空”被确认不是样本识别规则本身，而是安装目录可能出现 `VERSION.txt` 已更新、运行 Overlay 仍旧的组件不一致状态。
+- 新增 `LicenseRecoverRuntime.jar` 作为过渡安全运行层，Windows 原生入口、兼容 BAT 与所有二级 JVM 均优先加载它，`LicenseRecoverOverlay.jar` 保持兼容回退。
+- 从本版本开始，自更新安装完成前逐字节核对 Runtime/Overlay/Core/GUI/EXE 五个关键运行文件，并将 `VERSION.txt` 改为最后写入；关键文件不一致则回滚而不是留下“假升级”状态。
+
+### Real-sample verification
+- `DS50109(3).zip`: `AuthorizationFamily=DS501`, `RuntimeProductID=DS50109`, `RegStr=DS50109`, `READY`。
+- `YX030506.zip`: `AuthorizationFamily=YX0305`, `RuntimeProductID=YX030506`, `RegStr=QT100101,QT100102`, `READY`，注册基目录为 `WEB-INF/classes (ProjectSourcesPath)`。
+- 额外模拟 v1.2.46 旧更新器 + 陈旧 Overlay 的升级路径：旧更新器能够新增新的 Runtime jar；升级后两份真实样本仍均为 `READY`。
+
 ## 1.2.45 - 2026-09-13
 
 ### Fixed
