@@ -475,6 +475,9 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 root, concrete, family, configured);
         if (!blank(productAllPrimary)) return productAllPrimary;
 
+        String ds501Primary = confirmedDs501FamilyRuntime(root, concrete, family, configured);
+        if (!blank(ds501Primary)) return ds501Primary;
+
         if (blank(configured) || !concrete.equalsIgnoreCase(configured.trim())) return null;
 
         File systemInfo = new File(classes, "com" + File.separator + "itmc" + File.separator
@@ -505,6 +508,12 @@ public final class LicenseRecoverModernGUIJavaPlan {
         String concrete = softId.trim();
         String family = confirmedFamily.trim();
         String runtime = confirmedRuntimeProduct.trim();
+        if ("DS501".equalsIgnoreCase(family) && family.equalsIgnoreCase(runtime)) {
+            File config = new File(root, "WEB-INF" + File.separator + "classes"
+                    + File.separator + "config.xml");
+            String configured = readElement(config, "SoftVersionID");
+            if (!blank(confirmedDs501FamilyRuntime(root, concrete, family, configured))) return concrete;
+        }
         if (!concrete.equalsIgnoreCase(runtime)) return null;
         if (!concrete.toUpperCase(Locale.ROOT).startsWith(family.toUpperCase(Locale.ROOT))) return null;
 
@@ -582,6 +591,53 @@ public final class LicenseRecoverModernGUIJavaPlan {
         } catch (Exception ignore) { }
         return null;
     }
+
+/**
+ * Real deployed DS501xx layout: systemConfig.yml carries the concrete application
+ * mode (for example DS50109), while WEB-INF/classes/config.xml supplies the
+ * RegisterMain product DS501 and separately enumerates the concrete System ids.
+ * Accept DS501 as the runtime product only when the target startup and local
+ * registration code independently prove the same relationship.
+ */
+static String confirmedDs501FamilyRuntime(File root, String softId,
+                                          String confirmedFamily,
+                                          String configuredProduct) {
+    if (root == null || blank(softId) || blank(confirmedFamily) || blank(configuredProduct)) return null;
+    String concrete = softId.trim();
+    String family = confirmedFamily.trim();
+    if (!concrete.toUpperCase(Locale.ROOT).startsWith("DS501")
+            || !"DS501".equalsIgnoreCase(family)
+            || !family.equalsIgnoreCase(configuredProduct.trim())) return null;
+
+    String ymlVersion = readSystemConfigVersionId(root);
+    if (blank(ymlVersion) || !concrete.equalsIgnoreCase(ymlVersion.trim())) return null;
+
+    File classes = new File(root, "WEB-INF" + File.separator + "classes");
+    File config = new File(classes, "config.xml");
+    if (!hasEnumeratedClassesFamily(config, family, concrete)) return null;
+
+    File systemInfo = new File(classes, "com" + File.separator + "itmc" + File.separator
+            + "register" + File.separator + "utils" + File.separator + "SystemInfo.class");
+    File registerContant = new File(classes, "com" + File.separator + "itmc" + File.separator
+            + "register" + File.separator + "utils" + File.separator + "RegisterContant.class");
+    File listener = new File(classes, "com" + File.separator + "itmc" + File.separator
+            + "register" + File.separator + "service" + File.separator + "RegisterListener.class");
+    File service = new File(classes, "com" + File.separator + "itmc" + File.separator
+            + "register" + File.separator + "service" + File.separator + "RegisterService.class");
+    File controller = new File(classes, "com" + File.separator + "itmc" + File.separator
+            + "register" + File.separator + "controller" + File.separator + "RegisterController.class");
+
+    if (!classFileContainsAll(systemInfo, "config.xml", "SystemSoft", "registerId")) return null;
+    if (!classFileContainsAll(registerContant, "global.system.VersionID", "versionID",
+            "java/util/Properties", "getProperty")) return null;
+    if (!classFileContainsAll(listener,
+            "com/itmc/register/utils/SystemInfo", "registerId",
+            "itmc/regedit/RegisterMain", "checkReInfo", "getRegInfo", "getRegStr",
+            "com/itmc/register/utils/RegisterContant", "versionID", "contains")) return null;
+    if (!classFileContainsAll(service, family, "itmc/regedit/RegisterMain", "doRegistry")) return null;
+    if (!classFileContainsAll(controller, family, "itmc/regedit/RegisterMain", "newRegistry")) return null;
+    return family;
+}
 
     static boolean confirmedProductAllNumRuntimeProduct(File classes) {
         if (classes == null || !classes.isDirectory()) return false;

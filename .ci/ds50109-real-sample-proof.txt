@@ -1,0 +1,19 @@
+Deployed DS50109 reduced-sample evidence verified 2026-09-13
+
+systemConfig.yml: global.system.VersionID=DS50109
+WEB-INF/classes/config.xml SoftVersionID: DS501
+WEB-INF/classes/config.xml enumerates DS50101, DS50105, DS50106, DS50107, DS50108, DS50109.
+SystemInfo.class loads classes/config.xml SystemSoft into registerId.
+RegisterContant.class loads global.system.VersionID into versionID.
+RegisterListener.class constructs RegisterMain(SystemInfo.registerId), calls checkReInfo/getRegInfo,
+and requires getRegInfo().getRegStr().contains(RegisterContant.versionID).
+RegisterService.class local registration constructs RegisterMain("DS501") and calls doRegistry.
+RegisterController.class local request-code generation constructs RegisterMain("DS501") and calls newRegistry.
+
+Expected batch-plan result:
+AuthorizationFamily=DS501
+RuntimeProductID=DS501
+RegStr=DS50109
+automaticRecoveryReady=true
+
+No database credentials or existing authorization material from the sample are stored here.

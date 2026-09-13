@@ -483,6 +483,36 @@ public final class RefactorSmokeTest {
                         && !ds501Plan.regStrSummary().contains("动态"),
                 "DS50109 derives primary RegStr statically only from target VersionID->registerId->RegisterMain->RegStr.contains(versionID) flow");
 
+// Real deployed DS50109 variant supplied from the production server:
+// systemConfig.yml mode is DS50109, but classes/config.xml RegisterMain product is DS501.
+Files.write(ds501Classes.resolve("config.xml"), Arrays.asList(
+        "<ROOT><reg><regType>3</regType></reg><SystemSoft><SoftVersionID>DS501</SoftVersionID></SystemSoft>"
+                + "<System id='DS50101'/><System id='DS50105'/><System id='DS50106'/>"
+                + "<System id='DS50107'/><System id='DS50108'/><System id='DS50109'/></ROOT>"),
+        StandardCharsets.UTF_8);
+Files.write(ds501Listener,
+        "com/itmc/register/utils/SystemInfo registerId itmc/regedit/RegisterMain checkReInfo getRegInfo getRegStr "
+                .concat("com/itmc/register/utils/RegisterContant versionID contains")
+                .getBytes(StandardCharsets.US_ASCII));
+Path ds501Service = ds501Classes.resolve("com/itmc/register/service/RegisterService.class");
+Path ds501Controller = ds501Classes.resolve("com/itmc/register/controller/RegisterController.class");
+Files.createDirectories(ds501Controller.getParent());
+Files.write(ds501Service,
+        "DS501 itmc/regedit/RegisterMain doRegistry".getBytes(StandardCharsets.US_ASCII));
+Files.write(ds501Controller,
+        "DS501 itmc/regedit/RegisterMain newRegistry".getBytes(StandardCharsets.US_ASCII));
+ds501Plan = LicenseRecoverModernGUIJavaPlan.inspect(ds501Root.toFile());
+check("DS501".equals(ds501Plan.authorizationFamily)
+                && "DS501".equals(ds501Plan.runtimeProductId)
+                && "DS50109".equals(ds501Plan.regStr)
+                && ds501Plan.automaticRecoveryReady,
+        "DS50109 deployed family-config variant confirms DS501 runtime and concrete DS50109 RegStr");
+Files.write(ds501Service,
+        "itmc/regedit/RegisterMain doRegistry".getBytes(StandardCharsets.US_ASCII));
+ds501Plan = LicenseRecoverModernGUIJavaPlan.inspect(ds501Root.toFile());
+check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
+        "DS50109 family-config variant stays fail-closed without local DS501 doRegistry proof");
+
         Path ds501WeakRoot = base.resolve("java-DS50112-weak-primary-regstr");
         Path ds501WeakLib = ds501WeakRoot.resolve("WEB-INF/lib");
         Path ds501WeakClasses = ds501WeakRoot.resolve("WEB-INF/classes");
