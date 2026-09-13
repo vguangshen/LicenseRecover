@@ -15,26 +15,34 @@ def replace_once(path, old, new):
 plan = 'src/main/java/LicenseRecoverModernGUIJavaPlan.java'
 test = 'src/test/java/RefactorSmokeTest.java'
 
-# The deployed YX030506 generation uses systemConfig.yml for the concrete application mode,
-# while WEB-INF/classes/config.xml SoftVersionID is a CSV of startup RegisterMain products
-# (YX0305,QT1001).  Accept YX0305 only when the target's own config, System-mode list,
-# PRODUCT_ALL_NUM startup loop and local-registration servlet independently agree.
 replace_once(plan,
-'''        File classes = new File(root, "WEB-INF" + File.separator + "classes");
+'''    static String confirmedConfigDrivenRuntimeProduct(File root, String softId, String confirmedFamily) {
+        if (root == null || blank(softId) || blank(confirmedFamily)) return null;
+        String concrete = softId.trim();
+        String family = confirmedFamily.trim();
+        if (!concrete.toUpperCase(Locale.ROOT).startsWith(family.toUpperCase(Locale.ROOT))) return null;
+
+        File classes = new File(root, "WEB-INF" + File.separator + "classes");
         File config = new File(classes, "config.xml");
         String configured = readElement(config, "SoftVersionID");
         if (blank(configured) || !concrete.equalsIgnoreCase(configured.trim())) return null;
 
         File systemInfo = new File(classes, "com" + File.separator + "itmc" + File.separator
 ''',
-'''        File classes = new File(root, "WEB-INF" + File.separator + "classes");
+'''    static String confirmedConfigDrivenRuntimeProduct(File root, String softId, String confirmedFamily) {
+        if (root == null || blank(softId) || blank(confirmedFamily)) return null;
+        String concrete = softId.trim();
+        String family = confirmedFamily.trim();
+        if (!concrete.toUpperCase(Locale.ROOT).startsWith(family.toUpperCase(Locale.ROOT))) return null;
+
+        File classes = new File(root, "WEB-INF" + File.separator + "classes");
         File config = new File(classes, "config.xml");
         String configured = readElement(config, "SoftVersionID");
 
         // Deployed YX030506 builds use two different identity layers:
         //   systemConfig.yml VersionID = YX030506 (concrete application mode)
         //   classes/config.xml SoftVersionID = YX0305,QT1001 (startup RegisterMain products)
-        // Do not force those values to be equal.  The primary local-registration product
+        // Do not force those values to be equal. The primary local-registration product
         // is accepted only when target-owned bytecode proves both PRODUCT_ALL_NUM startup
         // iteration and a local-registration servlet that constructs RegisterMain(YX0305,...).
         String productAllPrimary = confirmedProductAllNumPrimaryRuntime(
@@ -78,7 +86,7 @@ replace_once(plan,
     /**
      * Prove the primary RegisterMain product for the deployed YX030506 layout where
      * classes/config.xml SoftVersionID is a CSV startup-product list rather than the
-     * concrete application VersionID.  This is intentionally YX0305-specific until
+     * concrete application VersionID. This is intentionally YX0305-specific until
      * another real target demonstrates the same contract.
      */
     static String confirmedProductAllNumPrimaryRuntime(File root, String softId,
@@ -99,10 +107,6 @@ replace_once(plan,
         if (!hasEnumeratedClassesFamily(config, family, concrete)) return null;
         if (!confirmedProductAllNumRuntimeProduct(classes)) return null;
 
-        // The same target exposes its offline registration page through a servlet that
-        // explicitly constructs RegisterMain("YX0305", ProjectSourcesPath.projectPath("/"))
-        // and calls newRegistry/doRegistry.  That independent call site identifies which
-        // PRODUCT_ALL_NUM entry is the primary local-registration product.
         File servlet = new File(classes, "com" + File.separator + "itmc" + File.separator
                 + "sys" + File.separator + "platformregister" + File.separator
                 + "RegisterHttpServlet.class");
@@ -122,8 +126,6 @@ replace_once(plan,
     }
 ''')
 
-# Add a regression that models the user's real deployment rather than the earlier
-# concrete-SoftVersionID fixture.
 replace_once(test,
 '''        check("YX0305".equals(yx305Plan.authorizationFamily)
                         && "YX030506".equals(yx305Plan.runtimeProductId)
@@ -141,7 +143,7 @@ replace_once(test,
 
         // Real deployed YX030506 variant: concrete application mode comes from
         // systemConfig.yml/System id, while classes/config.xml SoftVersionID is the
-        // startup RegisterMain product list YX0305,QT1001.  The local registration
+        // startup RegisterMain product list YX0305,QT1001. The local registration
         // servlet independently proves YX0305 is the primary offline product.
         Files.write(yx305Classes.resolve("config.xml"), Arrays.asList(
                 "<ROOT><SystemSoft><SoftVersionID>YX0305,QT1001</SoftVersionID><regInfo>QT100101,QT100102</regInfo></SystemSoft>"
