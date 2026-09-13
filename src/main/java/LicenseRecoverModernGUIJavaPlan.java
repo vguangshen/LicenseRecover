@@ -138,6 +138,14 @@ public final class LicenseRecoverModernGUIJavaPlan {
         String binaryRuntime = confirmedBinaryRuntimeProduct(
                 root, lib, soft, binaryFamily, newStyle, classesConfig.isFile());
         String configDrivenRuntime = confirmedConfigDrivenRuntimeProduct(root, soft, family);
+        // Real DS501/YX0305 deployments do not always embed the concrete SoftVersionID
+        // as an independent constant-pool token. When the concrete id is read from the
+        // target's own classes/config.xml, the family is independently proven from the
+        // target binaries, and the target startup bytecode itself proves a
+        // RegisterMain.checkReInfo() constructor chain, that startup chain is stronger
+        // evidence than an artificial exact-string requirement.
+        String startupRuntime = blank(binaryRuntime) && blank(configDrivenRuntime)
+                ? confirmedStartupRuntimeProduct(root, lib, soft, family) : null;
         // QT401/QT100101 use the confirmed classes family as their runtime product.
         // DS501/YX0305 do not: their target startup must prove the concrete SoftVersionID.
         String confirmedClassesRuntime = ("QT401".equalsIgnoreCase(confirmedClassesFamily)
@@ -146,7 +154,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
         String runtimeProduct = directoryMapping != null ? directoryMapping.productMain
                 : (directDataIdentity ? soft.trim()
                 : (!blank(configDrivenRuntime) ? configDrivenRuntime
-                : (!blank(binaryRuntime) ? binaryRuntime : confirmedClassesRuntime)));
+                : (!blank(binaryRuntime) ? binaryRuntime
+                : (!blank(startupRuntime) ? startupRuntime : confirmedClassesRuntime))));
         File jar = findRegJar(lib);
         boolean packed = jar != null && isVirboxPackedJar(jar);
         String qt401PrimaryRegStr = confirmedQt401PrimaryRegStr(root, soft, family, runtimeProduct);
@@ -175,7 +184,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
         }
 
         boolean binaryIdentity = !blank(binaryFamily)
-                && (!blank(binaryRuntime) || !blank(configDrivenRuntime));
+                && (!blank(binaryRuntime) || !blank(configDrivenRuntime) || !blank(startupRuntime));
         boolean directoryIdentity = directoryMapping != null
                 || directDataIdentity || !blank(confirmedClassesFamily) || binaryIdentity;
         boolean directoryRegStr = directoryMapping != null
@@ -402,6 +411,53 @@ public final class LicenseRecoverModernGUIJavaPlan {
         // Concrete runtime IDs (DS501xx/YX0305xx) must also occur as an exact token
         // in target bytecode; the occurrence in config.xml alone is intentionally insufficient.
         return hasDirectoryBinaryToken(root, lib, candidate) ? candidate.trim() : null;
+    }
+
+    /**
+     * Pure decision helper used by tests and by the target startup proof below.
+     * The family must already have independent target-binary evidence; this method
+     * never derives DS501/YX0305 merely from the VersionID prefix.
+     */
+    static String selectStartupConfirmedConcreteRuntime(String softId, String configuredSoftId,
+                                                        String confirmedFamily,
+                                                        boolean startupCheckReInfo) {
+        if (blank(softId) || blank(configuredSoftId) || blank(confirmedFamily)
+                || !startupCheckReInfo) return null;
+        String concrete = softId.trim();
+        String configured = configuredSoftId.trim();
+        String family = confirmedFamily.trim();
+        if (!concrete.equalsIgnoreCase(configured)) return null;
+        String upper = concrete.toUpperCase(Locale.ROOT);
+        boolean supported = (upper.startsWith("DS501") && "DS501".equalsIgnoreCase(family))
+                || (upper.startsWith("YX0305") && "YX0305".equalsIgnoreCase(family));
+        return supported ? concrete : null;
+    }
+
+    /**
+     * Confirm the concrete DS501xx/YX0305xx runtime product from the selected target's
+     * own config plus its actual RegisterMain startup ABI. JavaRegistrationRuntimeProfile
+     * parses class files only; it does not load or execute the selected application's code.
+     * At least one proven startup attempt must call checkReInfo().
+     */
+    static String confirmedStartupRuntimeProduct(File root, File lib, String softId,
+                                                 String confirmedFamily) {
+        if (root == null || lib == null || blank(softId) || blank(confirmedFamily)) return null;
+        File config = new File(root, "WEB-INF" + File.separator + "classes"
+                + File.separator + "config.xml");
+        String configured = readElement(config, "SoftVersionID");
+        if (selectStartupConfirmedConcreteRuntime(softId, configured, confirmedFamily, true) == null)
+            return null;
+        JavaRegistrationRuntimeProfile profile = JavaRegistrationRuntimeProfile.inspect(root, lib);
+        if (!profile.supported || profile.attempts == null || profile.attempts.isEmpty()) return null;
+        boolean checkReInfo = false;
+        for (JavaRegistrationRuntimeProfile.Attempt attempt : profile.attempts) {
+            if (attempt != null && attempt.checkReInfo) {
+                checkReInfo = true;
+                break;
+            }
+        }
+        return selectStartupConfirmedConcreteRuntime(
+                softId, configured, confirmedFamily, checkReInfo);
     }
 
     /**

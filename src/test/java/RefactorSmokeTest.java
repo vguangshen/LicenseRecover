@@ -88,6 +88,21 @@ public final class RefactorSmokeTest {
         check(JavaRegistrationRuntimeProfile.selectExplicitBase(yxRootBase, yxClassesBase, true, true)
                         .equals(yxRootBase),
                 "Servlet root remains authoritative when both explicit path proofs are present");
+        check("DS50109".equals(LicenseRecoverModernGUIJavaPlan.selectStartupConfirmedConcreteRuntime(
+                        "DS50109", "DS50109", "DS501", true)),
+                "DS501 concrete runtime id may be proven by exact target config plus checkReInfo startup chain");
+        check("YX030506".equals(LicenseRecoverModernGUIJavaPlan.selectStartupConfirmedConcreteRuntime(
+                        "YX030506", "YX030506", "YX0305", true)),
+                "YX0305 concrete runtime id may be proven by exact target config plus checkReInfo startup chain");
+        check(LicenseRecoverModernGUIJavaPlan.selectStartupConfirmedConcreteRuntime(
+                        "DS50109", "DS50112", "DS501", true) == null,
+                "startup runtime proof rejects a mismatched classes/config SoftVersionID");
+        check(LicenseRecoverModernGUIJavaPlan.selectStartupConfirmedConcreteRuntime(
+                        "DS50109", "DS50109", "DS501", false) == null,
+                "startup runtime proof requires a target checkReInfo call site");
+        check(LicenseRecoverModernGUIJavaPlan.selectStartupConfirmedConcreteRuntime(
+                        "ZZ99999", "ZZ99999", "ZZ999", true) == null,
+                "startup runtime proof does not become a generic VersionID-prefix fallback");
         check(LicenseRecoverJavaHost.containsAllCsv("QT0420,QT0437", "QT0420"),
                 "Java persisted-mode verification accepts target-proven alias token");
         check(!LicenseRecoverJavaHost.containsAllCsv("QT0420", "YT00129"),
