@@ -43,4 +43,4 @@ jobs:
           git commit -m 'fix: recognize deployed YX030506 PRODUCT_ALL_NUM runtime product'
           git push origin HEAD:main
 
-# retry after method-specific patch anchoring
+# retry after real-deployment fixture quote fix
