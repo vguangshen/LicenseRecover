@@ -1,3 +1,16 @@
+## 1.2.49 - 2026-09-13
+
+### Fixed
+- 修复另一种真实部署的 `DS50109` 结构仍可能显示“待确认”的问题：根 `systemConfig.yml` 的应用模式为 `DS50109`，而 `WEB-INF/classes/config.xml` 的 RegisterMain 产品实际为 `DS501`。
+- 将 DS501 的应用模式、授权族/运行产品与 RegStr 分离：应用模式保持 `DS50109`，目标原生注册链使用 `DS501`，RegStr 必须包含具体模式 `DS50109`。
+- 保持 fail-closed：只有目标 `SystemInfo`、`RegisterContant`、`RegisterListener`、`RegisterService` 与 `RegisterController` 同时证明该关系时才允许自动恢复。
+
+### Verification
+- 使用用户提供的真实精简 DS50109 服务器样本核对 classes/config 与目标 class 调用链。
+- 新增部署版回归：`AuthorizationFamily=DS501`, `RuntimeProductID=DS501`, `RegStr=DS50109`, `automaticRecoveryReady=true`。
+- 删除目标本地 `DS501 -> doRegistry` 证据后，同一夹具必须回到 BLOCKED，避免按版本前缀猜测。
+- 完整 Verify source、Java 8 回归、备份安全检查与原生 EXE 打包通过后发布。
+
 ## 1.2.47 - 2026-09-13
 
 ### Fixed
