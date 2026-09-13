@@ -1,0 +1,17 @@
+Deployed YX030506 reduced-sample evidence verified 2026-09-13
+
+systemConfig.yml: global.system.VersionID=YX030506
+WEB-INF/classes/config.xml SoftVersionID: YX0305,QT1001
+WEB-INF/classes/config.xml regInfo: QT100101,QT100102
+WEB-INF/classes/config.xml enumerates YX030501..YX030506 including current YX030506.
+IXmlUtil.class contains the config -> PRODUCT_ALL_NUM / PRODUCT_INFO field flow.
+ProjectApplicationRunner.class contains PRODUCT_ALL_NUM split -> RegisterMain -> checkReInfo/writeRegisterUser flow.
+RegisterHttpServlet.class contains explicit YX0305 + ProjectSourcesPath.projectPath + RegisterMain newRegistry/doRegistry flow.
+
+Expected batch-plan result:
+AuthorizationFamily=YX0305
+RuntimeProductID=YX0305
+RegStr=QT100101,QT100102
+automaticRecoveryReady=true
+
+This file documents the real reduced production sample used to gate the corresponding regression fixture.
