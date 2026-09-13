@@ -29,56 +29,37 @@ jobs:
           plan = Path('src/main/java/LicenseRecoverModernGUIJavaPlan.java')
           s = plan.read_text(encoding='utf-8')
 
-          old = dedent('''\
-                  String productAllPrimary = confirmedProductAllNumPrimaryRuntime(
-                          root, concrete, family, configured);
-                  if (!blank(productAllPrimary)) return productAllPrimary;
-
-                  if (blank(configured) || !concrete.equalsIgnoreCase(configured.trim())) return null;
-          ''')
-          new = dedent('''\
-                  String productAllPrimary = confirmedProductAllNumPrimaryRuntime(
-                          root, concrete, family, configured);
-                  if (!blank(productAllPrimary)) return productAllPrimary;
-
-                  String ds501Primary = confirmedDs501FamilyRuntime(root, concrete, family, configured);
-                  if (!blank(ds501Primary)) return ds501Primary;
-
-                  if (blank(configured) || !concrete.equalsIgnoreCase(configured.trim())) return null;
-          ''')
-          if old not in s:
+          anchor = ('        if (!blank(productAllPrimary)) return productAllPrimary;\n\n'
+                    '        if (blank(configured) || !concrete.equalsIgnoreCase(configured.trim())) return null;')
+          replacement = ('        if (!blank(productAllPrimary)) return productAllPrimary;\n\n'
+                         '        String ds501Primary = confirmedDs501FamilyRuntime(root, concrete, family, configured);\n'
+                         '        if (!blank(ds501Primary)) return ds501Primary;\n\n'
+                         '        if (blank(configured) || !concrete.equalsIgnoreCase(configured.trim())) return null;')
+          if anchor not in s:
               raise SystemExit('config-driven runtime anchor missing')
-          s = s.replace(old, new, 1)
+          s = s.replace(anchor, replacement, 1)
 
-          old = dedent('''\
-                  String concrete = softId.trim();
-                  String family = confirmedFamily.trim();
-                  String runtime = confirmedRuntimeProduct.trim();
-                  if (!concrete.equalsIgnoreCase(runtime)) return null;
-                  if (!concrete.toUpperCase(Locale.ROOT).startsWith(family.toUpperCase(Locale.ROOT))) return null;
+          method = '    static String confirmedConfigDrivenPrimaryRegStr(File root, String softId,'
+          pos = s.find(method)
+          if pos < 0:
+              raise SystemExit('primary RegStr method missing')
+          needle = ('        String runtime = confirmedRuntimeProduct.trim();\n'
+                    '        if (!concrete.equalsIgnoreCase(runtime)) return null;')
+          repl = ('        String runtime = confirmedRuntimeProduct.trim();\n'
+                  '        if ("DS501".equalsIgnoreCase(family) && family.equalsIgnoreCase(runtime)) {\n'
+                  '            File config = new File(root, "WEB-INF" + File.separator + "classes"\n'
+                  '                    + File.separator + "config.xml");\n'
+                  '            String configured = readElement(config, "SoftVersionID");\n'
+                  '            if (!blank(confirmedDs501FamilyRuntime(root, concrete, family, configured))) return concrete;\n'
+                  '        }\n'
+                  '        if (!concrete.equalsIgnoreCase(runtime)) return null;')
+          head, tail = s[:pos], s[pos:]
+          if needle not in tail:
+              raise SystemExit('primary RegStr runtime anchor missing')
+          tail = tail.replace(needle, repl, 1)
+          s = head + tail
 
-                  String ymlVersion = readSystemConfigVersionId(root);
-          ''')
-          new = dedent('''\
-                  String concrete = softId.trim();
-                  String family = confirmedFamily.trim();
-                  String runtime = confirmedRuntimeProduct.trim();
-                  if ("DS501".equalsIgnoreCase(family) && family.equalsIgnoreCase(runtime)) {
-                      File config = new File(root, "WEB-INF" + File.separator + "classes"
-                              + File.separator + "config.xml");
-                      String configured = readElement(config, "SoftVersionID");
-                      if (!blank(confirmedDs501FamilyRuntime(root, concrete, family, configured))) return concrete;
-                  }
-                  if (!concrete.equalsIgnoreCase(runtime)) return null;
-                  if (!concrete.toUpperCase(Locale.ROOT).startsWith(family.toUpperCase(Locale.ROOT))) return null;
-
-                  String ymlVersion = readSystemConfigVersionId(root);
-          ''')
-          if old not in s:
-              raise SystemExit('primary RegStr anchor missing')
-          s = s.replace(old, new, 1)
-
-          anchor = '    static boolean confirmedProductAllNumRuntimeProduct(File classes) {\n'
+          helper_anchor = '    static boolean confirmedProductAllNumRuntimeProduct(File classes) {\n'
           helper = dedent('''\
               /**
                * Real deployed DS501xx layout: systemConfig.yml carries the concrete application
@@ -128,14 +109,14 @@ jobs:
               }
 
           ''')
-          if anchor not in s:
+          if helper_anchor not in s:
               raise SystemExit('helper insertion anchor missing')
-          s = s.replace(anchor, helper + anchor, 1)
+          s = s.replace(helper_anchor, helper + helper_anchor, 1)
           plan.write_text(s, encoding='utf-8')
 
           test = Path('src/test/java/RefactorSmokeTest.java')
           t = test.read_text(encoding='utf-8')
-          anchor = '        Path ds501WeakRoot = base.resolve("java-DS50112-weak-primary-regstr");\n'
+          test_anchor = '        Path ds501WeakRoot = base.resolve("java-DS50112-weak-primary-regstr");\n'
           block = dedent('''\
                   // Real deployed DS50109 variant supplied from the production server:
                   // systemConfig.yml mode is DS50109, but classes/config.xml RegisterMain product is DS501.
@@ -168,9 +149,9 @@ jobs:
                           "DS50109 family-config variant stays fail-closed without local DS501 doRegistry proof");
 
           ''')
-          if anchor not in t:
+          if test_anchor not in t:
               raise SystemExit('DS501 regression insertion anchor missing')
-          t = t.replace(anchor, block + anchor, 1)
+          t = t.replace(test_anchor, block + test_anchor, 1)
           test.write_text(t, encoding='utf-8')
 
           proof = Path('.ci/ds50109-real-sample-proof.txt')
