@@ -1,0 +1,44 @@
+name: Apply real YX030506 PRODUCT_ALL_NUM fix
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/apply-yx030506-product-all-num-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '8'
+      - name: Apply source and regression patch
+        run: python3 scripts/apply-yx030506-product-all-num-fix.py
+      - name: Compile patched source and smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf build/pre-release-compile
+          mkdir -p build/pre-release-compile/main build/pre-release-compile/test
+          javac -encoding UTF-8 -cp LicenseRecoverGUI.jar -d build/pre-release-compile/main src/main/java/*.java
+          javac -encoding UTF-8 -cp "build/pre-release-compile/main:LicenseRecoverGUI.jar" -d build/pre-release-compile/test src/test/java/RefactorSmokeTest.java
+          java -cp "build/pre-release-compile/main:build/pre-release-compile/test:LicenseRecoverGUI.jar" RefactorSmokeTest
+      - name: Commit source fix without version bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm -f scripts/apply-yx030506-product-all-num-fix.py .github/workflows/apply-yx030506-product-all-num-fix.yml
+          git add src/main/java/LicenseRecoverModernGUIJavaPlan.java src/test/java/RefactorSmokeTest.java
+          git diff --cached --check
+          git commit -m 'fix: recognize deployed YX030506 PRODUCT_ALL_NUM runtime product'
+          git push origin HEAD:main
