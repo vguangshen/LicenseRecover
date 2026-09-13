@@ -2,49 +2,35 @@
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+PLAN = ROOT / 'src/main/java/LicenseRecoverModernGUIJavaPlan.java'
+TEST = ROOT / 'src/test/java/RefactorSmokeTest.java'
 
 
 def replace_once(path, old, new):
-    p = ROOT / path
-    text = p.read_text(encoding='utf-8')
-    n = text.count(old)
-    if n != 1:
-        raise SystemExit(f'anchor mismatch in {path}: {n}: {old[:140]!r}')
-    p.write_text(text.replace(old, new, 1), encoding='utf-8')
+    text = path.read_text(encoding='utf-8')
+    count = text.count(old)
+    if count != 1:
+        raise SystemExit('anchor mismatch in %s: expected 1 got %d' % (path, count))
+    path.write_text(text.replace(old, new, 1), encoding='utf-8')
 
-plan = 'src/main/java/LicenseRecoverModernGUIJavaPlan.java'
-test = 'src/test/java/RefactorSmokeTest.java'
-
-replace_once(plan,
-'''    static String confirmedConfigDrivenRuntimeProduct(File root, String softId, String confirmedFamily) {
-        if (root == null || blank(softId) || blank(confirmedFamily)) return null;
-        String concrete = softId.trim();
-        String family = confirmedFamily.trim();
-        if (!concrete.toUpperCase(Locale.ROOT).startsWith(family.toUpperCase(Locale.ROOT))) return null;
-
-        File classes = new File(root, "WEB-INF" + File.separator + "classes");
+# 1) In config-driven runtime detection, handle the deployed YX030506 contract before
+#    the older exact-SoftVersionID branch.
+old = '''        File classes = new File(root, "WEB-INF" + File.separator + "classes");
         File config = new File(classes, "config.xml");
         String configured = readElement(config, "SoftVersionID");
         if (blank(configured) || !concrete.equalsIgnoreCase(configured.trim())) return null;
 
         File systemInfo = new File(classes, "com" + File.separator + "itmc" + File.separator
-''',
-'''    static String confirmedConfigDrivenRuntimeProduct(File root, String softId, String confirmedFamily) {
-        if (root == null || blank(softId) || blank(confirmedFamily)) return null;
-        String concrete = softId.trim();
-        String family = confirmedFamily.trim();
-        if (!concrete.toUpperCase(Locale.ROOT).startsWith(family.toUpperCase(Locale.ROOT))) return null;
-
-        File classes = new File(root, "WEB-INF" + File.separator + "classes");
+'''
+new = '''        File classes = new File(root, "WEB-INF" + File.separator + "classes");
         File config = new File(classes, "config.xml");
         String configured = readElement(config, "SoftVersionID");
 
         // Deployed YX030506 builds use two different identity layers:
-        //   systemConfig.yml VersionID = YX030506 (concrete application mode)
-        //   classes/config.xml SoftVersionID = YX0305,QT1001 (startup RegisterMain products)
-        // Do not force those values to be equal. The primary local-registration product
-        // is accepted only when target-owned bytecode proves both PRODUCT_ALL_NUM startup
-        // iteration and a local-registration servlet that constructs RegisterMain(YX0305,...).
+        // systemConfig.yml VersionID=YX030506, while classes/config.xml
+        // SoftVersionID=YX0305,QT1001 is a startup RegisterMain product list.
+        // Accept a primary runtime product only when target-owned config and bytecode
+        // independently prove the PRODUCT_ALL_NUM loop and local registration servlet.
         String productAllPrimary = confirmedProductAllNumPrimaryRuntime(
                 root, concrete, family, configured);
         if (!blank(productAllPrimary)) return productAllPrimary;
@@ -52,42 +38,26 @@ replace_once(plan,
         if (blank(configured) || !concrete.equalsIgnoreCase(configured.trim())) return null;
 
         File systemInfo = new File(classes, "com" + File.separator + "itmc" + File.separator
-''')
+'''
+# This short anchor occurs in multiple methods, so scope replacement to method body.
+text = PLAN.read_text(encoding='utf-8')
+method = 'static String confirmedConfigDrivenRuntimeProduct(File root, String softId, String confirmedFamily) {'
+start = text.index(method)
+end = text.index('    /**\n     * Confirm that the selected application', start)
+segment = text[start:end]
+if segment.count(old) != 1:
+    raise SystemExit('config-driven method anchor mismatch: %d' % segment.count(old))
+segment = segment.replace(old, new, 1)
+PLAN.write_text(text[:start] + segment + text[end:], encoding='utf-8')
 
-replace_once(plan,
-'''    static boolean confirmedProductAllNumRuntimeProduct(File classes) {
-        if (classes == null || !classes.isDirectory()) return false;
-        File xmlUtil = new File(classes, "com" + File.separator + "itmc" + File.separator
-                + "utils" + File.separator + "IXmlUtil.class");
-        File runner = new File(classes, "com" + File.separator + "itmc" + File.separator
-                + "utils" + File.separator + "ProjectApplicationRunner.class");
-        return classFileContainsAll(xmlUtil, "global.system.VersionID", "/config.xml",
-                        "SystemSoft", "SoftVersionID", "regInfo", "SYS_PRODUCT_NUM",
-                        "PRODUCT_ALL_NUM", "PRODUCT_INFO")
-                && classFileContainsAll(runner, "PRODUCT_ALL_NUM", "split",
-                        "itmc/regedit/GetRegisterCode", "RegeditNew", "itmcsoft",
-                        "itmc/regedit/RegisterMain", "writeRegisterUser", "checkReInfo");
-    }
-''',
-'''    static boolean confirmedProductAllNumRuntimeProduct(File classes) {
-        if (classes == null || !classes.isDirectory()) return false;
-        File xmlUtil = new File(classes, "com" + File.separator + "itmc" + File.separator
-                + "utils" + File.separator + "IXmlUtil.class");
-        File runner = new File(classes, "com" + File.separator + "itmc" + File.separator
-                + "utils" + File.separator + "ProjectApplicationRunner.class");
-        return classFileContainsAll(xmlUtil, "global.system.VersionID", "/config.xml",
-                        "SystemSoft", "SoftVersionID", "regInfo", "SYS_PRODUCT_NUM",
-                        "PRODUCT_ALL_NUM", "PRODUCT_INFO")
-                && classFileContainsAll(runner, "PRODUCT_ALL_NUM", "split",
-                        "itmc/regedit/GetRegisterCode", "RegeditNew", "itmcsoft",
-                        "itmc/regedit/RegisterMain", "writeRegisterUser", "checkReInfo");
-    }
-
-    /**
-     * Prove the primary RegisterMain product for the deployed YX030506 layout where
-     * classes/config.xml SoftVersionID is a CSV startup-product list rather than the
-     * concrete application VersionID. This is intentionally YX0305-specific until
-     * another real target demonstrates the same contract.
+# 2) Add a fail-closed helper for the real PRODUCT_ALL_NUM layout.
+anchor = '''    static boolean usesProjectClasspathRegistrationBase(File root) {
+'''
+helper = '''    /**
+     * Real deployed YX030506 layout: the concrete application mode is YX030506,
+     * but classes/config.xml lists startup registration products YX0305,QT1001.
+     * The primary local-registration product is accepted only with four independent
+     * pieces of target-local evidence, never from the VersionID prefix alone.
      */
     static String confirmedProductAllNumPrimaryRuntime(File root, String softId,
                                                        String confirmedFamily,
@@ -124,30 +94,31 @@ replace_once(plan,
         }
         return false;
     }
-''')
 
-replace_once(test,
-'''        check("YX0305".equals(yx305Plan.authorizationFamily)
+'''
+replace_once(PLAN, anchor, helper + anchor)
+
+# 3) Preserve the existing concrete-config variant and add the real deployed variant.
+old_test = '''        check("YX0305".equals(yx305Plan.authorizationFamily)
                         && "YX030506".equals(yx305Plan.runtimeProductId)
                         && "QT100101,QT100102".equals(yx305Plan.regStr)
                         && yx305Plan.automaticRecoveryReady,
                 "YX030506 runtime id is accepted only from target config->PRODUCT_ALL_NUM->RegisterMain flow");
 
         Path qt401Root = base.resolve("java-QT40101");
-''',
-'''        check("YX0305".equals(yx305Plan.authorizationFamily)
+'''
+new_test = '''        check("YX0305".equals(yx305Plan.authorizationFamily)
                         && "YX030506".equals(yx305Plan.runtimeProductId)
                         && "QT100101,QT100102".equals(yx305Plan.regStr)
                         && yx305Plan.automaticRecoveryReady,
                 "YX030506 concrete-config variant remains accepted from target config->PRODUCT_ALL_NUM->RegisterMain flow");
 
-        // Real deployed YX030506 variant: concrete application mode comes from
-        // systemConfig.yml/System id, while classes/config.xml SoftVersionID is the
-        // startup RegisterMain product list YX0305,QT1001. The local registration
-        // servlet independently proves YX0305 is the primary offline product.
+        // Real deployed YX030506 variant: systemConfig.yml identifies the concrete
+        // application mode, while classes/config.xml SoftVersionID lists RegisterMain products.
+        // Use single quotes in XML attributes so this generated Java fixture needs no escaping.
         Files.write(yx305Classes.resolve("config.xml"), Arrays.asList(
                 "<ROOT><SystemSoft><SoftVersionID>YX0305,QT1001</SoftVersionID><regInfo>QT100101,QT100102</regInfo></SystemSoft>"
-                        + "<System id=\"YX030501\"/><System id=\"YX030502\"/><System id=\"YX030506\"/></ROOT>"),
+                        + "<System id='YX030501'/><System id='YX030502'/><System id='YX030506'/></ROOT>"),
                 StandardCharsets.UTF_8);
         Files.write(yx305Runner,
                 "PRODUCT_ALL_NUM split itmc/regedit/GetRegisterCode RegeditNew itmcsoft "
@@ -171,9 +142,10 @@ replace_once(test,
                         .getBytes(StandardCharsets.ISO_8859_1));
         yx305Plan = LicenseRecoverModernGUIJavaPlan.inspect(yx305Root.toFile());
         check(yx305Plan.runtimeProductId == null && !yx305Plan.automaticRecoveryReady,
-                "YX030506 PRODUCT_ALL_NUM variant stays fail-closed without target servlet proof of the YX0305 product");
+                "YX030506 PRODUCT_ALL_NUM variant stays fail-closed without target servlet proof of YX0305");
 
         Path qt401Root = base.resolve("java-QT40101");
-''')
+'''
+replace_once(TEST, old_test, new_test)
 
 print('staged YX030506 PRODUCT_ALL_NUM fix')
