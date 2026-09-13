@@ -1,0 +1,32 @@
+name: Bump README to v1.2.46
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/bump-readme-v1.2.46.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Update README stable version
+        run: python3 scripts/bump-readme-v1.2.46.py
+      - name: Validate diff
+        run: git diff --check
+      - name: Commit README bump
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          rm -f .github/workflows/bump-readme-v1.2.46.yml
+          rm -f scripts/bump-readme-v1.2.46.py
+          git add -A
+          git commit -m "docs: bump README stable version to v1.2.46"
+          git push origin HEAD:main
