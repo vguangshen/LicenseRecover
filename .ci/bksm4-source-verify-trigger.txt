@@ -1,0 +1,1 @@
+Trigger full source verification for the BKSM4 committed Global.registerProductBeans mapping parser fix.
