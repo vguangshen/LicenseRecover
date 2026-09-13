@@ -1,0 +1,1 @@
+Trigger final full verification and stable publication for v1.2.50 after BKSM4 source tests passed.
