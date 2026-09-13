@@ -111,6 +111,84 @@ public final class RefactorSmokeTest {
                         Arrays.asList("QT1001", "DS26", "YT001", "YT00129"), "YT00138")),
                 "legacy runtime family is derived from target RegisterUtil constants");
 
+
+        Path bksm4FixtureRoot = base.resolve("java-BKSM4-committed-row");
+        Path bksm4FixtureClasses = bksm4FixtureRoot.resolve("WEB-INF/classes");
+        Path bksm4FixtureSrc = base.resolve("java-BKSM4-fixture-src");
+        Path beanSrc = bksm4FixtureSrc.resolve("com/taobao/bean/RegisterProductBean.java");
+        Path globalSrc = bksm4FixtureSrc.resolve("com/common/global/Global.java");
+        Files.createDirectories(beanSrc.getParent());
+        Files.createDirectories(globalSrc.getParent());
+        Files.createDirectories(bksm4FixtureClasses);
+        Files.write(beanSrc, Arrays.asList(
+                "package com.taobao.bean;",
+                "public class RegisterProductBean {",
+                "  public RegisterProductBean setProductMain(String v) { return this; }",
+                "  public RegisterProductBean setProductMainNum(String v) { return this; }",
+                "  public RegisterProductBean setProductNums(String v) { return this; }",
+                "}"), StandardCharsets.UTF_8);
+        Files.write(globalSrc, Arrays.asList(
+                "package com.common.global;",
+                "import java.util.ArrayList;",
+                "import java.util.List;",
+                "import com.taobao.bean.RegisterProductBean;",
+                "public class Global {",
+                "  public static final List<RegisterProductBean> registerProductBeans = new ArrayList<RegisterProductBean>();",
+                "  static {",
+                "    RegisterProductBean bean = new RegisterProductBean();",
+                "    bean.setProductMain(\"QT04\");",
+                "    bean.setProductMainNum(\"QT0435\");",
+                "    bean.setProductNums(\"BKSM4\");",
+                "    bean = new RegisterProductBean();",
+                "    bean.setProductMain(\"PT02\");",
+                "    bean.setProductMainNum(\"QT0445\");",
+                "    bean.setProductNums(\"BKSM4\");",
+                "    registerProductBeans.add(bean);",
+                "  }",
+                "}"), StandardCharsets.UTF_8);
+        Process fixtureCompile = new ProcessBuilder("javac", "-encoding", "UTF-8", "-source", "8", "-target", "8",
+                "-d", bksm4FixtureClasses.toString(), beanSrc.toString(), globalSrc.toString())
+                .inheritIO().start();
+        check(fixtureCompile.waitFor() == 0, "compile BKSM4 committed-row regression fixture");
+        LegacyJavaRegistrationMetadata.Mapping bksm4FixtureMapping =
+                LegacyJavaRegistrationMetadata.inspect(bksm4FixtureRoot.toFile(), "BKSM4");
+        check(bksm4FixtureMapping != null
+                        && "PT02".equals(bksm4FixtureMapping.productMain)
+                        && "QT0445".equals(bksm4FixtureMapping.productMainNum)
+                        && "BKSM4".equals(bksm4FixtureMapping.productNums),
+                "BKSM4 Global parser ignores stale uncommitted QT04/QT0435 bean and selects committed PT02/QT0445 row");
+
+        Path uncommittedRoot = base.resolve("java-BKSM4-uncommitted-row");
+        Path uncommittedClasses = uncommittedRoot.resolve("WEB-INF/classes");
+        Path uncommittedSrc = base.resolve("java-BKSM4-uncommitted-src/com/common/global/Global.java");
+        Files.createDirectories(uncommittedSrc.getParent());
+        Files.createDirectories(uncommittedClasses);
+        Files.write(uncommittedSrc, Arrays.asList(
+                "package com.common.global;",
+                "import java.util.ArrayList;",
+                "import java.util.List;",
+                "import com.taobao.bean.RegisterProductBean;",
+                "public class Global {",
+                "  public static final List<RegisterProductBean> registerProductBeans = new ArrayList<RegisterProductBean>();",
+                "  static {",
+                "    RegisterProductBean bean = new RegisterProductBean();",
+                "    bean.setProductMain(\"QT04\");",
+                "    bean.setProductMainNum(\"QT0435\");",
+                "    bean.setProductNums(\"BKSM4\");",
+                "    bean = new RegisterProductBean();",
+                "    bean.setProductMain(\"QT04\");",
+                "    bean.setProductMainNum(\"QT0436\");",
+                "    bean.setProductNums(\"YT00128\");",
+                "    registerProductBeans.add(bean);",
+                "  }",
+                "}"), StandardCharsets.UTF_8);
+        Process uncommittedCompile = new ProcessBuilder("javac", "-encoding", "UTF-8", "-source", "8", "-target", "8",
+                "-cp", bksm4FixtureClasses.toString(), "-d", uncommittedClasses.toString(), uncommittedSrc.toString())
+                .inheritIO().start();
+        check(uncommittedCompile.waitFor() == 0, "compile BKSM4 uncommitted-row regression fixture");
+        check(LegacyJavaRegistrationMetadata.inspect(uncommittedRoot.toFile(), "BKSM4") == null,
+                "BKSM4 Global parser stays fail-closed when matching setter row is never committed to registerProductBeans");
+
         LegacyRegisterMain2 legacyCtor = (LegacyRegisterMain2)
                 LicenseRecover.instantiateRegisterMainCompatible(
                         LegacyRegisterMain2.class, "DS24", "encrypted-json", "D:/app/WEB-INF/lib/");

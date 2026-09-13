@@ -221,8 +221,28 @@ public final class LegacyJavaRegistrationMetadata {
 
             String productMain = null;
             String productMainNum = null;
+            int beanLocal = -1;
+            Mapping pending = null;
+            int pendingLocal = -1;
             for (int i = 0; i < code.length - 4; i++) {
                 int op = code[i] & 0xff;
+
+                // A setter sequence is only a candidate. Some production Global.<clinit>
+                // blocks construct a RegisterProductBean and fill all three fields but
+                // never add that object to registerProductBeans. BKSM4 contains exactly
+                // such a stale QT04/QT0435 row before its committed PT02/QT0445 row.
+                // Reset candidate state whenever another bean allocation begins.
+                if (op == 0xbb && i + 2 < code.length) { // new
+                    String className = cf.className(u2(code, i + 1));
+                    if (className != null && className.endsWith("RegisterProductBean")) {
+                        productMain = null;
+                        productMainNum = null;
+                        beanLocal = -1;
+                        pending = null;
+                        pendingLocal = -1;
+                    }
+                }
+
                 int cpIndex;
                 int invokePos;
                 if (op == 0x12) { // ldc
@@ -232,30 +252,82 @@ public final class LegacyJavaRegistrationMetadata {
                     cpIndex = u2(code, i + 1);
                     invokePos = i + 3;
                 } else {
-                    continue;
+                    cpIndex = -1;
+                    invokePos = -1;
                 }
-                if (invokePos + 2 >= code.length || (code[invokePos] & 0xff) != 0xb6) continue;
-                String value = cf.stringAt(cpIndex);
-                String method = cf.methodName(u2(code, invokePos + 1));
-                if (value == null || method == null) continue;
-                if ("setProductMain".equals(method)) {
-                    productMain = value.trim();
-                } else if ("setProductMainNum".equals(method)) {
-                    productMainNum = value.trim();
-                } else if ("setProductNums".equals(method)) {
-                    String productNums = value.trim();
-                    if (containsCsv(productNums, softId)
-                            && !blank(productMain) && !blank(productMainNum)) {
-                        return new GlobalScan(true, true,
-                                new Mapping(productMain, productMainNum, productNums,
-                                        "Global.registerProductBeans"));
+                if (cpIndex > 0 && invokePos + 2 < code.length
+                        && (code[invokePos] & 0xff) == 0xb6) {
+                    String value = cf.stringAt(cpIndex);
+                    String method = cf.methodName(u2(code, invokePos + 1));
+                    int local = loadedLocalBefore(code, i);
+                    if (value != null && method != null) {
+                        if ("setProductMain".equals(method)) {
+                            productMain = value.trim();
+                            productMainNum = null;
+                            beanLocal = local;
+                            pending = null;
+                            pendingLocal = -1;
+                        } else if ("setProductMainNum".equals(method) && local == beanLocal) {
+                            productMainNum = value.trim();
+                        } else if ("setProductNums".equals(method) && local == beanLocal) {
+                            String productNums = value.trim();
+                            if (containsCsv(productNums, softId)
+                                    && !blank(productMain) && !blank(productMainNum)) {
+                                pending = new Mapping(productMain, productMainNum, productNums,
+                                        "Global.registerProductBeans");
+                                pendingLocal = beanLocal;
+                            } else {
+                                pending = null;
+                                pendingLocal = -1;
+                            }
+                        }
                     }
+                }
+
+                // Accept the candidate only when the very same local bean is actually
+                // committed through the target's registerProductBeans.add(bean) call.
+                // Merely seeing the setter constants is not executable registration data.
+                if (pending != null && isRegisterProductBeansAdd(code, i, cf, pendingLocal)) {
+                    return new GlobalScan(true, true, pending);
                 }
             }
             return new GlobalScan(true, true, null);
         } catch (Throwable ignore) {
             return new GlobalScan(true, false, null);
         }
+    }
+
+    static int loadedLocalBefore(byte[] code, int pos) {
+        if (code == null || pos <= 0) return -1;
+        int previous = code[pos - 1] & 0xff;
+        if (previous >= 0x2a && previous <= 0x2d) return previous - 0x2a; // aload_0..aload_3
+        if (pos >= 2 && (code[pos - 2] & 0xff) == 0x19) return code[pos - 1] & 0xff; // aload n
+        return -1;
+    }
+
+    static boolean isRegisterProductBeansAdd(byte[] code, int invokePos,
+                                             ClassFile cf, int expectedLocal) {
+        if (code == null || cf == null || expectedLocal < 0
+                || invokePos < 0 || invokePos + 2 >= code.length) return false;
+        int op = code[invokePos] & 0xff;
+        if (op != 0xb9 && op != 0xb6) return false; // invokeinterface / invokevirtual
+        int methodRef = u2(code, invokePos + 1);
+        if (!"add".equals(cf.methodName(methodRef))
+                || !"(Ljava/lang/Object;)Z".equals(cf.methodDescriptor(methodRef))) return false;
+        String owner = cf.methodOwner(methodRef);
+        if (owner == null || !(owner.equals("java/util/List")
+                || owner.equals("java/util/Collection")
+                || owner.equals("java/util/ArrayList"))) return false;
+
+        int actualLocal = loadedLocalBefore(code, invokePos);
+        if (actualLocal != expectedLocal) return false;
+        int aloadStart = -1;
+        int previous = code[invokePos - 1] & 0xff;
+        if (previous >= 0x2a && previous <= 0x2d) aloadStart = invokePos - 1;
+        else if (invokePos >= 2 && (code[invokePos - 2] & 0xff) == 0x19) aloadStart = invokePos - 2;
+        if (aloadStart < 3 || (code[aloadStart - 3] & 0xff) != 0xb2) return false; // getstatic
+        int fieldRef = u2(code, aloadStart - 2);
+        return "registerProductBeans".equals(cf.fieldName(fieldRef));
     }
 
     private static byte[] readVirboxKey() {
@@ -371,6 +443,29 @@ public final class LegacyJavaRegistrationMetadata {
 
         String methodName(int index) {
             if (index <= 0 || index >= tag.length || (tag[index] != 10 && tag[index] != 11)) return null;
+            int nat = b[index];
+            if (nat <= 0 || nat >= tag.length || tag[nat] != 12) return null;
+            return utf(a[nat]);
+        }
+
+        String className(int index) {
+            return index > 0 && index < tag.length && tag[index] == 7 ? utf(a[index]) : null;
+        }
+
+        String methodOwner(int index) {
+            if (index <= 0 || index >= tag.length || (tag[index] != 10 && tag[index] != 11)) return null;
+            return className(a[index]);
+        }
+
+        String methodDescriptor(int index) {
+            if (index <= 0 || index >= tag.length || (tag[index] != 10 && tag[index] != 11)) return null;
+            int nat = b[index];
+            if (nat <= 0 || nat >= tag.length || tag[nat] != 12) return null;
+            return utf(b[nat]);
+        }
+
+        String fieldName(int index) {
+            if (index <= 0 || index >= tag.length || tag[index] != 9) return null;
             int nat = b[index];
             if (nat <= 0 || nat >= tag.length || tag[nat] != 12) return null;
             return utf(a[nat]);
