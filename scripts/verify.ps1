@@ -19,6 +19,7 @@ $runtimeNotice = Join-Path $runtimeCacheDir 'JRE_SOURCE_NOTICE.txt'
 $runtimeTag = 'runtime-corretto8-8.492.09.2-win-x64'
 $runtimeBaseUrl = 'https://github.com/vguangshen/LicenseRecover/releases/download/' + $runtimeTag + '/'
 $overlayJar = Join-Path $buildRoot 'LicenseRecoverOverlay.jar'
+$runtimeJar = Join-Path $buildRoot 'LicenseRecoverRuntime.jar'
 $archive = Join-Path $buildRoot 'LicenseRecover-latest.zip'
 $updateArchive = Join-Path $buildRoot 'LicenseRecover-update.zip'
 $checksumFile = Join-Path $buildRoot 'SHA256SUMS.txt'
@@ -360,6 +361,11 @@ $fixedTime = [DateTime]::ParseExact('1980-01-01 00:00:00', 'yyyy-MM-dd HH:mm:ss'
 Get-ChildItem -LiteralPath $overlayDir -File | ForEach-Object { $_.LastWriteTime = $fixedTime }
 $createOverlayArgs = @('cfM', $overlayJar, '-C', $overlayDir, '.')
 Invoke-External -Command 'jar' -ArgumentList $createOverlayArgs
+Copy-Item -LiteralPath $overlayJar -Destination $runtimeJar -Force
+if ((Get-FileHash -LiteralPath $overlayJar -Algorithm SHA256).Hash -ne
+    (Get-FileHash -LiteralPath $runtimeJar -Algorithm SHA256).Hash) {
+    throw 'LicenseRecoverRuntime.jar must be byte-identical to LicenseRecoverOverlay.jar.'
+}
 
 $listOverlayArgs = @('tf', $overlayJar)
 $overlayEntries = @(Invoke-External -Command 'jar' -ArgumentList $listOverlayArgs)
@@ -420,6 +426,7 @@ foreach ($file in $distributionFiles) {
 }
 Copy-Item -LiteralPath $releaseNotesPath -Destination (Join-Path $distDir 'RELEASE_NOTES.md') -Force
 Copy-Item -LiteralPath $overlayJar -Destination $distDir -Force
+Copy-Item -LiteralPath $runtimeJar -Destination $distDir -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LicenseRecover.NET') -Destination $distDir -Recurse -Force
 $distNativeDir = Join-Path $distDir 'LicenseRecover.NET'
 Copy-Item -LiteralPath $modernNativeHelper -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.Modern.exe') -Force
@@ -439,8 +446,16 @@ if ($distVersion -ne $version) {
 }
 Assert-TextContains (Join-Path $distDir 'README.md') $stableTag
 Assert-TextContains (Join-Path $distDir 'run_gui.bat') 'jre\bin\javaw.exe'
+Assert-TextContains (Join-Path $distDir 'run_gui.bat') 'LicenseRecoverRuntime.jar'
 Assert-TextContains (Join-Path $distDir 'run_gui.bat') 'LicenseRecoverOverlay.jar'
 Assert-TextContains (Join-Path $distDir 'run_gui.bat') 'LicenseRecoverModernGUILauncher'
+if (-not (Test-Path -LiteralPath (Join-Path $distDir 'LicenseRecoverRuntime.jar'))) {
+    throw 'Distribution is missing LicenseRecoverRuntime.jar.'
+}
+if ((Get-FileHash -LiteralPath (Join-Path $distDir 'LicenseRecoverRuntime.jar') -Algorithm SHA256).Hash -ne
+    (Get-FileHash -LiteralPath (Join-Path $distDir 'LicenseRecoverOverlay.jar') -Algorithm SHA256).Hash) {
+    throw 'Distribution runtime/overlay jars diverged.'
+}
 Assert-TextContains (Join-Path $distDir 'run_gui_legacy.bat') 'LicenseRecoverGUI.jar'
 Assert-TextContains (Join-Path $distDir 'run_removenet.bat') 'run_removenet_safe.bat'
 Assert-TextContains (Join-Path $distDir 'run_removenet_safe.bat') 'LicenseRecoverOverlay.jar'
@@ -486,6 +501,7 @@ if (-not (Test-Path -LiteralPath $checksumFile)) {
 }
 
 Write-Host "Verified overlay: $overlayJar"
+Write-Host "Verified transition runtime: $runtimeJar"
 Write-Host "Verified portable distribution: $archive"
 Write-Host "Verified slim update: $updateArchive"
 Write-Host "Embedded runtime: Amazon Corretto 8.492.09.2 / 1.8.0_492-b09"

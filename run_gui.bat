@@ -25,10 +25,12 @@ if not defined JAVA (
   echo [LicenseRecover] Java runtime not found.
   exit /b 1
 )
-if not exist "%~dp0LicenseRecoverOverlay.jar" (
-  echo [LicenseRecover] LicenseRecoverOverlay.jar is missing.
+set "TOOLJAR=%~dp0LicenseRecoverRuntime.jar"
+if not exist "%TOOLJAR%" set "TOOLJAR=%~dp0LicenseRecoverOverlay.jar"
+if not exist "%TOOLJAR%" (
+  echo [LicenseRecover] LicenseRecoverRuntime.jar / LicenseRecoverOverlay.jar is missing.
   exit /b 1
 )
 
-start "" "%JAVA%" -Dfile.encoding=UTF-8 -Dsun.java2d.dpiaware=true -Dsun.java2d.noddraw=true -cp "%~dp0LicenseRecoverOverlay.jar;%~dp0LicenseRecoverGUI.jar" LicenseRecoverModernGUILauncherUiPatch %*
+start "" "%JAVA%" -Dfile.encoding=UTF-8 -Dsun.java2d.dpiaware=true -Dsun.java2d.noddraw=true -cp "%TOOLJAR%;%~dp0LicenseRecoverGUI.jar" LicenseRecoverModernGUILauncherUiPatch %*
 exit /b 0

@@ -861,9 +861,25 @@ final class LicenseRecoverModernGUIUpdateInstaller {
             unzipSafe(zip, staging);
             if (!new File(staging, "VERSION.txt").isFile())
                 throw new IOException("更新包缺少 VERSION.txt。");
+            File stagedVersion = new File(staging, "VERSION.txt");
+            File heldVersion = new File(work, "VERSION.txt.new");
+            Files.copy(stagedVersion.toPath(), heldVersion.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            if (!stagedVersion.delete()) throw new IOException("无法暂存 VERSION.txt。");
+
             backupExisting(staging, installDir, backup, "");
-            try { copyTree(staging, installDir); }
-            catch (IOException failed) {
+            File installedVersion = new File(installDir, "VERSION.txt");
+            if (installedVersion.isFile()) {
+                Files.copy(installedVersion.toPath(), new File(backup, "VERSION.txt").toPath(),
+                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+            }
+            try {
+                copyTree(staging, installDir);
+                verifyInstalledCriticalFiles(staging, installDir);
+                Files.copy(heldVersion.toPath(), installedVersion.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+                if (!sameBytes(heldVersion, installedVersion))
+                    throw new IOException("VERSION.txt 写入后校验失败。");
+            } catch (IOException failed) {
                 try { copyTree(backup, installDir); }
                 catch (IOException restore) { failed.addSuppressed(restore); }
                 throw failed;
@@ -913,6 +929,39 @@ final class LicenseRecoverModernGUIUpdateInstaller {
                     Files.copy(current.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING,
                             StandardCopyOption.COPY_ATTRIBUTES);
                 }
+            }
+        }
+    }
+
+    private static void verifyInstalledCriticalFiles(File staging, File installDir) throws IOException {
+        String[] required = {
+                "LicenseRecoverRuntime.jar",
+                "LicenseRecoverOverlay.jar",
+                "LicenseRecover.jar",
+                "LicenseRecoverGUI.jar",
+                "LicenseRecoverGUI.exe"
+        };
+        for (String name : required) {
+            File expected = new File(staging, name);
+            File actual = new File(installDir, name);
+            if (!expected.isFile()) throw new IOException("更新包缺少关键运行文件: " + name);
+            if (!actual.isFile() || !sameBytes(expected, actual))
+                throw new IOException("更新后关键运行文件校验失败: " + name);
+        }
+    }
+
+    private static boolean sameBytes(File a, File b) throws IOException {
+        if (a == null || b == null || !a.isFile() || !b.isFile() || a.length() != b.length()) return false;
+        try (InputStream left = new BufferedInputStream(new FileInputStream(a));
+             InputStream right = new BufferedInputStream(new FileInputStream(b))) {
+            byte[] x = new byte[65536];
+            byte[] y = new byte[65536];
+            for (;;) {
+                int nx = left.read(x);
+                int ny = right.read(y);
+                if (nx != ny) return false;
+                if (nx < 0) return true;
+                for (int i = 0; i < nx; i++) if (x[i] != y[i]) return false;
             }
         }
     }

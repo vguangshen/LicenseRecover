@@ -117,6 +117,7 @@ if ($headers.IndexOf('Windows GUI', [StringComparison]::OrdinalIgnoreCase) -lt 0
 $wideStrings = (& $strings -el $launcher | Out-String)
 foreach ($required in @(
     'LicenseRecoverModernGUILauncherUiPatch',
+    'LicenseRecoverRuntime.jar',
     'LicenseRecoverOverlay.jar',
     'LicenseRecoverGUI.jar',
     'jre\bin\javaw.exe',
@@ -140,6 +141,13 @@ Expand-Archive -LiteralPath $updateZip -DestinationPath $updateCheck -Force
 foreach ($dir in @($portableCheck, $updateCheck)) {
     if (-not (Test-Path -LiteralPath (Join-Path $dir 'LicenseRecoverGUI.exe'))) {
         throw "Repacked archive is missing LicenseRecoverGUI.exe: $dir"
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $dir 'LicenseRecoverRuntime.jar'))) {
+        throw "Repacked archive is missing LicenseRecoverRuntime.jar: $dir"
+    }
+    if ((Get-FileHash -LiteralPath (Join-Path $dir 'LicenseRecoverRuntime.jar') -Algorithm SHA256).Hash -ne
+        (Get-FileHash -LiteralPath (Join-Path $dir 'LicenseRecoverOverlay.jar') -Algorithm SHA256).Hash) {
+        throw "Repacked runtime/overlay jars diverged: $dir"
     }
     if (Test-Path -LiteralPath (Join-Path $dir 'LicenseRecoverGUI-legacy.exe')) {
         throw "Repacked archive still contains LicenseRecoverGUI-legacy.exe: $dir"

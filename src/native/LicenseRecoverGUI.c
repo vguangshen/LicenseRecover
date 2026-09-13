@@ -10,6 +10,7 @@
 #define ARRAY_LEN(x) (sizeof(x) / sizeof((x)[0]))
 
 static const wchar_t *kMainClass = L"LicenseRecoverModernGUILauncherUiPatch";
+static const wchar_t *kRuntimeJar = L"LicenseRecoverRuntime.jar";
 static const wchar_t *kOverlayJar = L"LicenseRecoverOverlay.jar";
 static const wchar_t *kGuiJar = L"LicenseRecoverGUI.jar";
 
@@ -187,13 +188,18 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR commandLine
     }
     if (earlyArgv) LocalFree(earlyArgv);
 
-    wchar_t dir[32768], javaExe[32768], overlay[32768], guiJar[32768], classpath[65536];
+    wchar_t dir[32768], javaExe[32768], runtimeJar[32768], overlay[32768], guiJar[32768], classpath[65536];
+    const wchar_t *activeToolJar = NULL;
     if (!get_exe_dir(dir, ARRAY_LEN(dir))) {
         show_error(L"无法确定 LicenseRecover 安装目录。");
         return 2;
     }
-    if (!join_path(overlay, ARRAY_LEN(overlay), dir, kOverlayJar) || !file_exists(overlay)) {
-        show_error(L"缺少 LicenseRecoverOverlay.jar。请使用完整发行包或重新执行软件更新。");
+    if (join_path(runtimeJar, ARRAY_LEN(runtimeJar), dir, kRuntimeJar) && file_exists(runtimeJar)) {
+        activeToolJar = runtimeJar;
+    } else if (join_path(overlay, ARRAY_LEN(overlay), dir, kOverlayJar) && file_exists(overlay)) {
+        activeToolJar = overlay;
+    } else {
+        show_error(L"缺少 LicenseRecoverRuntime.jar / LicenseRecoverOverlay.jar。请使用完整发行包或重新执行软件更新。");
         return 3;
     }
     if (!join_path(guiJar, ARRAY_LEN(guiJar), dir, kGuiJar) || !file_exists(guiJar)) {
@@ -205,7 +211,7 @@ int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR commandLine
         return 5;
     }
 
-    if (_snwprintf(classpath, ARRAY_LEN(classpath), L"%ls;%ls", overlay, guiJar) < 0) {
+    if (_snwprintf(classpath, ARRAY_LEN(classpath), L"%ls;%ls", activeToolJar, guiJar) < 0) {
         show_error(L"安装路径过长，无法构造 Java classpath。");
         return 6;
     }

@@ -254,7 +254,9 @@ public class LicenseRecover {
     }
 
     /** Build the tool-side runtime classpath for every secondary JVM.
-     * New source lives in LicenseRecoverOverlay.jar, so it must precede the legacy core jar. */
+     * LicenseRecoverRuntime.jar is a transition-safe copy of the verified overlay.
+     * It is preferred so an older, still-locked LicenseRecoverOverlay.jar cannot make
+     * VERSION.txt report a new build while secondary JVMs execute stale classes. */
     static String toolRuntimeClasspath() {
         return toolRuntimeClasspath(new File(jarDir()));
     }
@@ -262,7 +264,11 @@ public class LicenseRecover {
     static String toolRuntimeClasspath(File toolDir) {
         File dir = toolDir == null ? new File(".") : toolDir.getAbsoluteFile();
         File core = new File(dir, "LicenseRecover.jar");
+        File runtime = new File(dir, "LicenseRecoverRuntime.jar");
         File overlay = new File(dir, "LicenseRecoverOverlay.jar");
+        if (runtime.isFile()) {
+            return runtime.getAbsolutePath() + File.pathSeparator + core.getAbsolutePath();
+        }
         if (overlay.isFile()) {
             return overlay.getAbsolutePath() + File.pathSeparator + core.getAbsolutePath();
         }
