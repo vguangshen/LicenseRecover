@@ -588,7 +588,38 @@ public final class RefactorSmokeTest {
                         && "YX030506".equals(yx305Plan.runtimeProductId)
                         && "QT100101,QT100102".equals(yx305Plan.regStr)
                         && yx305Plan.automaticRecoveryReady,
-                "YX030506 runtime id is accepted only from target config->PRODUCT_ALL_NUM->RegisterMain flow");
+                "YX030506 concrete-config variant remains accepted from target config->PRODUCT_ALL_NUM->RegisterMain flow");
+
+        // Real deployed YX030506 variant: systemConfig.yml identifies the concrete
+        // application mode, while classes/config.xml SoftVersionID lists RegisterMain products.
+        // Use single quotes in XML attributes so this generated Java fixture needs no escaping.
+        Files.write(yx305Classes.resolve("config.xml"), Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>YX0305,QT1001</SoftVersionID><regInfo>QT100101,QT100102</regInfo></SystemSoft>"
+                        + "<System id='YX030501'/><System id='YX030502'/><System id='YX030506'/></ROOT>"),
+                StandardCharsets.UTF_8);
+        Files.write(yx305Runner,
+                "PRODUCT_ALL_NUM split itmc/regedit/GetRegisterCode RegeditNew itmcsoft "
+                        .concat("itmc/regedit/RegisterMain writeRegisterUser checkReInfo ")
+                        .concat("com/itmc/utils/ProjectSourcesPath projectPath")
+                        .getBytes(StandardCharsets.ISO_8859_1));
+        Path yx305Servlet = yx305Classes.resolve("com/itmc/sys/platformregister/RegisterHttpServlet.class");
+        Files.createDirectories(yx305Servlet.getParent());
+        Files.write(yx305Servlet,
+                "YX0305 com/itmc/utils/ProjectSourcesPath projectPath itmc/regedit/RegisterMain newRegistry doRegistry"
+                        .getBytes(StandardCharsets.ISO_8859_1));
+        yx305Plan = LicenseRecoverModernGUIJavaPlan.inspect(yx305Root.toFile());
+        check("YX0305".equals(yx305Plan.authorizationFamily)
+                        && "YX0305".equals(yx305Plan.runtimeProductId)
+                        && "QT100101,QT100102".equals(yx305Plan.regStr)
+                        && yx305Plan.automaticRecoveryReady,
+                "YX030506 deployed PRODUCT_ALL_NUM variant confirms YX0305 as primary local runtime product");
+
+        Files.write(yx305Servlet,
+                "com/itmc/utils/ProjectSourcesPath projectPath itmc/regedit/RegisterMain newRegistry doRegistry"
+                        .getBytes(StandardCharsets.ISO_8859_1));
+        yx305Plan = LicenseRecoverModernGUIJavaPlan.inspect(yx305Root.toFile());
+        check(yx305Plan.runtimeProductId == null && !yx305Plan.automaticRecoveryReady,
+                "YX030506 PRODUCT_ALL_NUM variant stays fail-closed without target servlet proof of YX0305");
 
         Path qt401Root = base.resolve("java-QT40101");
         Path qt401Lib = qt401Root.resolve("WEB-INF/lib");

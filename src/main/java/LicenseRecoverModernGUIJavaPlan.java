@@ -514,6 +514,16 @@ public final class LicenseRecoverModernGUIJavaPlan {
         File classes = new File(root, "WEB-INF" + File.separator + "classes");
         File config = new File(classes, "config.xml");
         String configured = readElement(config, "SoftVersionID");
+
+        // Deployed YX030506 builds use two different identity layers:
+        // systemConfig.yml VersionID=YX030506, while classes/config.xml
+        // SoftVersionID=YX0305,QT1001 is a startup RegisterMain product list.
+        // Accept a primary runtime product only when target-owned config and bytecode
+        // independently prove the PRODUCT_ALL_NUM loop and local registration servlet.
+        String productAllPrimary = confirmedProductAllNumPrimaryRuntime(
+                root, concrete, family, configured);
+        if (!blank(productAllPrimary)) return productAllPrimary;
+
         if (blank(configured) || !concrete.equalsIgnoreCase(configured.trim())) return null;
 
         File systemInfo = new File(classes, "com" + File.separator + "itmc" + File.separator
@@ -655,6 +665,48 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 && classFileContainsAll(runner, "PRODUCT_ALL_NUM", "split",
                         "itmc/regedit/GetRegisterCode", "RegeditNew", "itmcsoft",
                         "itmc/regedit/RegisterMain", "writeRegisterUser", "checkReInfo");
+    }
+
+    /**
+     * Real deployed YX030506 layout: the concrete application mode is YX030506,
+     * but classes/config.xml lists startup registration products YX0305,QT1001.
+     * The primary local-registration product is accepted only with four independent
+     * pieces of target-local evidence, never from the VersionID prefix alone.
+     */
+    static String confirmedProductAllNumPrimaryRuntime(File root, String softId,
+                                                       String confirmedFamily,
+                                                       String configuredProducts) {
+        if (root == null || blank(softId) || blank(confirmedFamily) || blank(configuredProducts)) return null;
+        String concrete = softId.trim();
+        String family = confirmedFamily.trim();
+        if (!concrete.toUpperCase(Locale.ROOT).startsWith("YX0305")
+                || !"YX0305".equalsIgnoreCase(family)) return null;
+
+        String ymlVersion = readSystemConfigVersionId(root);
+        if (blank(ymlVersion) || !concrete.equalsIgnoreCase(ymlVersion.trim())) return null;
+
+        File classes = new File(root, "WEB-INF" + File.separator + "classes");
+        File config = new File(classes, "config.xml");
+        if (!csvContainsToken(configuredProducts, family)) return null;
+        if (!hasEnumeratedClassesFamily(config, family, concrete)) return null;
+        if (!confirmedProductAllNumRuntimeProduct(classes)) return null;
+
+        File servlet = new File(classes, "com" + File.separator + "itmc" + File.separator
+                + "sys" + File.separator + "platformregister" + File.separator
+                + "RegisterHttpServlet.class");
+        if (!classFileContainsAll(servlet, family,
+                "com/itmc/utils/ProjectSourcesPath", "projectPath",
+                "itmc/regedit/RegisterMain", "newRegistry", "doRegistry")) return null;
+        return family;
+    }
+
+    static boolean csvContainsToken(String csv, String token) {
+        if (blank(csv) || blank(token)) return false;
+        String wanted = token.trim();
+        for (String part : csv.split(",")) {
+            if (part != null && wanted.equalsIgnoreCase(part.trim())) return true;
+        }
+        return false;
     }
 
     static boolean usesProjectClasspathRegistrationBase(File root) {
