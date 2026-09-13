@@ -1,3 +1,15 @@
+## 1.2.51 - 2026-09-14
+
+### Fixed
+- 修复 YX030308 / YX0303xx 真实站点“LicenseRecover 显示 OK，但 ASP.NET 页面仍要求使用申请/本地注册”的假阳性。
+- 根因是目标 `Web.config productName=YX03` 只是宽泛应用组，而受保护 `ITMC.Web.dll` 的真实注册运行族为 `YX0303`；旧版用 `YX03` 写入和自验，真实站点却用 `YX0303` 解密。
+- 现代 `YXdddddd` 模式现在优先采用目标 `ITMC.Web.dll` 证明的 `YXdddd` 运行族，同时保留 `YX0102 -> YS01` 等直接产品语义与 `YX030107 -> YX0302` 等目标程序集例外。
+
+### Verification
+- 使用用户提供的 YX030308 核心组件和 FOAP/VBPD MethodBody 恢复数据核对 `PubBase.ProName`、注册页 `RegeditMain` 构造链、`CheckReg` 及 `ITMC.Regedit.dll` 本地密钥派生。
+- 修复后对真实 DLL 的正式构建检测结果为 `SoftVersionID=YX030308`, `Product=YX0303`，且 RegStr 含当前 `YX030308` 模式。
+- 新增 YX030308 宽泛 `Web.config=YX03`、YX030107/YX0302 以及 YX0102/YS01 正反回归。
+
 ## 1.2.50 - 2026-09-13
 
 ### Fixed
