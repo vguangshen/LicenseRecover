@@ -1073,6 +1073,11 @@ public final class RefactorSmokeTest {
             writeZipEntry(zout, "VERSION.txt", "1.1.1\n");
             writeZipEntry(zout, "runtime.txt", "new\n");
             writeZipEntry(zout, "nested/new.txt", "created\n");
+            writeZipEntry(zout, "LicenseRecoverRuntime.jar", "runtime-current\n");
+            writeZipEntry(zout, "LicenseRecoverOverlay.jar", "runtime-current\n");
+            writeZipEntry(zout, "LicenseRecover.jar", "core-current\n");
+            writeZipEntry(zout, "LicenseRecoverGUI.jar", "gui-current\n");
+            writeZipEntry(zout, "LicenseRecoverGUI.exe", "launcher-current\n");
         } finally { zout.close(); }
         LicenseRecoverModernGUIUpdateInstaller.applyUpdate(updateZip.toFile(), updateInstall.toFile());
         check("1.1.1".equals(new String(Files.readAllBytes(updateInstall.resolve("VERSION.txt")),
@@ -1081,6 +1086,10 @@ public final class RefactorSmokeTest {
                         StandardCharsets.UTF_8).trim()), "updater overwrites runtime files");
         check(Files.isRegularFile(updateInstall.resolve("nested/new.txt")),
                 "updater adds new runtime files");
+        check(Files.isRegularFile(updateInstall.resolve("LicenseRecoverRuntime.jar"))
+                        && Arrays.equals(Files.readAllBytes(updateInstall.resolve("LicenseRecoverRuntime.jar")),
+                                Files.readAllBytes(updateInstall.resolve("LicenseRecoverOverlay.jar"))),
+                "updater installs the transition-safe runtime jar before advancing version metadata");
         check("embedded-jre".equals(new String(Files.readAllBytes(embeddedJava),
                         StandardCharsets.UTF_8).trim()),
                 "slim updater preserves existing embedded JRE");
