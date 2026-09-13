@@ -1,0 +1,32 @@
+name: Prepare v1.2.47 release
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - .github/workflows/prepare-v1.2.47-release.yml
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Prepare stable release metadata
+        run: python3 scripts/prepare-v1.2.47-release.py
+      - name: Validate diff
+        run: git diff --check
+      - name: Commit prepared stable release
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          rm -f .github/workflows/prepare-v1.2.47-release.yml
+          rm -f scripts/prepare-v1.2.47-release.py
+          git add -A
+          git commit -m "release: prepare v1.2.47 after real-sample verification"
+          git push origin HEAD:main
