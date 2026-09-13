@@ -122,6 +122,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
         boolean directDataIdentity = newStyle && !blank(soft) && !blank(dataSoft)
                 && soft.trim().equalsIgnoreCase(dataSoft.trim()) && dataRegInfo != null;
 
+        // No product-family/runtime-id guessing here. Executable identity must be
+        // supported by target-directory configuration and/or target-owned bytecode evidence.
         String binaryFamily = confirmedBinaryAuthorizationFamily(
                 root, lib, soft, newStyle, classesConfig.isFile());
         String family = directoryMapping != null ? directoryMapping.productMain
