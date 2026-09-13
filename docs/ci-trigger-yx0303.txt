@@ -1,0 +1,1 @@
+Trigger full source verification for the YX0303 runtime registration-product fix.
