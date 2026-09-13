@@ -14,4 +14,5 @@ RuntimeProductID=YX0305
 RegStr=QT100101,QT100102
 automaticRecoveryReady=true
 
+Full source verification passed once with this regression before the v1.2.48 version bump; this commit is the final stable-release gate.
 This file documents the real reduced production sample used to gate the corresponding regression fixture.
