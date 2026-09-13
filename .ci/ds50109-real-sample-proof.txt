@@ -16,4 +16,5 @@ RuntimeProductID=DS501
 RegStr=DS50109
 automaticRecoveryReady=true
 
+Regression gate also requires the same fixture to become BLOCKED if the target-local DS501 doRegistry proof is removed.
 No database credentials or existing authorization material from the sample are stored here.
