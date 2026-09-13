@@ -138,10 +138,15 @@ public final class LicenseRecoverModernGUIJavaPlan {
         String binaryRuntime = confirmedBinaryRuntimeProduct(
                 root, lib, soft, binaryFamily, newStyle, classesConfig.isFile());
         String configDrivenRuntime = confirmedConfigDrivenRuntimeProduct(root, soft, family);
+        // QT401/QT100101 use the confirmed classes family as their runtime product.
+        // DS501/YX0305 do not: their target startup must prove the concrete SoftVersionID.
+        String confirmedClassesRuntime = ("QT401".equalsIgnoreCase(confirmedClassesFamily)
+                || "QT100101".equalsIgnoreCase(confirmedClassesFamily))
+                ? confirmedClassesFamily : null;
         String runtimeProduct = directoryMapping != null ? directoryMapping.productMain
-                : (!blank(confirmedClassesFamily) ? confirmedClassesFamily
                 : (directDataIdentity ? soft.trim()
-                : (!blank(configDrivenRuntime) ? configDrivenRuntime : binaryRuntime)));
+                : (!blank(configDrivenRuntime) ? configDrivenRuntime
+                : (!blank(binaryRuntime) ? binaryRuntime : confirmedClassesRuntime)));
         File jar = findRegJar(lib);
         boolean packed = jar != null && isVirboxPackedJar(jar);
         String qt401PrimaryRegStr = confirmedQt401PrimaryRegStr(root, soft, family, runtimeProduct);
@@ -304,13 +309,38 @@ public final class LicenseRecoverModernGUIJavaPlan {
             String family = readElement(config1, "SoftVersionID");
             if ("QT401".equalsIgnoreCase(family)) return "QT401";
         }
-        if ("QT100101".equals(id)) {
-            File config = new File(root, "WEB-INF" + File.separator + "classes"
-                    + File.separator + "config.xml");
-            String concrete = readElement(config, "SoftVersionID");
-            if ("QT100101".equalsIgnoreCase(concrete)) return "QT100101";
+        File config = new File(root, "WEB-INF" + File.separator + "classes"
+                + File.separator + "config.xml");
+        String concrete = readElement(config, "SoftVersionID");
+        if ("QT100101".equals(id) && "QT100101".equalsIgnoreCase(concrete)) return "QT100101";
+        if (!blank(concrete) && id.equalsIgnoreCase(concrete.trim())) {
+            if (id.startsWith("DS501") && hasEnumeratedClassesFamily(config, "DS501", id)) return "DS501";
+            if (id.startsWith("YX0305") && hasEnumeratedClassesFamily(config, "YX0305", id)) return "YX0305";
         }
         return null;
+    }
+
+    static boolean hasEnumeratedClassesFamily(File config, String family, String concrete) {
+        if (config == null || !config.isFile() || blank(family) || blank(concrete)) return false;
+        try {
+            String text = new String(Files.readAllBytes(config.toPath()), StandardCharsets.UTF_8);
+            Pattern pattern = Pattern.compile(
+                    "(?is)<System\\b[^>]*\\bid\\s*=\\s*([\"'])([^\"']+)\\1");
+            Matcher matcher = pattern.matcher(text);
+            String familyUpper = family.trim().toUpperCase(Locale.ROOT);
+            String concreteUpper = concrete.trim().toUpperCase(Locale.ROOT);
+            LinkedHashSet<String> siblingIds = new LinkedHashSet<String>();
+            boolean containsConcrete = false;
+            while (matcher.find()) {
+                String value = matcher.group(2) == null ? "" : matcher.group(2).trim().toUpperCase(Locale.ROOT);
+                if (value.isEmpty()) continue;
+                if (value.equals(concreteUpper)) containsConcrete = true;
+                if (value.startsWith(familyUpper)) siblingIds.add(value);
+            }
+            return containsConcrete && siblingIds.size() >= 2;
+        } catch (Throwable ignore) {
+            return false;
+        }
     }
 
     static String authorizationFamilyFor(String softId, boolean newStyle, boolean classesStyle) {

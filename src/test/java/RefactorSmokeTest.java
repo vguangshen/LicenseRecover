@@ -442,8 +442,10 @@ public final class RefactorSmokeTest {
         check(ds501Plan.runtimeProductId == null && ds501Plan.regStr == null
                         && !ds501Plan.automaticRecoveryReady,
                 "DS501 stays fail-closed without directory identity/RegStr evidence");
-        Files.write(ds501Classes.resolve("RegistrationEvidence.class"),
-                "DS501".getBytes(StandardCharsets.US_ASCII));
+        Files.write(ds501Classes.resolve("config.xml"), Arrays.asList(
+                "<ROOT><reg><regType>3</regType></reg><SystemSoft><SoftVersionID>DS50109</SoftVersionID></SystemSoft>"
+                        + "<System id=\"DS50101\"/><System id=\"DS50105\"/><System id=\"DS50109\"/></ROOT>"),
+                StandardCharsets.UTF_8);
         Path ds501SystemInfo = ds501Classes.resolve("com/itmc/register/utils/SystemInfo.class");
         Path ds501Contant = ds501Classes.resolve("com/itmc/register/utils/RegisterContant.class");
         Path ds501Listener = ds501Classes.resolve("com/itmc/register/service/RegisterListener.class");
@@ -545,13 +547,13 @@ public final class RefactorSmokeTest {
                         && "QT100101,QT100102".equals(yx305Plan.regStr)
                         && !yx305Plan.automaticRecoveryReady,
                 "YX0305 directory RegStr is retained for diagnostics but execution is blocked without identity proof");
-        Path yx305Servlet = yx305Classes.resolve("com/itmc/sys/platformregister/RegisterHttpServlet.class");
+        Files.write(yx305Classes.resolve("config.xml"), Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>YX030506</SoftVersionID><regInfo>QT100101,QT100102</regInfo></SystemSoft>"
+                        + "<System id=\"YX030501\"/><System id=\"YX030502\"/><System id=\"YX030506\"/></ROOT>"),
+                StandardCharsets.UTF_8);
         Path yx305XmlUtil = yx305Classes.resolve("com/itmc/utils/IXmlUtil.class");
         Path yx305Runner = yx305Classes.resolve("com/itmc/utils/ProjectApplicationRunner.class");
-        Files.createDirectories(yx305Servlet.getParent());
         Files.createDirectories(yx305XmlUtil.getParent());
-        Files.write(yx305Servlet,
-                "YX0305 itmc/regedit/RegisterMain doRegistry".getBytes(StandardCharsets.ISO_8859_1));
         Files.write(yx305XmlUtil,
                 "global.system.VersionID /config.xml SystemSoft SoftVersionID regInfo SYS_PRODUCT_NUM PRODUCT_ALL_NUM PRODUCT_INFO"
                         .getBytes(StandardCharsets.ISO_8859_1));

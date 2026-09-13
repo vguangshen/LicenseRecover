@@ -1,3 +1,14 @@
+## 1.2.45 - 2026-09-13
+
+### Fixed
+- 修复 DS50109 / YX030506 在 v1.2.44 批量扫描中再次显示“待确认”的回归。
+- classes/config.xml 只有在 SoftVersionID 与当前应用一致、并枚举当前模式及至少一个同族 sibling System id 时，才可确认 DS501 / YX0305 family。
+- family 与 runtime ID 继续分离；DS501/YX0305 仍必须由目标启动/注册链证明具体运行 ID，保持 fail-closed。
+- 保持 v1.2.44 的 YX030506 ProjectSourcesPath -> WEB-INF/classes 与 fresh-JVM 原生校验门禁。
+
+### Regression
+- DS50109 / YX030506 测试夹具改为真实 classes/config System 枚举，不再依赖人工独立 family token。
+
 ## 1.2.44 - 2026-09-11
 
 - Fix YX030506-style `ProjectSourcesPath.projectPath("/")` startup chains by proving and selecting `WEB-INF/classes` as the explicit target-native RegisterMain base.
