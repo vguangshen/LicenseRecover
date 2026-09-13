@@ -1,3 +1,18 @@
+## 1.2.50 - 2026-09-13
+
+### Fixed
+- 修复 `BKSM4` 在旧版中“扫描/恢复显示成功，但 Tomcat 启动仍因注册信息不匹配失败”的问题。
+- 根因是目标 `Global.<clinit>` 中先构造了一条未加入 `registerProductBeans` 的陈旧 `QT04 / QT0435 / BKSM4` Bean，随后才加入真实的 `PT02 / QT0445 / BKSM4` Bean；旧解析器在 `setProductNums` 后过早返回了陈旧映射。
+- `Global.registerProductBeans` 解析现在要求同一 Bean 的 `productMain/productMainNum/productNums` 被目标字节码实际执行 `registerProductBeans.add(bean)` 后才接受，不再把仅赋值但未提交的临时 Bean 当作可执行注册数据。
+- 不为 BKSM4 硬编码 `PT02` 白名单；运行产品和 RegStr 继续来自目标目录自身字节码证据，并保持 fail-closed。
+
+### Real-sample verification
+- 使用用户提供的真实 `BKSM4.zip` 恢复并核对目标 `Global.class`，确认 Tomcat 实际注册映射为 `AppMode=BKSM4`, `RuntimeProductID=PT02`, `RegStr=QT0445`。
+- 本地将修复后的解析器接入完整 `LicenseRecoverModernGUIJavaPlan.inspect`，真实样本得到 `AuthorizationFamily=PT02`, `RuntimeProductID=PT02`, `RegStr=QT0445`, `automaticRecoveryReady=true`。
+- 新增正向回归：忽略未提交的 `QT04/QT0435/BKSM4` Bean，选择实际 add 的 `PT02/QT0445/BKSM4` Bean。
+- 新增反向回归：若匹配 BKSM4 的 Bean 从未加入 `registerProductBeans`，解析必须返回空并保持 fail-closed。
+- 完整 Verify source、Java 8 回归、DS50109/YX030506 回归、备份安全检查、原生 EXE 构建和发行包组装全部通过后发布。
+
 ## 1.2.49 - 2026-09-13
 
 ### Fixed
