@@ -50,6 +50,11 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             success=ok; message=msg==null?"":msg; detection=d; machineId=m; requestCode=req; authorizationCode=auth;
         }
         static Result fail(String msg, Detection d) { return new Result(false,msg,d,null,null,null); }
+        public boolean isRequestOnly() {
+            return success && requestCode != null && !requestCode.trim().isEmpty()
+                    && authorizationCode == null
+                    && message.startsWith("[JAVA_REQUEST_ONLY]");
+        }
     }
 
     public static Detection detect(File selected) {
@@ -126,8 +131,10 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     private static Result recoverJava(Detection d, boolean backup, boolean blockNet, boolean dryRun, Consumer<String> log) throws Exception {
         LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(d.appRoot);
         if (plan.detected) log.accept(plan.logSummary());
-        if (!plan.detected || !plan.automaticRecoveryReady)
-            return Result.fail("[JAVA_PLAN] 自动恢复已阻止：" + (plan.detected ? plan.recoveryReadiness : "未识别 Java 注册结构") + "。未修改任何文件。", d);
+        if (!plan.detected)
+            return Result.fail("[JAVA_PLAN] 自动恢复已阻止：未识别 Java 注册结构。未修改任何文件。", d);
+        if (!plan.automaticRecoveryReady && !plan.nativeRequestReady)
+            return Result.fail("[JAVA_PLAN] 自动恢复已阻止：" + plan.recoveryReadiness + "。未修改任何文件。", d);
         if (blank(plan.runtimeProductId))
             return Result.fail("[JAVA_CHAIN] 目标目录未确认运行注册ID。", d);
 
@@ -142,6 +149,34 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         log.accept("[java-chain] target-native isolated helper; product=" + product
                 + " version=" + valueOrPending(version) + " runtime=" + runtimeProfile.evidence + "\n");
         log.accept("[java-chain] helper system classpath=tool-only; target WEB-INF/classes/lib are child-first isolated\n");
+
+        if (!plan.automaticRecoveryReady && plan.nativeRequestReady) {
+            NativeProcessResult last = null;
+            for (JavaRegistrationRuntimeProfile.Attempt attempt : attempts) {
+                log.accept("[java-stage] REQUEST_ONLY: start ctor=" + attempt.summary() + "\n");
+                NativeProcessResult requested = runJavaHost(d, "request", attempt, product, version,
+                        null, null, null, log);
+                last = requested;
+                if (requested.exitCode != 0) {
+                    log.accept("[java-stage] REQUEST_ONLY: rejected ctor=" + attempt.summary()
+                            + " output=" + compactNativeOutput(requested.output) + "\n");
+                    continue;
+                }
+                String request = findLabeledHex(requested.output, "注册申请号", "申请号");
+                if (blank(request)) {
+                    log.accept("[java-stage] REQUEST_ONLY: helper returned no request code at ctor="
+                            + attempt.summary() + "\n");
+                    continue;
+                }
+                log.accept("[java-stage] REQUEST_ONLY: OK request=" + request + "\n");
+                return new Result(true,
+                        "[JAVA_REQUEST_ONLY] 已通过目标 RegisterMain.newRegistry() 生成本机申请号；"
+                                + "未生成注册码、未写入授权文件。请使用已有合法授权渠道取得注册码后再导入。",
+                        d, null, request, null);
+            }
+            return Result.fail("[JAVA_REQUEST] 目标 RegisterMain.newRegistry() 未能生成申请号"
+                    + (last == null ? "" : "; output=" + compactNativeOutput(last.output)), d);
+        }
 
         String regStr = normalizeProductCsv(plan.regStr);
         boolean regStrFromPlan = !blank(regStr);
