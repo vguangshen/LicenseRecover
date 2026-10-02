@@ -140,6 +140,7 @@ public final class LicenseRecoverJavaHost {
             TargetRuntime target = openTarget(o.appRoot, o.runtimeDir);
             try {
                 if ("probe".equals(o.mode)) rc = probe(target, o);
+                else if ("request".equals(o.mode)) rc = request(target, o);
                 else if ("gencode".equals(o.mode)) rc = gencode(target, o);
                 else if ("doreg".equals(o.mode)) rc = doreg(target, o);
                 else if ("verify".equals(o.mode)) rc = verify(target, o);
@@ -159,7 +160,7 @@ public final class LicenseRecoverJavaHost {
 
     static Options parse(String[] args) {
         if (args == null || args.length < 3)
-            throw new IllegalArgumentException("usage: <probe|gencode|doreg|verify> <appRoot> <runtimeDir> [options]");
+            throw new IllegalArgumentException("usage: <probe|request|gencode|doreg|verify> <appRoot> <runtimeDir> [options]");
         Options o = new Options();
         o.mode = args[0].trim().toLowerCase(Locale.ROOT);
         o.appRoot = new File(args[1]).getAbsoluteFile();
@@ -288,6 +289,25 @@ public final class LicenseRecoverJavaHost {
         if (!blank(regStr)) return "REGSTR";
         if (!blank(proName)) return "PRODUCT_ONLY";
         return "EMPTY";
+    }
+
+    static int request(TargetRuntime rt, Options o) throws Exception {
+        Object reg = newRegisterMain(rt.loader, o.product, o.baseDir, o.ctorMode);
+        Method method = findNoArgMethod(reg.getClass(), "newRegistry");
+        if (method == null) throw new NoSuchMethodException("target RegisterMain has no newRegistry(); methods="
+                + methodSummary(reg.getClass(), "newRegistry"));
+        method.setAccessible(true);
+        Object raw;
+        try { raw = method.invoke(reg); }
+        catch (InvocationTargetException ex) { throw rethrow(ex); }
+        String seq = raw == null ? null : String.valueOf(raw).trim();
+        if (blank(seq)) throw new IllegalStateException("target RegisterMain.newRegistry() returned empty request code");
+        System.out.println("注册申请号        : " + seq);
+        System.out.println("TARGET_BASE=" + canonical(o.baseDir));
+        System.out.println("TARGET_BASE_CONFIG=" + (new File(o.baseDir, "config.xml").isFile() ? "PRESENT" : "ABSENT"));
+        System.out.println("TARGET_REQUEST_ONLY=true");
+        System.out.println("RESULT: OK");
+        return 0;
     }
 
     static int gencode(TargetRuntime rt, Options o) throws Exception {
