@@ -327,6 +327,51 @@ public final class RefactorSmokeTest {
                         && !ds2406Plan.regStrSummary().contains("动态"),
                 "DS2406 primary RegStr is static only after target VersionID->_SYS_CODE->RegStr.contains flow is complete");
 
+        Path ds24FamilyRoot = base.resolve("java-DS2406-family-config");
+        Path ds24FamilyLib = ds24FamilyRoot.resolve("WEB-INF/lib");
+        Path ds24FamilyClasses = ds24FamilyRoot.resolve("WEB-INF/classes");
+        Files.createDirectories(ds24FamilyLib);
+        Files.createDirectories(ds24FamilyClasses.resolve("util"));
+        Files.createDirectories(ds24FamilyClasses.resolve("global"));
+        Files.createDirectories(ds24FamilyClasses.resolve("listener"));
+        Files.createDirectories(ds24FamilyRoot.resolve("data"));
+        Files.write(ds24FamilyLib.resolve("ITMCReg-1.0.2.jar"), new byte[]{1});
+        Files.write(ds24FamilyRoot.resolve("systemConfig.yml"),
+                Arrays.asList("global.system.VersionID=DS2406"), StandardCharsets.UTF_8);
+        Files.write(ds24FamilyRoot.resolve("data/config.xml"), Arrays.asList(
+                "<ROOT>",
+                "<SystemSoft><SoftVersionID>DS24</SoftVersionID></SystemSoft>",
+                "<System id=\"DS2401\"><SoftName>A</SoftName></System>",
+                "<System id=\"DS2402\"><SoftName>B</SoftName></System>",
+                "<System id=\"DS2403\"><SoftName>C</SoftName></System>",
+                "<System id=\"DS2406\"><SoftName>D</SoftName></System>",
+                "</ROOT>"), StandardCharsets.UTF_8);
+        Files.write(ds24FamilyClasses.resolve("util/IXmlUtil.class"),
+                "systemConfig.yml global.system.VersionID global/IStatic _SYS_CODE"
+                        .getBytes(StandardCharsets.ISO_8859_1));
+        Files.write(ds24FamilyClasses.resolve("global/IGlobal.class"),
+                "SYS_PRODUCT_CODE DS24".getBytes(StandardCharsets.ISO_8859_1));
+        Files.write(ds24FamilyClasses.resolve("listener/SystemSetListener.class"),
+                "DS24 itmc/regedit/RegisterMain checkReInfo getRegInfo regStr global/IStatic _SYS_CODE contains"
+                        .getBytes(StandardCharsets.ISO_8859_1));
+
+        check("DS2406".equals(LicenseRecoverModernGUIJavaPlan.confirmedDs24ConcreteModeEvidence(
+                        ds24FamilyRoot.toFile(), "DS2406", "DS24", "DS24")),
+                "DS24 parent config + enumerated DS2406 + startup membership chain proves current concrete mode");
+        check(LicenseRecoverModernGUIJavaPlan.confirmedDs24ConcreteModeEvidence(
+                        ds24FamilyRoot.toFile(), "DS2407", "DS24", "DS24") == null,
+                "DS24 concrete-mode evidence rejects a mismatched current VersionID");
+
+        LicenseRecoverModernGUIJavaPlan ds24FamilyPlan =
+                LicenseRecoverModernGUIJavaPlan.inspect(ds24FamilyRoot.toFile());
+        check("DS24".equals(ds24FamilyPlan.authorizationFamily)
+                        && "DS24".equals(ds24FamilyPlan.runtimeProductId)
+                        && ds24FamilyPlan.regStr == null
+                        && !ds24FamilyPlan.automaticRecoveryReady
+                        && ds24FamilyPlan.recoveryReadiness.contains("DS2406")
+                        && ds24FamilyPlan.recoveryReadiness.contains("现有 RegStr"),
+                "DS24 family membership is diagnostic evidence only and does not synthesize a new RegStr");
+
         Path ds2802Root = base.resolve("java-DS2802");
         Path ds2802Lib = ds2802Root.resolve("WEB-INF/lib");
         Path ds2802Global = ds2802Root.resolve("WEB-INF/classes/com/common/global/Global.class");
@@ -1317,6 +1362,12 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                 "Java native host supports target 1-arg RegisterMain constructor");
         check(LicenseRecoverJavaHost.containsCsv("DS2406,DS2407", "ds2406"),
                 "Java native fresh verifier checks exact current SoftVersionID token");
+        check("EMPTY".equals(LicenseRecoverJavaHost.probeEvidenceLabel(null, null)),
+                "Java probe labels empty product/RegStr evidence explicitly");
+        check("PRODUCT_ONLY".equals(LicenseRecoverJavaHost.probeEvidenceLabel(null, "DS24")),
+                "Java probe distinguishes product-only evidence from RegStr evidence");
+        check("REGSTR".equals(LicenseRecoverJavaHost.probeEvidenceLabel("DS2406", "DS24")),
+                "Java probe reports RegStr evidence only when RegStr is non-empty");
 
         String autoSource230 = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIAutoRecovery.java")), StandardCharsets.UTF_8);
         check(autoSource230.contains("LicenseRecover.NET.AspNetHost.exe"), "lowercase .NET chain uses ASP.NET host helper");
