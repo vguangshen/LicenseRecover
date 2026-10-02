@@ -264,6 +264,8 @@ public final class LicenseRecoverJavaHost {
         String regStr = normalizeCsv(stringGetter(info, "getRegStr"));
         String proName = stringGetter(info, "getProName");
         System.out.println("TARGET_BASE=" + canonical(o.baseDir));
+        System.out.println("TARGET_BASE_CONFIG=" + (new File(o.baseDir, "config.xml").isFile() ? "PRESENT" : "ABSENT"));
+        System.out.println("TARGET_LOCAL_STATE=" + localAuthorizationState(o.baseDir, regStr));
         System.out.println("TARGET_PRODUCT=" + safe(proName));
         System.out.println("TARGET_REGSTR=" + safe(regStr));
         System.out.println("TARGET_REGISTERMAIN=" + reg.getClass().getName());
@@ -273,6 +275,13 @@ public final class LicenseRecoverJavaHost {
         System.out.println("PROBE_EVIDENCE=" + evidence);
         System.out.println("RESULT: " + ("REGSTR".equals(evidence) ? "OK" : "NO_REGSTR"));
         return 0;
+    }
+
+    static String localAuthorizationState(File baseDir, String regStr) {
+        if (!blank(regStr)) return "REGSTR_AVAILABLE";
+        if (baseDir != null && !new File(baseDir, "config.xml").isFile())
+            return "UNINITIALIZED_LOCAL_LICENSE";
+        return "CONFIG_PRESENT_NO_REGSTR";
     }
 
     static String probeEvidenceLabel(String regStr, String proName) {
