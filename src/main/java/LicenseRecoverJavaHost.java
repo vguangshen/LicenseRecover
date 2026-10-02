@@ -353,19 +353,27 @@ public final class LicenseRecoverJavaHost {
     static int doreg(TargetRuntime rt, Options o) throws Exception {
         if (blank(o.seq) || blank(o.code)) throw new IllegalArgumentException("--seq and --code are required for doreg");
         Object reg = newRegisterMain(rt.loader, o.product, o.baseDir, o.ctorMode);
+        Object result = invokeExistingAuthorization(reg, o.seq, o.code);
+        System.out.println("[java-stage] DOREG native-return=" + String.valueOf(result));
+        System.out.println("TARGET_BASE=" + canonical(o.baseDir));
+        System.out.println("RESULT: OK");
+        return 0;
+    }
+
+    static Object invokeExistingAuthorization(Object reg, String requestCode, String authorizationCode) throws Exception {
+        if (reg == null) throw new IllegalArgumentException("target RegisterMain instance is required");
+        if (blank(requestCode) || blank(authorizationCode))
+            throw new IllegalArgumentException("requestCode and authorizationCode are required");
         Method method = findStringPairMethod(reg.getClass(), "doRegistry");
         if (method == null) throw new NoSuchMethodException("target RegisterMain has no doRegistry(String,String); methods="
                 + methodSummary(reg.getClass(), "doRegistry"));
         method.setAccessible(true);
         Object result;
-        try { result = method.invoke(reg, o.seq, o.code); }
+        try { result = method.invoke(reg, requestCode, authorizationCode); }
         catch (InvocationTargetException ex) { throw rethrow(ex); }
         if (result instanceof Boolean && !((Boolean) result).booleanValue())
             throw new IllegalStateException("target RegisterMain.doRegistry() returned false");
-        System.out.println("[java-stage] DOREG native-return=" + String.valueOf(result));
-        System.out.println("TARGET_BASE=" + canonical(o.baseDir));
-        System.out.println("RESULT: OK");
-        return 0;
+        return result;
     }
 
     static int verify(TargetRuntime rt, Options o) throws Exception {
