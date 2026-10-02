@@ -574,9 +574,9 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
                     LicenseRecoverModernGUIAutoRecovery.Result result = get();
                     if (result.success) {
                         authorizationCodeInput.setText("");
-                        verifyValue.setText("PASS: doRegistry() + fresh checkReInfo()/getRegInfo()");
                         refreshPlan(frame, generationValue, familyValue, runtimeValue,
                                 regStrValue, targetValue, jarValue, verifyValue);
+                        verifyValue.setText("PASS: doRegistry() + fresh checkReInfo()/getRegInfo()");
                         JOptionPane.showMessageDialog(frame,
                                 result.message + "\n\n申请号: " + request
                                         + "\n\n目标授权已由原生组件写入并通过 fresh JVM 验证。",
