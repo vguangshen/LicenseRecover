@@ -180,7 +180,9 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
             jar.setText(plan.registrationJarSummary());
             verify.setText(plan.automaticRecoveryReady
                     ? "待执行: " + plan.verificationPlan
-                    : "禁止自动写入: " + plan.recoveryReadiness);
+                    : (plan.nativeRequestReady
+                    ? "可执行: 目标原生申请号生成（只读，不写入）"
+                    : "禁止自动写入: " + plan.recoveryReadiness));
         } else if (detection.isDetected()) {
             generation.setText(detection.kind.toString());
             family.setText(value(detection.productName));
@@ -241,6 +243,8 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         String summary;
         if ("JAVA_PLAN".equals(stage)) {
             summary = "Java 授权计划尚未满足自动恢复条件；工具已停止，未修改任何文件。";
+        } else if ("JAVA_REQUEST".equals(stage)) {
+            summary = "目标原生 RegisterMain.newRegistry() 未能生成本机申请号；未写入任何授权文件。";
         } else if ("GENCODE".equals(stage)) {
             summary = "生成离线授权码失败，目标注册组件在生成申请号 / 授权码时抛出异常。";
         } else if ("GENCODE_PARSE".equals(stage)) {
@@ -424,20 +428,29 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
                     LicenseRecoverModernGUIAutoRecovery.Result result = get();
                     boolean javaTarget = result.detection != null
                             && result.detection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.JAVA;
+                    boolean requestOnly = result != null && result.isRequestOnly();
                     if (javaTarget) {
-                        verifyValue.setText(preview ? "PREVIEW: 未执行写后校验"
-                                : (result.success ? "PASS: RegisterMain.checkReInfo()" : "FAILED: 查看运行日志"));
+                        verifyValue.setText(requestOnly
+                                ? "REQUEST: 已生成申请号，未写入授权"
+                                : (preview ? "PREVIEW: 未执行写后校验"
+                                : (result.success ? "PASS: RegisterMain.checkReInfo()" : "FAILED: 查看运行日志")));
                     } else {
                         verifyValue.setText(preview ? "PREVIEW: 未执行写回校验"
                                 : (result.success ? "PASS: 写回校验" : "FAILED: 查看运行日志"));
                     }
                     if (result.success) {
                         StringBuilder msg = new StringBuilder(result.message);
-                        if (javaTarget) msg.append("\n\n原生校验: ")
-                                .append(preview ? "预览模式未执行" : "RegisterMain.checkReInfo() 通过");
+                        if (requestOnly) {
+                            msg.append("\n\n申请号: ").append(result.requestCode);
+                            msg.append("\n\n当前未修改任何授权文件。");
+                        } else if (javaTarget) {
+                            msg.append("\n\n原生校验: ")
+                                    .append(preview ? "预览模式未执行" : "RegisterMain.checkReInfo() 通过");
+                        }
                         if (result.machineId != null) msg.append("\n机器标识: ").append(result.machineId);
                         JOptionPane.showMessageDialog(frame, msg.toString(),
-                                "一键恢复完成", JOptionPane.INFORMATION_MESSAGE);
+                                requestOnly ? "已生成本地注册申请号" : "一键恢复完成",
+                                JOptionPane.INFORMATION_MESSAGE);
                     } else {
                         showOneClickFailureDialog(frame, result);
                     }
