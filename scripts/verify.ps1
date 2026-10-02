@@ -308,8 +308,11 @@ if ($javaPlanSource.Contains('return "DS2406"')) { throw 'Java plan still synthe
 if ($javaPlanSource.Contains('return "QT40101"')) { throw 'Java plan still synthesizes QT40101 RegStr.' }
 if (-not $javaPlanSource.Contains('No product-family/runtime-id guessing here')) { throw 'Strict Java directory identity marker missing.' }
 if (-not $javaPlanSource.Contains('confirmedDs24ConcreteModeEvidence')) { throw 'DS24 parent-product concrete-mode diagnostic evidence is missing.' }
-if (-not $javaPlanSource.Contains('不会把模式ID当作已有授权 RegStr')) { throw 'DS24 mode evidence must not be promoted into a synthesized RegStr.' }
+if (-not $javaPlanSource.Contains('未初始化本地授权状态') -or -not $javaPlanSource.Contains('现有本地授权可能不完整或不可读')) { throw 'DS24 local-license lifecycle classification is missing.' }
 if (-not $javaHostSource.Contains('probeEvidenceLabel') -or -not $javaHostSource.Contains('PROBE_EVIDENCE=') -or -not $javaHostSource.Contains('"NO_REGSTR"')) { throw 'Java probe does not distinguish empty RegStr evidence.' }
+if (-not $javaHostSource.Contains('localAuthorizationState') -or -not $javaHostSource.Contains('TARGET_LOCAL_STATE=')) { throw 'Java probe local-license state diagnostics are missing.' }
+if (-not $autoSource.Contains('[JAVA_PLAN] 自动恢复已阻止')) { throw 'Blocked Java plan is not stage-tagged for the GUI.' }
+if (-not $uiPatchSource.Contains('"JAVA_PLAN".equals(stage)')) { throw 'One-click UI does not explain blocked Java plans.' }
 
 if (-not $javaHostSource.Contains('class ChildFirstLoader') -or -not $javaHostSource.Contains('checkConnect(String host, int port)')) { throw 'Java target-native isolated host/network guard is missing.' }
 if (-not $javaHostSource.Contains('ProtectionDomain') -or -not $javaHostSource.Contains('NetRemover.unpackVirbox')) { throw 'Packed Java registration host does not preserve original target CodeSource.' }
