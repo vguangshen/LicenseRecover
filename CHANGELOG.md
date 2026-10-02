@@ -1,3 +1,17 @@
+## 1.2.53 - 2026-10-03
+
+### Fixed
+- 根据完整 DS2406 部署目录确认：根 `config.xml` 在干净安装状态下可以不存在，不能把“文件缺失”误报为路径错误或未知异常。
+- DS24/DS2406 计划现在区分三种只读状态：`UNINITIALIZED_LOCAL_LICENSE`、`CONFIG_PRESENT_NO_REGSTR`、`REGSTR_AVAILABLE`。
+- 当目标目录已经证明 `DS24 -> DS2406`，但根 `config.xml` 尚未生成时，GUI 明确显示“未初始化本地授权状态”，并提示先通过目标原生注册流程导入已有合法授权后重新检测。
+- 当根 `config.xml` 已存在但仍读不到 RegStr 时，单独提示“现有本地授权可能不完整或不可读”，不再与干净安装混为一类。
+- Java 计划前置阻止现在带 `[JAVA_PLAN]` 阶段标记，一键失败弹窗不再显示 `UNKNOWN`。
+
+### Verification
+- 使用用户提供的完整 DS2406 目录（6301 个文件）核对：唯一业务配置为 `data/config.xml`，根目录初始不存在 `config.xml` / `Register.xml`。
+- 本地 Java 8 兼容 lifecycle harness 9/9 通过：DS24 父产品、DS2406 当前模式、目标字节码证据、未初始化/配置存在无 RegStr/RegStr 可用三态和 `JAVA_PLAN` 错误分类均通过。
+- 保持 v1.2.52 的 fail-closed 约束：不会把模式 ID 合成为新的 RegStr，也不会在缺少现有授权证据时继续自动写入。
+
 ## 1.2.52 - 2026-10-03
 
 ### Fixed
