@@ -1,3 +1,21 @@
+## 1.2.55 - 2026-10-03
+
+### Added
+- DS2406 request-only 流程新增第二阶段“已有注册码导入”：申请号生成后保留在主界面，用户可复制；已有注册码必须由用户通过合法授权渠道取得并手动粘贴。
+- 新增 `applyExistingJavaAuthorization(...)`：只调用目标 `RegisterMain.doRegistry(requestCode, authorizationCode)`，不会生成注册码。
+- 导入成功后在新的 JVM 中重跑目标启动构造器、`checkReInfo()` 与 `getRegInfo()`；持久化 RegStr 必须包含当前 `SoftVersionID=DS2406` 才算成功。
+- 导入失败或 fresh verify 不通过时自动恢复写入前 Java 授权文件状态；原先不存在的根 `config.xml` 会被删除，原有文件按快照恢复。
+
+### Changed
+- Java request-only 成功弹窗会把申请号自动填入主界面“申请号”栏，并聚焦“已有注册码”输入框。
+- 主界面新增“复制申请号”和“导入已有注册码并验证”；导入成功单独显示 `PASS: doRegistry() + fresh checkReInfo()/getRegInfo()`。
+- `doRegistry` 反射调用抽成可回归的 `invokeExistingAuthorization()`，目标返回 `false` 时保持 fail-closed。
+
+### Verification
+- 本地使用完整 DS2406 + 真实 `ITMCReg-1.0.2.jar`：`newRegistry()` 正常生成申请号；明显无效测试注册码被目标 `doRegistry()` 拒绝，且根 `config.xml` 仍不存在。
+- 本地 Java 8 兼容 harness 验证：粘贴值仅去除传输空白、申请号/注册码原样传给目标、RegStr 必须包含 DS2406、失败回滚会删除新建文件并恢复旧文件。
+- CI 增加两阶段导入、native doRegistry、fresh mode verify 与 rollback 源码防回退检查。
+
 ## 1.2.54 - 2026-10-03
 
 ### Fixed

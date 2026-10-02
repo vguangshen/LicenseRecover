@@ -289,6 +289,112 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         throw new IOException("[JAVA_CHAIN] no runtime-derived registration constructor completed write-back + fresh verification");
     }
 
+    /**
+     * Applies an authorization code supplied by the user through the target's own
+     * RegisterMain.doRegistry(request, code) entry point, then verifies it in fresh JVMs.
+     * This method never generates an authorization code.
+     */
+    public static Result applyExistingJavaAuthorization(File selected, String requestCode,
+                                                        String authorizationCode, boolean backup,
+                                                        Consumer<String> logger) {
+        Consumer<String> log = logger == null ? x -> { } : logger;
+        Detection d = detect(selected);
+        log.accept("[java-import] detect: " + d.summary() + "\n");
+        if (d.kind != Kind.JAVA)
+            return Result.fail("[JAVA_IMPORT_PLAN] 仅支持已识别的 Java 目标。未修改任何文件。", d);
+        String request = normalizeImportedCode(requestCode);
+        String code = normalizeImportedCode(authorizationCode);
+        if (blank(request) || blank(code))
+            return Result.fail("[JAVA_IMPORT_INPUT] 申请号和已有注册码都不能为空。未修改任何文件。", d);
+        try {
+            LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(d.appRoot);
+            if (!plan.detected || !plan.nativeRequestReady)
+                return Result.fail("[JAVA_IMPORT_PLAN] 当前目标不处于已证明的 request-only 本地注册状态："
+                        + (plan.detected ? plan.recoveryReadiness : "Java 授权计划未识别")
+                        + "。未修改任何文件。", d);
+            if (blank(plan.runtimeProductId))
+                return Result.fail("[JAVA_IMPORT_PLAN] 目标目录未确认运行注册ID。未修改任何文件。", d);
+
+            JavaRegistrationRuntimeProfile runtimeProfile =
+                    JavaRegistrationRuntimeProfile.inspect(d.appRoot, d.runtimeDir);
+            log.accept(runtimeProfile.logSummary());
+            if (!runtimeProfile.supported)
+                return Result.fail("[JAVA_IMPORT_ABI] " + runtimeProfile.failureReason + "。未修改任何文件。", d);
+
+            List<JavaRegistrationRuntimeProfile.Attempt> attempts = runtimeProfile.attempts;
+            String product = plan.runtimeProductId.trim();
+            String version = blank(plan.softVersionId) ? d.versionId : plan.softVersionId.trim();
+
+            LinkedHashMap<File, byte[]> originals = snapshotJavaRegistrationFiles(d);
+            if (backup) backupJavaRegistrationFiles(originals, log);
+            IOException lastFailure = null;
+
+            for (int i = 0; i < attempts.size(); i++) {
+                JavaRegistrationRuntimeProfile.Attempt writeAttempt = attempts.get(i);
+                if (i > 0) restoreJavaRegistrationFiles(originals, log);
+                try {
+                    log.accept("[java-import-stage] DOREG: start ctor=" + writeAttempt.summary() + "\n");
+                    NativeProcessResult applied = runJavaHost(d, "doreg", writeAttempt, product, version,
+                            null, request, code, log);
+                    if (applied.exitCode != 0)
+                        throw nativeFailure("JAVA_IMPORT_DOREG",
+                                "target RegisterMain.doRegistry() rejected the supplied authorization code for ctor="
+                                        + writeAttempt.summary(), applied);
+                    log.accept("[java-import-stage] DOREG: OK ctor=" + writeAttempt.summary() + "\n");
+
+                    NativeProcessResult checked = null;
+                    JavaRegistrationRuntimeProfile.Attempt verifiedAttempt = null;
+                    for (JavaRegistrationRuntimeProfile.Attempt verifyAttempt : attempts) {
+                        log.accept("[java-import-stage] VERIFY_FRESH: start ctor="
+                                + verifyAttempt.summary() + "\n");
+                        checked = runJavaHost(d, "verify", verifyAttempt, product, version,
+                                null, null, null, log);
+                        if (checked.exitCode == 0) {
+                            verifiedAttempt = verifyAttempt;
+                            break;
+                        }
+                        log.accept("[java-import-stage] VERIFY_FRESH: rejected ctor="
+                                + verifyAttempt.summary() + " output="
+                                + compactNativeOutput(checked.output) + "\n");
+                    }
+                    if (verifiedAttempt == null)
+                        throw nativeFailure("JAVA_IMPORT_VERIFY",
+                                "fresh target startup constructor sequence rejected imported authorization", checked);
+
+                    String persisted = normalizeProductCsv(firstValue(checked.output, "TARGET_REGSTR="));
+                    if (blank(persisted))
+                        throw new IOException("[JAVA_IMPORT_MODE_VERIFY] target getRegInfo().RegStr is empty after import");
+                    if (!blank(version) && !containsRegStrToken(persisted, version))
+                        throw new IOException("[JAVA_IMPORT_MODE_VERIFY] persisted RegStr does not contain current "
+                                + "SoftVersionID=" + version + "; RegStr=" + persisted);
+
+                    log.accept("[java-import-stage] VERIFY_FRESH: OK ctor=" + verifiedAttempt.summary()
+                            + " persisted RegStr=" + persisted + "\n");
+                    return new Result(true,
+                            "[JAVA_IMPORT_OK] 已通过目标 RegisterMain.doRegistry() 导入已有注册码，"
+                                    + "并在 fresh JVM 中通过 checkReInfo()/getRegInfo() 验证。请重启 Tomcat。",
+                            d, null, request, null);
+                } catch (IOException ex) {
+                    lastFailure = ex;
+                    log.accept("[java-import-candidate-failed] " + ex.getMessage() + "\n");
+                }
+            }
+
+            restoreJavaRegistrationFiles(originals, log);
+            if (lastFailure != null) throw lastFailure;
+            throw new IOException("[JAVA_IMPORT_CHAIN] no runtime-derived constructor completed import + fresh verification");
+        } catch (Throwable ex) {
+            log.accept("[java-import-error] " + safe(ex) + "\n");
+            return Result.fail(safe(ex), d);
+        }
+    }
+
+    static String normalizeImportedCode(String value) {
+        if (value == null) return null;
+        String normalized = value.replaceAll("\\s+", "").trim();
+        return normalized.isEmpty() ? null : normalized;
+    }
+
     static String buildJavaRecoveryClasspath(File toolDir, File runtimeDir) {
         if (runtimeDir == null) throw new IllegalArgumentException("runtimeDir is required");
         // The helper itself runs only from tool jars. Target libraries are loaded by
@@ -388,7 +494,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         }
     }
 
-    private static void restoreJavaRegistrationFiles(LinkedHashMap<File, byte[]> originals, Consumer<String> log) {
+    static void restoreJavaRegistrationFiles(LinkedHashMap<File, byte[]> originals, Consumer<String> log) {
         for (Map.Entry<File, byte[]> e : originals.entrySet()) {
             try {
                 File f = e.getKey();

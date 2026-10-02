@@ -94,15 +94,72 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         overview.add(details, BorderLayout.CENTER);
         primary.add(overview, BorderLayout.NORTH);
 
+        final JTextField requestCodeValue = new JTextField();
+        requestCodeValue.setToolTipText("由目标 RegisterMain.newRegistry() 生成；也可粘贴之前保存的申请号");
+        final JTextField authorizationCodeInput = new JTextField();
+        authorizationCodeInput.setToolTipText("只输入通过已有合法授权渠道取得的注册码；工具不会生成注册码");
+        final JButton importAuthorization = new JButton("导入已有注册码并验证");
+        importAuthorization.setEnabled(false);
+        final JButton copyRequest = new JButton("复制申请号");
+
+        JPanel registrationImport = new JPanel(new GridBagLayout());
+        registrationImport.setBorder(BorderFactory.createTitledBorder("已有注册码导入（Java 本地注册）"));
+        GridBagConstraints rc = new GridBagConstraints();
+        rc.insets = new Insets(3, 5, 3, 5);
+        rc.gridy = 0; rc.gridx = 0; rc.anchor = GridBagConstraints.WEST;
+        registrationImport.add(new JLabel("申请号:"), rc);
+        rc.gridx = 1; rc.weightx = 1; rc.fill = GridBagConstraints.HORIZONTAL;
+        registrationImport.add(requestCodeValue, rc);
+        rc.gridx = 2; rc.weightx = 0; rc.fill = GridBagConstraints.NONE;
+        registrationImport.add(copyRequest, rc);
+        rc.gridy = 1; rc.gridx = 0; rc.anchor = GridBagConstraints.WEST;
+        registrationImport.add(new JLabel("已有注册码:"), rc);
+        rc.gridx = 1; rc.weightx = 1; rc.fill = GridBagConstraints.HORIZONTAL;
+        registrationImport.add(authorizationCodeInput, rc);
+        rc.gridx = 2; rc.weightx = 0; rc.fill = GridBagConstraints.NONE;
+        registrationImport.add(importAuthorization, rc);
+
+        final Runnable updateImportEnabled = () -> importAuthorization.setEnabled(
+                !requestCodeValue.getText().trim().isEmpty()
+                        && !authorizationCodeInput.getText().trim().isEmpty());
+        DocumentListener importFieldListener = new DocumentListener() {
+            private void changed() { SwingUtilities.invokeLater(updateImportEnabled); }
+            public void insertUpdate(DocumentEvent e) { changed(); }
+            public void removeUpdate(DocumentEvent e) { changed(); }
+            public void changedUpdate(DocumentEvent e) { changed(); }
+        };
+        requestCodeValue.getDocument().addDocumentListener(importFieldListener);
+        authorizationCodeInput.getDocument().addDocumentListener(importFieldListener);
+
+        copyRequest.addActionListener(e -> {
+            String request = requestCodeValue.getText().trim();
+            if (request.isEmpty()) return;
+            try {
+                Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(request), null);
+                copyRequest.setText("已复制");
+            } catch (Exception ex) {
+                copyRequest.setText("复制失败");
+            }
+        });
+        importAuthorization.addActionListener(e -> runExistingJavaAuthorizationImport(
+                frame, importAuthorization, requestCodeValue, authorizationCodeInput,
+                generationValue, familyValue, runtimeValue, regStrValue, targetValue, jarValue, verifyValue));
+
         final JButton recover = new JButton("一键恢复授权");
         recover.setFont(recover.getFont().deriveFont(Font.BOLD, 15f));
         recover.setPreferredSize(new Dimension(220, 42));
-        recover.setToolTipText("Java 会展示授权代际 / 授权族 / 运行校验ID / RegStr / config 目标，并在写入后执行 RegisterMain 原生校验");
+        recover.setToolTipText("Java request-only 目标会先生成申请号；已有注册码必须由你手动输入后再导入");
         recover.addActionListener(e -> runOneClick(frame, recover,
-                generationValue, familyValue, runtimeValue, regStrValue, targetValue, jarValue, verifyValue));
+                generationValue, familyValue, runtimeValue, regStrValue, targetValue, jarValue, verifyValue,
+                requestCodeValue, authorizationCodeInput, importAuthorization));
         JPanel buttonRow = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 2));
         buttonRow.add(recover);
-        primary.add(buttonRow, BorderLayout.CENTER);
+
+        JPanel actions = new JPanel();
+        actions.setLayout(new BoxLayout(actions, BoxLayout.Y_AXIS));
+        actions.add(buttonRow);
+        actions.add(registrationImport);
+        primary.add(actions, BorderLayout.CENTER);
 
         final JTextField planRoot = findTextFieldInTitledPanel(frame.getContentPane(), "应用目录");
         final Runnable refresh = () -> refreshPlan(frame, generationValue, familyValue, runtimeValue,
@@ -243,6 +300,8 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         String summary;
         if ("JAVA_PLAN".equals(stage)) {
             summary = "Java 授权计划尚未满足自动恢复条件；工具已停止，未修改任何文件。";
+        } else if (stage.startsWith("JAVA_IMPORT")) {
+            summary = "已有注册码导入或 fresh JVM 验证未通过；工具已恢复写入前状态。";
         } else if ("JAVA_REQUEST".equals(stage)) {
             summary = "目标原生 RegisterMain.newRegistry() 未能生成本机申请号；未写入任何授权文件。";
         } else if ("GENCODE".equals(stage)) {
@@ -396,7 +455,10 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
     private static void runOneClick(final JFrame frame, final JButton button,
                                     final JLabel generationValue, final JLabel familyValue, final JLabel runtimeValue,
                                     final JTextArea regStrValue, final JTextArea targetValue,
-                                    final JLabel jarValue, final JLabel verifyValue) {
+                                    final JLabel jarValue, final JLabel verifyValue,
+                                    final JTextField requestCodeValue,
+                                    final JTextField authorizationCodeInput,
+                                    final JButton importAuthorization) {
         final JTextField appRoot = findTextFieldInTitledPanel(frame.getContentPane(), "应用目录");
         if (appRoot == null || appRoot.getText().trim().isEmpty()) {
             JOptionPane.showMessageDialog(frame, "请先选择 ITMC 软件目录。",
@@ -441,8 +503,13 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
                     if (result.success) {
                         StringBuilder msg = new StringBuilder(result.message);
                         if (requestOnly) {
+                            requestCodeValue.setText(result.requestCode);
+                            requestCodeValue.setCaretPosition(0);
+                            authorizationCodeInput.setText("");
+                            importAuthorization.setEnabled(false);
+                            SwingUtilities.invokeLater(() -> authorizationCodeInput.requestFocusInWindow());
                             msg.append("\n\n申请号: ").append(result.requestCode);
-                            msg.append("\n\n当前未修改任何授权文件。");
+                            msg.append("\n\n当前未修改任何授权文件。请把合法渠道取得的注册码粘贴到主界面的“已有注册码”后导入。");
                         } else if (javaTarget) {
                             msg.append("\n\n原生校验: ")
                                     .append(preview ? "预览模式未执行" : "RegisterMain.checkReInfo() 通过");
@@ -462,6 +529,69 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
                             LicenseRecoverModernGUIAutoRecovery.Result.fail(
                                     "[UNKNOWN] 一键恢复失败; output=" + value(ex.getMessage()), d);
                     showOneClickFailureDialog(frame, failure);
+                }
+            }
+        }.execute();
+    }
+
+    private static void runExistingJavaAuthorizationImport(
+            final JFrame frame, final JButton button,
+            final JTextField requestCodeValue, final JTextField authorizationCodeInput,
+            final JLabel generationValue, final JLabel familyValue, final JLabel runtimeValue,
+            final JTextArea regStrValue, final JTextArea targetValue,
+            final JLabel jarValue, final JLabel verifyValue) {
+        final JTextField appRoot = findTextFieldInTitledPanel(frame.getContentPane(), "应用目录");
+        if (appRoot == null || appRoot.getText().trim().isEmpty()) {
+            JOptionPane.showMessageDialog(frame, "请先选择 ITMC 软件目录。",
+                    "导入已有注册码", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        final String request = requestCodeValue.getText().trim();
+        final String code = authorizationCodeInput.getText().trim();
+        if (request.isEmpty() || code.isEmpty()) {
+            JOptionPane.showMessageDialog(frame, "申请号和已有注册码都不能为空。",
+                    "导入已有注册码", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        final File selected = new File(appRoot.getText().trim());
+        final JCheckBox backup = findCheckBox(frame.getContentPane(), "写入前备份");
+        final JTextArea logArea = findTextAreaInTitledPanel(frame.getContentPane(), "运行日志");
+        final boolean doBackup = backup == null || backup.isSelected();
+
+        verifyValue.setText("IMPORT: 正在调用目标 doRegistry() 并 fresh verify...");
+        button.setEnabled(false);
+        append(logArea, "\n===== 导入已有 Java 注册码 =====\n");
+
+        new SwingWorker<LicenseRecoverModernGUIAutoRecovery.Result, Void>() {
+            protected LicenseRecoverModernGUIAutoRecovery.Result doInBackground() {
+                return LicenseRecoverModernGUIAutoRecovery.applyExistingJavaAuthorization(
+                        selected, request, code, doBackup, s -> append(logArea, s));
+            }
+            protected void done() {
+                button.setEnabled(true);
+                try {
+                    LicenseRecoverModernGUIAutoRecovery.Result result = get();
+                    if (result.success) {
+                        authorizationCodeInput.setText("");
+                        refreshPlan(frame, generationValue, familyValue, runtimeValue,
+                                regStrValue, targetValue, jarValue, verifyValue);
+                        verifyValue.setText("PASS: doRegistry() + fresh checkReInfo()/getRegInfo()");
+                        JOptionPane.showMessageDialog(frame,
+                                result.message + "\n\n申请号: " + request
+                                        + "\n\n目标授权已由原生组件写入并通过 fresh JVM 验证。",
+                                "已有注册码导入成功", JOptionPane.INFORMATION_MESSAGE);
+                    } else {
+                        verifyValue.setText("IMPORT FAILED: 已回滚，查看运行日志");
+                        showOneClickFailureDialog(frame, result);
+                    }
+                } catch (Exception ex) {
+                    verifyValue.setText("IMPORT FAILED: " + value(ex.getMessage()));
+                    LicenseRecoverModernGUIAutoRecovery.Detection d =
+                            LicenseRecoverModernGUIAutoRecovery.detect(selected);
+                    showOneClickFailureDialog(frame,
+                            LicenseRecoverModernGUIAutoRecovery.Result.fail(
+                                    "[JAVA_IMPORT_UNKNOWN] 导入已有注册码失败; output=" + value(ex.getMessage()), d));
                 }
             }
         }.execute();

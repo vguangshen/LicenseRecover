@@ -51,6 +51,17 @@ public final class RefactorSmokeTest {
         public String newRegistry() { return "ABCDEF0123456789"; }
     }
 
+    public static final class ExistingCodeRegisterMain {
+        String request;
+        String code;
+        boolean result = true;
+        public boolean doRegistry(String request, String code) {
+            this.request = request;
+            this.code = code;
+            return result;
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         Path base = Files.createTempDirectory("licenserecover-smoke");
 
@@ -1394,6 +1405,47 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         check("ABCDEF0123456789".equals(
                         LicenseRecoverJavaHost.invokeNativeRequest(new RequestRegisterMain())),
                 "Java request-only host calls target RegisterMain.newRegistry() without RegStr");
+        check("AABBCCDDEEFF".equals(
+                        LicenseRecoverModernGUIAutoRecovery.normalizeImportedCode(" AA BB\nCC DD EE FF ")),
+                "existing Java authorization import removes transport whitespace only");
+        ExistingCodeRegisterMain existingCodeTarget = new ExistingCodeRegisterMain();
+        Object existingCodeResult = LicenseRecoverJavaHost.invokeExistingAuthorization(
+                existingCodeTarget, "REQ012345", "CODEABCDEF");
+        check(Boolean.TRUE.equals(existingCodeResult)
+                        && "REQ012345".equals(existingCodeTarget.request)
+                        && "CODEABCDEF".equals(existingCodeTarget.code),
+                "existing Java authorization import passes user request/code unchanged to target doRegistry");
+        existingCodeTarget.result = false;
+        boolean rejectedExistingCode = false;
+        try {
+            LicenseRecoverJavaHost.invokeExistingAuthorization(
+                    existingCodeTarget, "REQ012345", "BADCODE");
+        } catch (IllegalStateException expected) {
+            rejectedExistingCode = expected.getMessage().contains("returned false");
+        }
+        check(rejectedExistingCode,
+                "existing Java authorization import rejects target doRegistry false return");
+        check(LicenseRecoverModernGUIAutoRecovery.containsRegStrToken(
+                        "DS2401,DS2406", "DS2406")
+                        && !LicenseRecoverModernGUIAutoRecovery.containsRegStrToken(
+                        "DS2401,DS2403", "DS2406"),
+                "fresh import verification requires persisted RegStr to contain current DS2406 token");
+
+        Path rollbackRoot = base.resolve("java-import-rollback");
+        Files.createDirectories(rollbackRoot);
+        File absentBefore = rollbackRoot.resolve("config.xml").toFile();
+        File presentBefore = rollbackRoot.resolve("Register.xml").toFile();
+        Files.write(presentBefore.toPath(), Arrays.asList("before"), StandardCharsets.UTF_8);
+        java.util.LinkedHashMap<File, byte[]> rollbackSnapshot = new java.util.LinkedHashMap<File, byte[]>();
+        rollbackSnapshot.put(absentBefore, null);
+        rollbackSnapshot.put(presentBefore, Files.readAllBytes(presentBefore.toPath()));
+        Files.write(absentBefore.toPath(), Arrays.asList("created-by-failed-import"), StandardCharsets.UTF_8);
+        Files.write(presentBefore.toPath(), Arrays.asList("changed-by-failed-import"), StandardCharsets.UTF_8);
+        LicenseRecoverModernGUIAutoRecovery.restoreJavaRegistrationFiles(rollbackSnapshot, null);
+        check(!absentBefore.exists()
+                        && "before".equals(new String(Files.readAllBytes(presentBefore.toPath()),
+                                StandardCharsets.UTF_8).trim()),
+                "failed existing-code import rollback deletes newly-created config and restores prior files");
         LicenseRecoverModernGUIAutoRecovery.Result requestOnlyResult =
                 new LicenseRecoverModernGUIAutoRecovery.Result(true,
                         "[JAVA_REQUEST_ONLY] request generated", null, null,
