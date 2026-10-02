@@ -986,7 +986,7 @@ public final class LicenseRecoverModernGUI {
         if (target == null || target.type == BatchTarget.Type.NONE) return "未识别";
         if (target.type == BatchTarget.Type.JAVA) {
             LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(target.appRoot);
-            return plan.detected && plan.automaticRecoveryReady ? null
+            return plan.detected && (plan.automaticRecoveryReady || plan.nativeRequestReady) ? null
                     : (plan.detected ? plan.recoveryReadiness : "Java 授权计划未识别");
         }
         LicenseRecoverModernGUIAutoRecovery.Detection d =
@@ -1011,6 +1011,8 @@ public final class LicenseRecoverModernGUI {
                 LicenseRecoverModernGUIAutoRecovery.recover(selected, backup, blockNet, preview, this::appendLog);
         if (Thread.currentThread().isInterrupted()) return OperationResult.cancelled("批量任务已取消");
         if (!result.success) return OperationResult.failed(result.message, 1);
+        if (result.isRequestOnly())
+            return OperationResult.preview(result.message + " 申请号=" + result.requestCode);
         return preview ? OperationResult.preview(result.message) : OperationResult.success(result.message);
     }
 
@@ -1029,6 +1031,8 @@ public final class LicenseRecoverModernGUI {
     private String batchVerification(BatchTarget target, boolean usePatch, boolean preview, OperationResult result) {
         if (usePatch) return preview ? "方式三预览/扫描" : (result.isSuccess() ? "方式三完成" : "方式三失败");
         if (target.type == BatchTarget.Type.JAVA) {
+            if (result.message != null && result.message.startsWith("[JAVA_REQUEST_ONLY]"))
+                return "申请号已生成 / 未写入";
             if (preview) return "预览: 未执行写后校验";
             return result.isSuccess() ? "RegisterMain: OK" : "RegisterMain: FAILED";
         }

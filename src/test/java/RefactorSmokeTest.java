@@ -47,6 +47,10 @@ public final class RefactorSmokeTest {
         }
     }
 
+    public static final class RequestRegisterMain {
+        public String newRegistry() { return "ABCDEF0123456789"; }
+    }
+
     public static void main(String[] args) throws Exception {
         Path base = Files.createTempDirectory("licenserecover-smoke");
 
@@ -368,17 +372,20 @@ public final class RefactorSmokeTest {
                         && "DS24".equals(ds24FamilyPlan.runtimeProductId)
                         && ds24FamilyPlan.regStr == null
                         && !ds24FamilyPlan.automaticRecoveryReady
+                        && ds24FamilyPlan.nativeRequestReady
                         && ds24FamilyPlan.recoveryReadiness.contains("DS2406")
-                        && ds24FamilyPlan.recoveryReadiness.contains("未初始化本地授权"),
-                "DS24 clean install is classified as uninitialized local-license state without synthesizing RegStr");
+                        && ds24FamilyPlan.recoveryReadiness.contains("未初始化本地授权")
+                        && ds24FamilyPlan.recoveryReadiness.contains("newRegistry"),
+                "DS24 clean install allows only target-native request generation without synthesizing RegStr");
         Files.write(ds24FamilyRoot.resolve("config.xml"), Arrays.asList(
                 "<ROOT><reg><regType>1</regType></reg></ROOT>"), StandardCharsets.UTF_8);
         ds24FamilyPlan = LicenseRecoverModernGUIJavaPlan.inspect(ds24FamilyRoot.toFile());
         check(ds24FamilyPlan.regStr == null
                         && !ds24FamilyPlan.automaticRecoveryReady
+                        && !ds24FamilyPlan.nativeRequestReady
                         && ds24FamilyPlan.recoveryReadiness.contains("config.xml 已存在")
                         && ds24FamilyPlan.recoveryReadiness.contains("未读取到现有 RegStr"),
-                "DS24 distinguishes an existing but unreadable local-license config from a clean install");
+                "DS24 existing but unreadable local-license config does not use clean-install request-only flow");
 
         Path ds2802Root = base.resolve("java-DS2802");
         Path ds2802Lib = ds2802Root.resolve("WEB-INF/lib");
@@ -1384,6 +1391,15 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                 "Java probe distinguishes product-only evidence from RegStr evidence");
         check("REGSTR".equals(LicenseRecoverJavaHost.probeEvidenceLabel("DS2406", "DS24")),
                 "Java probe reports RegStr evidence only when RegStr is non-empty");
+        check("ABCDEF0123456789".equals(
+                        LicenseRecoverJavaHost.invokeNativeRequest(new RequestRegisterMain())),
+                "Java request-only host calls target RegisterMain.newRegistry() without RegStr");
+        LicenseRecoverModernGUIAutoRecovery.Result requestOnlyResult =
+                new LicenseRecoverModernGUIAutoRecovery.Result(true,
+                        "[JAVA_REQUEST_ONLY] request generated", null, null,
+                        "ABCDEF0123456789", null);
+        check(requestOnlyResult.isRequestOnly(),
+                "Java request-only result is distinguishable from completed authorization write-back");
         Path uninitializedBase = base.resolve("java-uninitialized-local-license");
         Files.createDirectories(uninitializedBase);
         check("UNINITIALIZED_LOCAL_LICENSE".equals(

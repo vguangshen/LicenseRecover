@@ -1,3 +1,17 @@
+## 1.2.54 - 2026-10-03
+
+### Fixed
+- 根据完整 DS2406 真实目录和 `ITMCReg-1.0.2.jar` 本地执行结果，修正 v1.2.53 对“未初始化本地授权”的过度阻止：根 `config.xml` 不存在并不妨碍目标 `RegisterMain.newRegistry()` 生成本机申请号。
+- DS24 / DS2406 干净安装现在增加 **request-only** 状态：当父产品、当前模式、目标字节码、运行注册ID和目标注册 JAR 均已证明，但根 `config.xml` 尚不存在时，允许调用目标自己的 `newRegistry()`。
+- request-only 流程只返回申请号，明确不生成注册码、不调用 `doRegistry()`、不创建/修改 `config.xml`，也不宣称 `checkReInfo()` 已通过。
+- GUI 将 request-only 结果显示为“已生成本地注册申请号 / 未写入授权”，并展示申请号；批量模式将其标记为“申请号已生成 / 未写入”，不会误报为 RegisterMain 校验通过。
+
+### Verification
+- 使用用户提供的完整 DS2406 包直接运行真实 `new RegisterMain("DS24", root).newRegistry()`：成功返回申请号。
+- 本地在调用前后检查根 `config.xml` 均不存在，确认目标 `newRegistry()` 为零写入申请号流程。
+- 新增 `nativeRequestReady`、`invokeNativeRequest()`、request-only Result/UI/批量回归和 CI 防回退检查。
+- 仍保持 fail-closed：模式 ID 不会被合成为 RegStr；没有合法注册码时不会执行授权写回。
+
 ## 1.2.53 - 2026-10-03
 
 ### Fixed
