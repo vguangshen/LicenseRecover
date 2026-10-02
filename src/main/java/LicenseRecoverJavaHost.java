@@ -293,6 +293,17 @@ public final class LicenseRecoverJavaHost {
 
     static int request(TargetRuntime rt, Options o) throws Exception {
         Object reg = newRegisterMain(rt.loader, o.product, o.baseDir, o.ctorMode);
+        String seq = invokeNativeRequest(reg);
+        System.out.println("注册申请号        : " + seq);
+        System.out.println("TARGET_BASE=" + canonical(o.baseDir));
+        System.out.println("TARGET_BASE_CONFIG=" + (new File(o.baseDir, "config.xml").isFile() ? "PRESENT" : "ABSENT"));
+        System.out.println("TARGET_REQUEST_ONLY=true");
+        System.out.println("RESULT: OK");
+        return 0;
+    }
+
+    static String invokeNativeRequest(Object reg) throws Exception {
+        if (reg == null) throw new IllegalArgumentException("target RegisterMain instance is required");
         Method method = findNoArgMethod(reg.getClass(), "newRegistry");
         if (method == null) throw new NoSuchMethodException("target RegisterMain has no newRegistry(); methods="
                 + methodSummary(reg.getClass(), "newRegistry"));
@@ -302,12 +313,7 @@ public final class LicenseRecoverJavaHost {
         catch (InvocationTargetException ex) { throw rethrow(ex); }
         String seq = raw == null ? null : String.valueOf(raw).trim();
         if (blank(seq)) throw new IllegalStateException("target RegisterMain.newRegistry() returned empty request code");
-        System.out.println("注册申请号        : " + seq);
-        System.out.println("TARGET_BASE=" + canonical(o.baseDir));
-        System.out.println("TARGET_BASE_CONFIG=" + (new File(o.baseDir, "config.xml").isFile() ? "PRESENT" : "ABSENT"));
-        System.out.println("TARGET_REQUEST_ONLY=true");
-        System.out.println("RESULT: OK");
-        return 0;
+        return seq;
     }
 
     static int gencode(TargetRuntime rt, Options o) throws Exception {
