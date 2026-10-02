@@ -369,8 +369,16 @@ public final class RefactorSmokeTest {
                         && ds24FamilyPlan.regStr == null
                         && !ds24FamilyPlan.automaticRecoveryReady
                         && ds24FamilyPlan.recoveryReadiness.contains("DS2406")
-                        && ds24FamilyPlan.recoveryReadiness.contains("现有 RegStr"),
-                "DS24 family membership is diagnostic evidence only and does not synthesize a new RegStr");
+                        && ds24FamilyPlan.recoveryReadiness.contains("未初始化本地授权"),
+                "DS24 clean install is classified as uninitialized local-license state without synthesizing RegStr");
+        Files.write(ds24FamilyRoot.resolve("config.xml"), Arrays.asList(
+                "<ROOT><reg><regType>1</regType></reg></ROOT>"), StandardCharsets.UTF_8);
+        ds24FamilyPlan = LicenseRecoverModernGUIJavaPlan.inspect(ds24FamilyRoot.toFile());
+        check(ds24FamilyPlan.regStr == null
+                        && !ds24FamilyPlan.automaticRecoveryReady
+                        && ds24FamilyPlan.recoveryReadiness.contains("config.xml 已存在")
+                        && ds24FamilyPlan.recoveryReadiness.contains("未读取到现有 RegStr"),
+                "DS24 distinguishes an existing but unreadable local-license config from a clean install");
 
         Path ds2802Root = base.resolve("java-DS2802");
         Path ds2802Lib = ds2802Root.resolve("WEB-INF/lib");
@@ -1145,6 +1153,14 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                         && failureUi.details.contains("\n[错误]")
                         && failureUi.details.contains("\nRESULT:"),
                 "one-click failure dialog converts long native output into readable multiline details");
+        LicenseRecoverModernGUIUiPatchLauncher.OneClickFailurePresentation javaPlanUi =
+                LicenseRecoverModernGUIUiPatchLauncher.describeOneClickFailure(
+                        "[JAVA_PLAN] 自动恢复已阻止：目标目录已证明 DS24 子模式 DS2406；"
+                                + "根 config.xml 不存在，当前为未初始化本地授权状态。未修改任何文件。");
+        check("JAVA_PLAN".equals(javaPlanUi.stage)
+                        && javaPlanUi.summary.contains("未满足自动恢复条件")
+                        && javaPlanUi.details.contains("未初始化本地授权"),
+                "blocked Java plans are presented as JAVA_PLAN instead of UNKNOWN");
 
         Path dsFixture = base.resolve("DS01-Web.dll");
         writeUtf16Fixture(dsFixture, "itmcIEC", "DS0101", "DS0107", "DS0110", "DS0112");
@@ -1368,6 +1384,18 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                 "Java probe distinguishes product-only evidence from RegStr evidence");
         check("REGSTR".equals(LicenseRecoverJavaHost.probeEvidenceLabel("DS2406", "DS24")),
                 "Java probe reports RegStr evidence only when RegStr is non-empty");
+        Path uninitializedBase = base.resolve("java-uninitialized-local-license");
+        Files.createDirectories(uninitializedBase);
+        check("UNINITIALIZED_LOCAL_LICENSE".equals(
+                        LicenseRecoverJavaHost.localAuthorizationState(uninitializedBase.toFile(), null)),
+                "Java probe classifies a missing base config.xml as uninitialized local license");
+        Files.write(uninitializedBase.resolve("config.xml"), Arrays.asList("<ROOT/>"), StandardCharsets.UTF_8);
+        check("CONFIG_PRESENT_NO_REGSTR".equals(
+                        LicenseRecoverJavaHost.localAuthorizationState(uninitializedBase.toFile(), null)),
+                "Java probe distinguishes present config.xml without readable RegStr");
+        check("REGSTR_AVAILABLE".equals(
+                        LicenseRecoverJavaHost.localAuthorizationState(uninitializedBase.toFile(), "DS2406")),
+                "Java probe reports readable persisted RegStr when available");
 
         String autoSource230 = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIAutoRecovery.java")), StandardCharsets.UTF_8);
         check(autoSource230.contains("LicenseRecover.NET.AspNetHost.exe"), "lowercase .NET chain uses ASP.NET host helper");
