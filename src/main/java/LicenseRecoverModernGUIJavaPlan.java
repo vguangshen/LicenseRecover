@@ -202,8 +202,16 @@ public final class LicenseRecoverModernGUIJavaPlan {
         } else if (!directoryRegStr || blank(products)) {
             if (!blank(ds24ConcreteModeEvidence)) {
                 ready = false;
-                readiness = "目标目录已证明 " + family + " 子模式 " + ds24ConcreteModeEvidence
-                        + "，但未发现现有 RegStr；不会把模式ID当作已有授权 RegStr";
+                File rootLocalConfig = new File(root, "config.xml");
+                if (!rootLocalConfig.isFile()) {
+                    readiness = "目标目录已证明 " + family + " 子模式 " + ds24ConcreteModeEvidence
+                            + "；根 config.xml 不存在，当前为未初始化本地授权状态。"
+                            + "请通过目标原生注册流程导入已有合法授权后重新检测";
+                } else {
+                    readiness = "目标目录已证明 " + family + " 子模式 " + ds24ConcreteModeEvidence
+                            + "；根 config.xml 已存在，但未读取到现有 RegStr。"
+                            + "现有本地授权可能不完整或不可读";
+                }
             } else if (runtimeRegStrProbe) {
                 readiness = "可安全自动恢复（注册ID来自目标目录；RegStr执行时由目标RegisterMain.getRegInfo()读取）";
             } else {
