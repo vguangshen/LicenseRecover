@@ -239,7 +239,9 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         if (productMatch.find()) product = productMatch.group(1);
 
         String summary;
-        if ("GENCODE".equals(stage)) {
+        if ("JAVA_PLAN".equals(stage)) {
+            summary = "Java 授权计划尚未满足自动恢复条件；工具已停止，未修改任何文件。";
+        } else if ("GENCODE".equals(stage)) {
             summary = "生成离线授权码失败，目标注册组件在生成申请号 / 授权码时抛出异常。";
         } else if ("GENCODE_PARSE".equals(stage)) {
             summary = "生成结果解析失败：辅助程序已返回，但没有读取到完整的申请号或授权码。";
