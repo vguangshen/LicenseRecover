@@ -149,6 +149,11 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 root, soft, family, configDrivenRuntime);
         String dataDrivenPrimaryRegStr = confirmedDataDrivenPrimaryRegStr(
                 root, soft, family, runtimeProduct);
+        // Diagnostic-only evidence for DS24-style parent-product configs. This proves
+        // the current concrete mode belongs to the target family, but it must not be
+        // promoted to RegStr unless an existing authorization actually exposes it.
+        String ds24ConcreteModeEvidence = confirmedDs24ConcreteModeEvidence(
+                root, soft, family, runtimeProduct);
         String recoveredLocalRegStr = null;
         String products;
         if (directoryMapping != null) {
@@ -177,7 +182,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 || dataRegInfo != null || classesRegInfo != null
                 || !blank(qt401PrimaryRegStr) || !blank(configDrivenPrimaryRegStr) || !blank(dataDrivenPrimaryRegStr)
                 || recoveredLocalRegStr != null;
-        boolean runtimeRegStrProbe = !directoryRegStr && jar != null
+        boolean runtimeRegStrProbe = !directoryRegStr && blank(ds24ConcreteModeEvidence) && jar != null
                 && directoryIdentity && !blank(runtimeProduct);
 
         boolean ready = true;
@@ -195,7 +200,11 @@ public final class LicenseRecoverModernGUIJavaPlan {
             ready = false;
             readiness = "目标软件目录未确认授权族/运行注册ID";
         } else if (!directoryRegStr || blank(products)) {
-            if (runtimeRegStrProbe) {
+            if (!blank(ds24ConcreteModeEvidence)) {
+                ready = false;
+                readiness = "目标目录已证明 " + family + " 子模式 " + ds24ConcreteModeEvidence
+                        + "，但未发现现有 RegStr；不会把模式ID当作已有授权 RegStr";
+            } else if (runtimeRegStrProbe) {
                 readiness = "可安全自动恢复（注册ID来自目标目录；RegStr执行时由目标RegisterMain.getRegInfo()读取）";
             } else {
                 ready = false;
@@ -568,6 +577,47 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 "/data/config.xml", "global/IStatic", "_SYS_CODE")) return null;
         if (!classFileContainsAll(iGlobal, "SYS_PRODUCT_CODE", family)) return null;
         if (!classFileContainsAll(softReg, family, "itmc/regedit/RegisterMain", "doRegistry")) return null;
+        if (!classFileContainsAll(listener, family, "itmc/regedit/RegisterMain",
+                "checkReInfo", "getRegInfo", "regStr", "global/IStatic", "_SYS_CODE", "contains")) return null;
+        return concrete;
+    }
+
+    /**
+     * Proves only the DS24-style parent-product / concrete-mode relationship.
+     *
+     * Example: data/config.xml declares SoftVersionID=DS24 and enumerates
+     * <System id="DS2406">, while systemConfig.yml selects DS2406 and the target
+     * startup bytecode consumes IStatic._SYS_CODE through RegStr.contains(...).
+     *
+     * This is intentionally diagnostic evidence, not a RegStr source: the
+     * concrete mode is not promoted into a new authorization value.
+     */
+    static String confirmedDs24ConcreteModeEvidence(File root, String softId,
+                                                     String confirmedFamily,
+                                                     String runtimeProduct) {
+        if (root == null || blank(softId) || blank(confirmedFamily) || blank(runtimeProduct)) return null;
+        String concrete = softId.trim();
+        String family = confirmedFamily.trim();
+        String runtime = runtimeProduct.trim();
+        if (!"DS24".equalsIgnoreCase(family) || !family.equalsIgnoreCase(runtime)) return null;
+        if (!concrete.toUpperCase(Locale.ROOT).startsWith(family.toUpperCase(Locale.ROOT))) return null;
+
+        String ymlVersion = readSystemConfigVersionId(root);
+        if (blank(ymlVersion) || !concrete.equalsIgnoreCase(ymlVersion.trim())) return null;
+
+        File dataConfig = new File(root, "data" + File.separator + "config.xml");
+        String configuredFamily = readElement(dataConfig, "SoftVersionID");
+        if (blank(configuredFamily) || !family.equalsIgnoreCase(configuredFamily.trim())) return null;
+        if (!hasEnumeratedClassesFamily(dataConfig, family, concrete)) return null;
+
+        File classes = new File(root, "WEB-INF" + File.separator + "classes");
+        File xmlUtil = new File(classes, "util" + File.separator + "IXmlUtil.class");
+        File iGlobal = new File(classes, "global" + File.separator + "IGlobal.class");
+        File listener = new File(classes, "listener" + File.separator + "SystemSetListener.class");
+
+        if (!classFileContainsAll(xmlUtil, "systemConfig.yml", "global.system.VersionID",
+                "global/IStatic", "_SYS_CODE")) return null;
+        if (!classFileContainsAll(iGlobal, "SYS_PRODUCT_CODE", family)) return null;
         if (!classFileContainsAll(listener, family, "itmc/regedit/RegisterMain",
                 "checkReInfo", "getRegInfo", "regStr", "global/IStatic", "_SYS_CODE", "contains")) return null;
         return concrete;
