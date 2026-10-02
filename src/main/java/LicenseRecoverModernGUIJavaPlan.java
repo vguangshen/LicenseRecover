@@ -43,6 +43,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
     public final boolean packedRegistrationJar;
     /** True only when all identifiers needed for automatic write-back are confirmed. */
     public final boolean automaticRecoveryReady;
+    /** True when the target's own newRegistry() request-code flow is proven safe/read-only. */
+    public final boolean nativeRequestReady;
     /** Human-readable explanation shown by single-app and batch UI. */
     public final String recoveryReadiness;
 
@@ -51,7 +53,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
                                             String runtimeProductId, String regStr, String configTargets,
                                             String verificationPlan, boolean rootConfigStyle,
                                             boolean packedRegistrationJar, boolean automaticRecoveryReady,
-                                            String recoveryReadiness) {
+                                            boolean nativeRequestReady, String recoveryReadiness) {
         this.detected = detected;
         this.appRoot = appRoot;
         this.libDir = libDir;
@@ -67,6 +69,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
         this.rootConfigStyle = rootConfigStyle;
         this.packedRegistrationJar = packedRegistrationJar;
         this.automaticRecoveryReady = automaticRecoveryReady;
+        this.nativeRequestReady = nativeRequestReady;
         this.recoveryReadiness = recoveryReadiness;
     }
 
@@ -186,6 +189,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 && directoryIdentity && !blank(runtimeProduct);
 
         boolean ready = true;
+        boolean requestReady = false;
         String readiness = "可安全自动恢复（注册ID/RegStr均来自目标目录）";
         if (blank(soft)) {
             ready = false;
@@ -204,9 +208,12 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 ready = false;
                 File rootLocalConfig = new File(root, "config.xml");
                 if (!rootLocalConfig.isFile()) {
+                    requestReady = jar != null && directoryIdentity && !blank(runtimeProduct);
                     readiness = "目标目录已证明 " + family + " 子模式 " + ds24ConcreteModeEvidence
                             + "；根 config.xml 不存在，当前为未初始化本地授权状态。"
-                            + "请通过目标原生注册流程导入已有合法授权后重新检测";
+                            + (requestReady
+                            ? "可调用目标 RegisterMain.newRegistry() 只读生成申请号；不会生成注册码或写入授权"
+                            : "目标注册组件不足，无法生成申请号");
                 } else {
                     readiness = "目标目录已证明 " + family + " 子模式 " + ds24ConcreteModeEvidence
                             + "；根 config.xml 已存在，但未读取到现有 RegStr。"
@@ -236,7 +243,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
 
         return new LicenseRecoverModernGUIJavaPlan(true, root, lib, jar,
                 soft, generation, family, runtimeProduct, products, targets, verify, rootConfig, packed,
-                ready, readiness);
+                ready, requestReady, readiness);
     }
 
     public String regStrSummary() {
@@ -272,6 +279,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
         out.append("[java-plan] automatic recovery=")
                 .append(automaticRecoveryReady ? "READY" : "BLOCKED")
                 .append(" (").append(recoveryReadiness).append(")\n");
+        out.append("[java-plan] native request=")
+                .append(nativeRequestReady ? "READY" : "BLOCKED").append('\n');
         return out.toString();
     }
 
@@ -928,7 +937,7 @@ static String confirmedDs501FamilyRuntime(File root, String softId,
 
     private static LicenseRecoverModernGUIJavaPlan unknown() {
         return new LicenseRecoverModernGUIJavaPlan(false, null, null, null,
-                null, "—", null, null, null, "—", "—", false, false, false, "未识别");
+                null, "—", null, null, null, "—", "—", false, false, false, false, "未识别");
     }
 
     private static byte[] readAll(InputStream in) throws Exception {
