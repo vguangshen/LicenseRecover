@@ -494,7 +494,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         }
     }
 
-    private static void restoreJavaRegistrationFiles(LinkedHashMap<File, byte[]> originals, Consumer<String> log) {
+    static void restoreJavaRegistrationFiles(LinkedHashMap<File, byte[]> originals, Consumer<String> log) {
         for (Map.Entry<File, byte[]> e : originals.entrySet()) {
             try {
                 File f = e.getKey();
