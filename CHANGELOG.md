@@ -1,3 +1,16 @@
+## 1.2.52 - 2026-10-03
+
+### Fixed
+- 修复 DS2406 真实部署中 `data/config.xml` 采用父产品 `SoftVersionID=DS24`、并通过多个 `<System id="DS24xx">` 枚举具体模式时，工具没有区分“父产品/当前模式证据”和“已有 RegStr”的问题。
+- 新增 DS24 具体模式诊断链：要求 `systemConfig.yml` 当前 `VersionID`、`data/config.xml` 的 DS24 家族枚举、`IXmlUtil -> IStatic._SYS_CODE` 与 `SystemSetListener -> RegStr.contains(...)` 同时一致，才确认当前具体模式。
+- 该证据仅用于诊断和执行资格判断；不会把 `DS2406` 模式 ID 自动当成已有 `RegStr`。没有现有授权 RegStr 时改为明确 BLOCKED，避免旧版“READY 后 PROBE 为空”的假阳性。
+- Java target-native `probe` 新增 `PROBE_CALL` / `PROBE_EVIDENCE`，当 `getRegInfo().getRegStr()` 为空时输出 `RESULT: NO_REGSTR`，不再用通用 `RESULT: OK` 混淆“调用成功”和“授权证据存在”。
+
+### Verification
+- 使用真实 DS2406 恢复字节码验证 `systemConfig.yml -> IXmlUtil -> IStatic._SYS_CODE -> SystemSetListener -> RegStr.contains` 启动链。
+- 新增 DS24 父产品 + DS2406 子模式正向回归，以及 VersionID 不匹配、运行产品不匹配、家族枚举缺失时的 fail-closed 回归。
+- CI 增加 DS24 模式证据不得升级为合成 RegStr、空 RegStr probe 必须显式标记的源码防回退检查。
+
 ## 1.2.51 - 2026-09-14
 
 ### Fixed

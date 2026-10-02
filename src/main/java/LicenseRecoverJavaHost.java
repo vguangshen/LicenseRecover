@@ -268,8 +268,17 @@ public final class LicenseRecoverJavaHost {
         System.out.println("TARGET_REGSTR=" + safe(regStr));
         System.out.println("TARGET_REGISTERMAIN=" + reg.getClass().getName());
         System.out.println("TARGET_DOREG_SIGNATURE=" + methodSummary(reg.getClass(), "doRegistry"));
-        System.out.println("RESULT: OK");
+        String evidence = probeEvidenceLabel(regStr, proName);
+        System.out.println("PROBE_CALL=OK");
+        System.out.println("PROBE_EVIDENCE=" + evidence);
+        System.out.println("RESULT: " + ("REGSTR".equals(evidence) ? "OK" : "NO_REGSTR"));
         return 0;
+    }
+
+    static String probeEvidenceLabel(String regStr, String proName) {
+        if (!blank(regStr)) return "REGSTR";
+        if (!blank(proName)) return "PRODUCT_ONLY";
+        return "EMPTY";
     }
 
     static int gencode(TargetRuntime rt, Options o) throws Exception {
