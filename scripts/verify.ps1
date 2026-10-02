@@ -314,10 +314,8 @@ if (-not $javaHostSource.Contains('localAuthorizationState') -or -not $javaHostS
 if (-not $autoSource.Contains('[JAVA_PLAN] 自动恢复已阻止')) { throw 'Blocked Java plan is not stage-tagged for the GUI.' }
 if (-not $uiPatchSource.Contains('"JAVA_PLAN".equals(stage)')) { throw 'One-click UI does not explain blocked Java plans.' }
 if (-not $javaPlanSource.Contains('nativeRequestReady')) { throw 'Java plan does not expose request-only readiness.' }
-if (-not $javaHostSource.Contains('"request".equals(o.mode)') -or -not $javaHostSource.Contains('invokeNativeRequest')
-        -or -not $javaHostSource.Contains('TARGET_REQUEST_ONLY=true')) { throw 'Java target-native request-only host mode is missing.' }
-if (-not $autoSource.Contains('runJavaHost(d, "request"') -or -not $autoSource.Contains('[JAVA_REQUEST_ONLY]')
-        -or -not $autoSource.Contains('未生成注册码、未写入授权文件')) { throw 'Java request-only coordinator path is missing or can be confused with write-back.' }
+if (-not $javaHostSource.Contains('"request".equals(o.mode)') -or -not $javaHostSource.Contains('invokeNativeRequest') -or -not $javaHostSource.Contains('TARGET_REQUEST_ONLY=true')) { throw 'Java target-native request-only host mode is missing.' }
+if (-not $autoSource.Contains('runJavaHost(d, "request"') -or -not $autoSource.Contains('[JAVA_REQUEST_ONLY]') -or -not $autoSource.Contains('未生成注册码、未写入授权文件')) { throw 'Java request-only coordinator path is missing or can be confused with write-back.' }
 if (-not $uiPatchSource.Contains('result.isRequestOnly()') -or -not $uiPatchSource.Contains('已生成本地注册申请号')) { throw 'GUI does not present request-only completion separately.' }
 
 if (-not $javaHostSource.Contains('class ChildFirstLoader') -or -not $javaHostSource.Contains('checkConnect(String host, int port)')) { throw 'Java target-native isolated host/network guard is missing.' }
