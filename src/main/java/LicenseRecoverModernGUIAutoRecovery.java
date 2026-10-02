@@ -127,7 +127,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(d.appRoot);
         if (plan.detected) log.accept(plan.logSummary());
         if (!plan.detected || !plan.automaticRecoveryReady)
-            return Result.fail("自动恢复已阻止：" + (plan.detected ? plan.recoveryReadiness : "未识别 Java 注册结构") + "。未修改任何文件。", d);
+            return Result.fail("[JAVA_PLAN] 自动恢复已阻止：" + (plan.detected ? plan.recoveryReadiness : "未识别 Java 注册结构") + "。未修改任何文件。", d);
         if (blank(plan.runtimeProductId))
             return Result.fail("[JAVA_CHAIN] 目标目录未确认运行注册ID。", d);
 
