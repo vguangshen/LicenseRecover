@@ -1367,6 +1367,26 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                 LicenseRecoverModernGUIAutoRecovery.detect(legacyDotNetRoot.toFile());
         check(legacyDotNetDetection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY,
                 "DS01xx remains legacy even when an uppercase compatibility ITMC.Regedit.dll is present");
+        byte[] legacyConfigBefore = Files.readAllBytes(legacyDotNetRoot.resolve("config.xml"));
+        int legacyBinFileCount = legacyDotNetBin.toFile().list().length;
+        LicenseRecoverModernGUIAutoRecovery.Result unsupportedLegacy =
+                LicenseRecoverModernGUIAutoRecovery.recover(legacyDotNetRoot.toFile(), true, true, false, null);
+        check(!unsupportedLegacy.success && unsupportedLegacy.message.startsWith("[DOTNET_LEGACY]")
+                        && unsupportedLegacy.message.contains("未修改任何目标文件"),
+                "DS0101 one-click rejects unsupported legacy write-back with a named stage");
+        check(Arrays.equals(legacyConfigBefore, Files.readAllBytes(legacyDotNetRoot.resolve("config.xml")))
+                        && legacyDotNetBin.toFile().list().length == legacyBinFileCount,
+                "DS0101 rejection does not overwrite config.xml, DLLs or create prepatch backups");
+        OperationResult unsupportedLegacyBatch = LicenseRecoverModernGUI.legacyBatchBlocked(legacyDotNetDetection);
+        check(unsupportedLegacyBatch.status == OperationResult.Status.FAILED
+                        && unsupportedLegacyBatch.exitCode != 0
+                        && unsupportedLegacyBatch.message.startsWith("[DOTNET_LEGACY]"),
+                "DS0101 recommended batch recovery cannot report network blocking as success");
+        LicenseRecoverModernGUIUiPatchLauncher.OneClickFailurePresentation legacyFailureUi =
+                LicenseRecoverModernGUIUiPatchLauncher.describeOneClickFailure(unsupportedLegacy.message);
+        check("DOTNET_LEGACY".equals(legacyFailureUi.stage)
+                        && legacyFailureUi.summary.contains("不支持一键授权写回"),
+                "DS0101 one-click displays DOTNET_LEGACY rather than UNKNOWN");
 
         Path toolCpDir = Files.createTempDirectory("lrc-toolcp-");
         Path legacyCore = toolCpDir.resolve("LicenseRecover.jar");

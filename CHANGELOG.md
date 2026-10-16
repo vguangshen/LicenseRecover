@@ -1,3 +1,15 @@
+## 1.2.56 - 2026-10-16
+
+### Fixed
+- DS0101 / DS01xx legacy .NET one-click failures now report `[DOTNET_LEGACY]` instead of `UNKNOWN`.
+- Do not claim that DS01xx has only the lowercase DLL when `ITMC.Regedit.dll` is also present; protocol classification remains based on actual target generation.
+- Recommended batch recovery no longer treats mere network isolation (`--block-net`) as successful authorization restoration for legacy .NET applications. Legacy targets are flagged as not eligible for automatic write-back, without modifying files.
+- Legacy scan and GUI preflight explicitly show that automatic write-back is unsupported; existing explicit advanced operations remain unchanged.
+
+### Regression
+- Synthetic DS0101 with both registration assemblies: legacy classification, named failure stage, unchanged config and DLL directory, and failed batch result.
+- Real DS0101 sample examined out of tree (not committed); no Windows/IIS native registration success has been claimed. Vendor-provided valid authorization and Windows runtime validation are still required to enable legacy automatic write-back.
+
 ## 1.2.55 - 2026-10-03
 
 ### Added

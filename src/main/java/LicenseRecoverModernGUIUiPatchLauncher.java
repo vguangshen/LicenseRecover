@@ -248,7 +248,7 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
             targets.setText("config.xml / 授权 sidecar（按检测结果）");
             jar.setText("不适用");
             verify.setText(detection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
-                    ? "待执行: 写回解密校验" : "Legacy: 仅兼容路径");
+                    ? "待执行: 写回解密校验" : "不支持一键写回：DS01xx 旧版协议（未修改文件）");
         } else {
             generation.setText("未识别"); family.setText("—"); runtime.setText("—"); regStr.setText("—"); targets.setText("—");
             jar.setText("—"); verify.setText("未识别到支持的授权结构");
@@ -298,7 +298,9 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         if (productMatch.find()) product = productMatch.group(1);
 
         String summary;
-        if ("JAVA_PLAN".equals(stage)) {
+        if ("DOTNET_LEGACY".equals(stage)) {
+            summary = "DS01xx 旧版 .NET 尚不支持一键授权写回；已安全停止，未修改任何目标文件。";
+        } else if ("JAVA_PLAN".equals(stage)) {
             summary = "Java 授权计划尚未满足自动恢复条件；工具已停止，未修改任何文件。";
         } else if (stage.startsWith("JAVA_IMPORT")) {
             summary = "已有注册码导入或 fresh JVM 验证未通过；工具已恢复写入前状态。";
