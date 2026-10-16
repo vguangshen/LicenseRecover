@@ -121,11 +121,23 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         try {
             if (d.kind == Kind.JAVA) return recoverJava(d,backup,blockNet,dryRun,log);
             if (d.kind == Kind.DOTNET_MODERN) return recoverDotNet(d,backup,blockNet,dryRun,log);
-            return Result.fail("This target has only the legacy .NET registration assembly; automatic write-back is not enabled for it yet.", d);
+            if (d.kind == Kind.DOTNET_LEGACY) return Result.fail(legacyWritebackUnavailable(d), d);
+            return Result.fail("[DETECTION] Unsupported authorization profile; no target files were changed.", d);
         } catch (Throwable ex) {
             log.accept("[error] " + safe(ex) + "\n");
             return Result.fail(safe(ex), d);
         }
+    }
+
+    /** Explicitly fail closed: DS01xx legacy registration is not the modern DoRegistry protocol. */
+    static String legacyWritebackUnavailable(Detection detection) {
+        String version = detection == null || blank(detection.versionId)
+                ? "DS01xx" : detection.versionId.trim();
+        return "[DOTNET_LEGACY] " + version
+                + " 使用旧版 .NET 注册协议，尚未实现经原生校验的自动写回。"
+                + " 该目录即使同时存在 ITMC.Regedit.dll，也不能仅凭文件存在就视为 Modern 协议。"
+                + " 本次未生成注册码、未执行写回、未修改任何目标文件。"
+                + " 仅阻断授权服务器不代表授权成功；请通过目标程序原有的注册流程提交合法授权并验证。";
     }
 
     private static Result recoverJava(Detection d, boolean backup, boolean blockNet, boolean dryRun, Consumer<String> log) throws Exception {
