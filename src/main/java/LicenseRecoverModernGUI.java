@@ -688,9 +688,10 @@ public final class LicenseRecoverModernGUI {
                                     ? (dotNetIdentityReady && dotNetRegReady
                                             ? "待执行: DoRegistry + CheckReInfo"
                                             : "未执行: DLL注册证据不足")
-                                    : "兼容方式一: 不适用";
-                            String dotNetStatus = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
-                                    && (!dotNetIdentityReady || !dotNetRegReady) ? "待确认" : "待处理";
+                                    : "禁止自动写回：旧版 .NET 协议";
+                            String dotNetStatus = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
+                                    ? "不支持自动写回"
+                                    : ((!dotNetIdentityReady || !dotNetRegReady) ? "待确认" : "待处理");
                             cells = new Object[]{child.getName(), kind,
                                     valueOrDash(d.versionId), valueOrDash(d.productName), valueOrDash(d.productName),
                                     valueOrDash(dotNetRegStr), "config.xml", verify, dotNetStatus,
@@ -991,6 +992,8 @@ public final class LicenseRecoverModernGUI {
         }
         LicenseRecoverModernGUIAutoRecovery.Detection d =
                 LicenseRecoverModernGUIAutoRecovery.detect(target.binDir);
+        if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY)
+            return "DS01xx 旧版 .NET 不支持一键授权写回；仅阻断联网不代表授权成功";
         if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN) {
             if (d.productName == null || d.productName.trim().isEmpty())
                 return ".NET 授权产品号未确认";
@@ -1005,7 +1008,7 @@ public final class LicenseRecoverModernGUI {
         File selected = target.type == BatchTarget.Type.JAVA ? target.appRoot : target.binDir;
         LicenseRecoverModernGUIAutoRecovery.Detection d = LicenseRecoverModernGUIAutoRecovery.detect(selected);
         if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY) {
-            return runLegacyBatchWay1(target.binDir, backup, preview);
+            return legacyBatchBlocked(d);
         }
         LicenseRecoverModernGUIAutoRecovery.Result result =
                 LicenseRecoverModernGUIAutoRecovery.recover(selected, backup, blockNet, preview, this::appendLog);
@@ -1016,16 +1019,10 @@ public final class LicenseRecoverModernGUI {
         return preview ? OperationResult.preview(result.message) : OperationResult.success(result.message);
     }
 
-    private OperationResult runLegacyBatchWay1(File binDir, boolean backup, boolean preview) {
-        File cli = cliJar();
-        if (!cli.isFile()) return OperationResult.failed("未找到 LicenseRecover.jar", 1);
-        List<String> cmd = new ArrayList<String>();
-        cmd.add(javaExe()); cmd.add("-Dfile.encoding=UTF-8"); cmd.add("-jar"); cmd.add(cli.getAbsolutePath());
-        cmd.add("--block-net"); cmd.add(binDir.getAbsolutePath());
-        if (preview) cmd.add("--dry-run");
-        if (!backup) cmd.add("--no-backup");
-        appendLog("[batch] .NET Legacy 使用兼容方式一：仅阻断失效授权服务，不重建本地授权。\n");
-        return ProcessRunner.run(cmd, this::appendLog, PROCESS_TIMEOUT_SECONDS);
+    /** Recommended batch recovery must not treat network blocking as a successful license restoration. */
+    static OperationResult legacyBatchBlocked(LicenseRecoverModernGUIAutoRecovery.Detection detection) {
+        return OperationResult.failed(
+                LicenseRecoverModernGUIAutoRecovery.legacyWritebackUnavailable(detection), 2);
     }
 
     private String batchVerification(BatchTarget target, boolean usePatch, boolean preview, OperationResult result) {
