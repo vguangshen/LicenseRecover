@@ -986,33 +986,34 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         File bin=new File(d.runtimeDir,"config.xml"); return bin.isFile()?bin:null;
     }
 
+    /** Reuse AppDetector's strict, local-only recognition while walking structural ancestors. */
     private static File findDotNetBin(File start) {
-        File cur=start;
-        while(cur!=null) {
-            if(hasDotNet(cur)) return cur;
-            File b="bin".equalsIgnoreCase(cur.getName())?cur:new File(cur,"bin"); if(hasDotNet(b)) return b;
-            if (!structural(cur.getName())) break; cur=cur.getParentFile();
+        File cur = start;
+        while (cur != null) {
+            File found = AppDetector.findDotNetBinLocal(cur);
+            if (found != null) return found;
+            if (!structural(cur.getName())) break;
+            cur = cur.getParentFile();
         }
         return null;
     }
-    private static boolean hasDotNet(File d) {
-        return d!=null&&d.isDirectory()&&new File(d,"ITMC.Web.dll").isFile()&&(new File(d,"ITMC.Regedit.dll").isFile()||new File(d,"itmcRegedit.dll").isFile());
-    }
+
     private static File findJavaLib(File start) {
-        File cur=start;
-        while(cur!=null) {
-            if("lib".equalsIgnoreCase(cur.getName())&&findRegJar(cur)!=null) return cur;
-            File a=new File(cur,"WEB-INF"+File.separator+"lib"); if(findRegJar(a)!=null)return a;
-            File b=new File(cur,"WEB-INF"+File.separator+"WEB-INF"+File.separator+"lib"); if(findRegJar(b)!=null)return b;
-            if(!structural(cur.getName()))break; cur=cur.getParentFile();
+        File cur = start;
+        while (cur != null) {
+            File found = AppDetector.findJavaLibLocal(cur);
+            if (found != null) return found;
+            if (!structural(cur.getName())) break;
+            cur = cur.getParentFile();
         }
         return null;
     }
-    private static File findRegJar(File d) {
-        if(d==null||!d.isDirectory())return null; File e=new File(d,"ITMCReg.jar"); if(e.isFile())return e;
-        File[] fs=d.listFiles((x,n)->n.toLowerCase(Locale.ROOT).startsWith("itmcreg")&&n.toLowerCase(Locale.ROOT).endsWith(".jar")); return fs!=null&&fs.length>0?fs[0]:null;
+
+    private static boolean structural(String n) {
+        return "bin".equalsIgnoreCase(n) || "lib".equalsIgnoreCase(n)
+                || "WEB-INF".equalsIgnoreCase(n) || "classes".equalsIgnoreCase(n)
+                || "data".equalsIgnoreCase(n);
     }
-    private static boolean structural(String n){return "bin".equalsIgnoreCase(n)||"lib".equalsIgnoreCase(n)||"WEB-INF".equalsIgnoreCase(n)||"classes".equalsIgnoreCase(n)||"data".equalsIgnoreCase(n);}
 
     private static String readVersion(File root,File bin) { String x=readVersionFile(new File(root,"config.xml")); return x!=null?x:readVersionFile(new File(bin,"config.xml")); }
     private static String readJavaVersion(File root) {
