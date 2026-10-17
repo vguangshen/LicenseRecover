@@ -1406,6 +1406,10 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         Files.write(legacyDotNetBin.resolve("ITMC.Regedit.dll"), new byte[]{1});
         LicenseRecoverModernGUIAutoRecovery.Detection legacyDotNetDetection =
                 LicenseRecoverModernGUIAutoRecovery.detect(legacyDotNetRoot.toFile());
+        AppInfo sharedDotNetDetection = AppDetector.detectLocal(legacyDotNetRoot.toFile());
+        check(sharedDotNetDetection.type == AppInfo.Type.DOTNET
+                        && sharedDotNetDetection.binDir.equals(legacyDotNetDetection.runtimeDir),
+                "single and one-click detection resolve the same .NET bin directory");
         check(legacyDotNetDetection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY,
                 "DS01xx remains legacy even when an uppercase compatibility ITMC.Regedit.dll is present");
         byte[] legacyConfigBefore = Files.readAllBytes(legacyDotNetRoot.resolve("config.xml"));
