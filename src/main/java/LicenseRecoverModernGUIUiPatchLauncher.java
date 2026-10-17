@@ -398,6 +398,12 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         dialog.setVisible(true);
     }
 
+    /** Legacy .NET is fail-closed and must never show a running verification state. */
+    static boolean isUnsupportedOneClick(LicenseRecoverModernGUIAutoRecovery.Detection detection) {
+        return detection != null
+                && detection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY;
+    }
+
     private static void runOneClick(final JFrame frame, final JButton button,
                                     final JLabel generationValue, final JLabel familyValue, final JLabel runtimeValue,
                                     final JTextArea regStrValue, final JTextArea targetValue,
@@ -413,6 +419,19 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         final JCheckBox blockNet = findCheckBox(frame.getContentPane(), "Java 方式一同时阻止联网");
         final JCheckBox dryRun = findCheckBox(frame.getContentPane(), "只预览，不写入");
         final JTextArea logArea = findTextAreaInTitledPanel(frame.getContentPane(), "运行日志");
+
+        // .NET legacy targets cannot run the modern one-click writer. Report this
+        // immediately instead of starting a worker with a misleading busy label.
+        final LicenseRecoverModernGUIAutoRecovery.Detection preflight =
+                LicenseRecoverModernGUIAutoRecovery.detect(selected);
+        if (isUnsupportedOneClick(preflight)) {
+            final String reason = LicenseRecoverModernGUIAutoRecovery.legacyWritebackUnavailable(preflight);
+            verifyValue.setText("不支持一键写回：" + value(preflight.versionId) + " 旧协议");
+            append(logArea, "[one-click] " + reason + "\n");
+            JOptionPane.showMessageDialog(frame, reason,
+                    "此应用不支持一键恢复", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
 
         final boolean doBackup = backup == null || backup.isSelected();
         final boolean doBlock = blockNet == null || blockNet.isSelected();
