@@ -569,23 +569,8 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         });
     }
 
-    private static final Object ONE_CLICK_LOG_LOCK = new Object();
-
     private static void appendPersistentOneClickLog(String text) {
-        try {
-            synchronized (ONE_CLICK_LOG_LOCK) {
-                File dir = new File(toolDir(), "logs");
-                Files.createDirectories(dir.toPath());
-                String day = new SimpleDateFormat("yyyyMMdd").format(new Date());
-                File file = new File(dir, "LicenseRecoverGUI-" + day + ".log");
-                String stamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
-                String entry = "[" + stamp + "] " + text;
-                Files.write(file.toPath(), entry.getBytes(StandardCharsets.UTF_8),
-                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-            }
-        } catch (Throwable ignore) {
-            // Diagnostic persistence must never turn recovery into a failure.
-        }
+        LicenseRecoverSharedLog.append(toolDir(), text);
     }
 
     private static Component findNamed(Container root, String name) {
