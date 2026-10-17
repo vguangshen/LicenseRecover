@@ -1343,6 +1343,38 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                         StandardCharsets.UTF_8).trim()),
                 "slim updater preserves existing embedded JRE");
 
+        Path rollbackInstall = base.resolve("rollback-update-install");
+        Files.createDirectories(rollbackInstall);
+        Files.write(rollbackInstall.resolve("VERSION.txt"), "0.9.0\n".getBytes(StandardCharsets.UTF_8));
+        Files.write(rollbackInstall.resolve("runtime.txt"), "preserve-original\n".getBytes(StandardCharsets.UTF_8));
+        Files.write(rollbackInstall.resolve("user-settings.ini"), "keep-user-data\n".getBytes(StandardCharsets.UTF_8));
+        boolean simulatedFailure = false;
+        try {
+            LicenseRecoverModernGUIUpdateInstaller.applyUpdate(updateZip.toFile(),
+                    rollbackInstall.toFile(), 7);
+        } catch (IOException expected) {
+            simulatedFailure = expected.getMessage().contains("[TEST_INJECT]");
+        }
+        check(simulatedFailure, "updater fault injection reaches partial installation");
+        check("0.9.0".equals(new String(Files.readAllBytes(rollbackInstall.resolve("VERSION.txt")),
+                        StandardCharsets.UTF_8).trim())
+                        && "preserve-original".equals(new String(Files.readAllBytes(rollbackInstall.resolve("runtime.txt")),
+                        StandardCharsets.UTF_8).trim()),
+                "failed updater restores original version and overwritten runtime");
+        check(!Files.exists(rollbackInstall.resolve("LicenseRecoverGUI.exe"))
+                        && !Files.exists(rollbackInstall.resolve("LicenseRecoverRuntime.jar"))
+                        && !Files.exists(rollbackInstall.resolve("nested/new.txt"))
+                        && !Files.exists(rollbackInstall.resolve("nested")),
+                "failed updater removes newly created files and directories");
+        check("keep-user-data".equals(new String(
+                        Files.readAllBytes(rollbackInstall.resolve("user-settings.ini")),
+                        StandardCharsets.UTF_8).trim()),
+                "failed updater preserves unrelated user files");
+        File[] temporaryRollbackDirs = rollbackInstall.toFile().listFiles(
+                file -> file.isDirectory() && file.getName().startsWith(".licenserecover-update-"));
+        check(temporaryRollbackDirs != null && temporaryRollbackDirs.length == 0,
+                "successful rollback cleans its temporary journal");
+
         Path maliciousZip = base.resolve("malicious.zip");
         zout = new ZipOutputStream(new BufferedOutputStream(Files.newOutputStream(maliciousZip)));
         try { writeZipEntry(zout, "../escape.txt", "blocked\n"); }
