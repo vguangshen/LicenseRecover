@@ -414,6 +414,19 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         final JCheckBox dryRun = findCheckBox(frame.getContentPane(), "只预览，不写入");
         final JTextArea logArea = findTextAreaInTitledPanel(frame.getContentPane(), "运行日志");
 
+        // Unsupported DS01xx native write-back must fail before entering the
+        // "executing and verifying" state. Keep diagnostic details available.
+        LicenseRecoverModernGUIAutoRecovery.Detection preflight =
+                LicenseRecoverModernGUIAutoRecovery.detect(selected);
+        if (preflight.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY) {
+            String reason = LicenseRecoverModernGUIAutoRecovery.legacyWritebackUnavailable(preflight);
+            verifyValue.setText("旧协议：不支持一键授权写回（未修改文件）");
+            append(logArea, "[one-click] " + reason + "\n");
+            showOneClickFailureDialog(frame,
+                    LicenseRecoverModernGUIAutoRecovery.Result.fail(reason, preflight));
+            return;
+        }
+
         final boolean doBackup = backup == null || backup.isSelected();
         final boolean doBlock = blockNet == null || blockNet.isSelected();
         final boolean preview = dryRun != null && dryRun.isSelected();
