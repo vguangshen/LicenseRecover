@@ -127,12 +127,60 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         try {
             if (d.kind == Kind.JAVA) return recoverJava(d,backup,blockNet,dryRun,log);
             if (d.kind == Kind.DOTNET_MODERN) return recoverDotNet(d,backup,blockNet,dryRun,log);
-            if (d.kind == Kind.DOTNET_LEGACY) return Result.fail(legacyWritebackUnavailable(d), d);
+            if (d.kind == Kind.DOTNET_LEGACY) return recoverLegacyDotNetPatch(d, dryRun, log);
             return Result.fail("[DETECTION] Unsupported authorization profile; no target files were changed.", d);
         } catch (Throwable ex) {
             log.accept("[error] " + safe(ex) + "\n");
             return Result.fail(safe(ex), d);
         }
+    }
+
+
+    /**
+     * Legacy DS01xx applications use the existing CLI patch engine, not the
+     * modern DoRegistry/CheckReInfo native write-back chain. Only a zero exit
+     * status from the old engine counts as a successful patch operation.
+     * A successful DLL patch is not an assertion of valid vendor authorization.
+     */
+    static Result recoverLegacyDotNetPatch(Detection d, boolean dryRun, Consumer<String> logger) {
+        Consumer<String> log = logger == null ? x -> { } : logger;
+        if (d == null || d.kind != Kind.DOTNET_LEGACY || d.runtimeDir == null) {
+            return Result.fail("[DOTNET_LEGACY_PATCH] 未确认旧版 .NET 目标。", d);
+        }
+        if (!isWindows())
+            return Result.fail("[DOTNET_LEGACY_PATCH] DLL Patch 仅支持 Windows 运行环境。", d);
+        File dll = new File(d.runtimeDir, "itmcRegedit.dll");
+        if (!dll.isFile())
+            return Result.fail("[DOTNET_LEGACY_PATCH] 找不到原生补丁目标 itmcRegedit.dll。", d);
+        File cli = new File(toolDir(), "LicenseRecover.jar");
+        if (!cli.isFile())
+            return Result.fail("[DOTNET_LEGACY_PATCH] 缺少 LicenseRecover.jar；未修改目标文件。", d);
+
+        if (!dryRun) {
+            AppInfo target = AppDetector.detectLocal(d.runtimeDir);
+            if (!PatchSafety.prepare(target, log))
+                return Result.fail("[DOTNET_LEGACY_PATCH] 安全备份未通过；未修改目标文件。", d);
+        }
+        java.util.List<String> command = legacyDotNetPatchCommand(cli, d.runtimeDir, dryRun);
+        log.accept("[legacy-patch] " + (dryRun ? "scan only" : "patch")
+                + ": " + d.versionId + " / " + dll.getAbsolutePath() + "\n");
+        OperationResult rc = ProcessRunner.run(command, log, 600L);
+        if (!rc.isSuccess()) {
+            return Result.fail("[DOTNET_LEGACY_PATCH] 旧版 DLL "
+                    + (dryRun ? "扫描" : "补丁") + "执行失败；exit=" + rc.exitCode
+                    + "; output=" + rc.message
+                    + "。请查看运行日志中的 .NET helper 输出，若失败请从 prepatch 备份恢复。", d);
+        }
+        return new Result(true,
+                dryRun ? "[DOTNET_LEGACY_PATCH] 扫描完成，未修改目标文件。"
+                       : "[DOTNET_LEGACY_PATCH] 旧版 DLL Patch 命令已成功结束。请重启 IIS 站点并检查实际运行状态；本操作不等于原生授权验证通过。",
+                d, null, null, null);
+    }
+
+    static java.util.List<String> legacyDotNetPatchCommand(File cliJar, File binDir, boolean preview) {
+        return Arrays.asList(javaExe(), "-Dfile.encoding=UTF-8", "-jar",
+                cliJar.getAbsolutePath(), preview ? "--scan-net" : "--remove-net",
+                binDir.getAbsolutePath());
     }
 
     /** Explicitly fail closed: DS01xx legacy registration is not the modern DoRegistry protocol. */
