@@ -38,7 +38,9 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
 
     static void installOneClickRecovery(final JFrame frame) {
         if (frame == null) return;
-        final JPanel card = findTitledPanel(frame.getContentPane(), "常用操作");
+        final Component namedCard = findNamed(frame.getContentPane(), "LicenseRecoverRecommendedCard");
+        final JPanel card = namedCard instanceof JPanel ? (JPanel) namedCard
+                : findTitledPanel(frame.getContentPane(), "常用操作");
         if (card == null || findNamed(card, ONE_CLICK_CONTROL_NAME) != null) return;
 
         LayoutManager oldLayout = card.getLayout();
@@ -518,6 +520,10 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
     }
 
     private static JTextField findTextFieldInTitledPanel(Container root, String title) {
+        if ("应用目录".equals(title)) {
+            Component named = findNamed(root, "LicenseRecoverAppRoot");
+            if (named instanceof JTextField) return (JTextField) named;
+        }
         JPanel panel = findTitledPanel(root, title);
         return panel == null ? null : findTextField(panel);
     }
@@ -545,6 +551,10 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
     }
 
     private static JTextArea findTextAreaInTitledPanel(Container root, String title) {
+        if ("运行日志".equals(title)) {
+            Component named = findNamed(root, "LicenseRecoverLogArea");
+            if (named instanceof JTextArea) return (JTextArea) named;
+        }
         JPanel panel = findTitledPanel(root, title);
         return panel == null ? null : findTextArea(panel);
     }
@@ -569,23 +579,8 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         });
     }
 
-    private static final Object ONE_CLICK_LOG_LOCK = new Object();
-
     private static void appendPersistentOneClickLog(String text) {
-        try {
-            synchronized (ONE_CLICK_LOG_LOCK) {
-                File dir = new File(toolDir(), "logs");
-                Files.createDirectories(dir.toPath());
-                String day = new SimpleDateFormat("yyyyMMdd").format(new Date());
-                File file = new File(dir, "LicenseRecoverGUI-" + day + ".log");
-                String stamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
-                String entry = "[" + stamp + "] " + text;
-                Files.write(file.toPath(), entry.getBytes(StandardCharsets.UTF_8),
-                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-            }
-        } catch (Throwable ignore) {
-            // Diagnostic persistence must never turn recovery into a failure.
-        }
+        LicenseRecoverSharedLog.append(toolDir(), text);
     }
 
     private static Component findNamed(Container root, String name) {

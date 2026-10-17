@@ -5,6 +5,7 @@ import java.awt.*;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.io.File;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
@@ -42,7 +43,6 @@ public final class LicenseRecoverModernGUI {
     private final JLabel recommendationValue = new JLabel("请选择应用目录并检测");
     private final JLabel statusLabel = new JLabel("就绪");
     private final JTextArea logArea = new JTextArea();
-    private final Object persistentLogLock = new Object();
     private final JButton detectButton = new JButton("检测环境");
     private final JButton way1Button = new JButton("执行推荐的方式一");
     private final JButton genButton = new JButton("生成离线授权码");
@@ -175,6 +175,7 @@ public final class LicenseRecoverModernGUI {
         panel.setBorder(new EmptyBorder(8, 4, 8, 4));
 
         JPanel path = new JPanel(new BorderLayout(6, 0));
+        appRootField.setName("LicenseRecoverAppRoot");
         path.setBorder(BorderFactory.createTitledBorder("应用目录"));
         path.add(appRootField, BorderLayout.CENTER);
         JPanel pathButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
@@ -236,6 +237,7 @@ public final class LicenseRecoverModernGUI {
 
     private JComponent buildRecommendedCard() {
         JPanel card = new JPanel(new GridBagLayout());
+        card.setName("LicenseRecoverRecommendedCard");
         card.setBorder(BorderFactory.createTitledBorder("常用操作"));
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(5, 6, 5, 6);
@@ -382,6 +384,7 @@ public final class LicenseRecoverModernGUI {
     }
 
     private JComponent buildLogPanel() {
+        logArea.setName("LicenseRecoverLogArea");
         JPanel panel = new JPanel(new BorderLayout(6, 4));
         panel.setBorder(BorderFactory.createTitledBorder("运行日志"));
         logArea.setEditable(false);
@@ -1125,20 +1128,7 @@ public final class LicenseRecoverModernGUI {
     }
 
     private void appendPersistentLog(String text) {
-        try {
-            synchronized (persistentLogLock) {
-                File dir = new File(toolDir(), "logs");
-                Files.createDirectories(dir.toPath());
-                String day = new SimpleDateFormat("yyyyMMdd").format(new Date());
-                File file = new File(dir, "LicenseRecoverGUI-" + day + ".log");
-                String stamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
-                String entry = "[" + stamp + "] " + text;
-                Files.write(file.toPath(), entry.getBytes(StandardCharsets.UTF_8),
-                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-            }
-        } catch (Throwable ignore) {
-            // Diagnostics must never turn a recovery result into a failure.
-        }
+        LicenseRecoverSharedLog.append(toolDir(), text);
     }
 
     private File cliJar() {
@@ -1167,5 +1157,29 @@ public final class LicenseRecoverModernGUI {
 
     private static String valueOrDash(String value) {
         return empty(value) ? "—" : value;
+    }
+}
+
+/** Shared persistent logging for the modern UI and one-click overlay. */
+final class LicenseRecoverSharedLog {
+    private static final Object LOCK = new Object();
+
+    private LicenseRecoverSharedLog() { }
+
+    static void append(File appDir, String message) {
+        if (appDir == null || message == null || message.isEmpty()) return;
+        try {
+            synchronized (LOCK) {
+                File logs = new File(appDir, "logs");
+                Files.createDirectories(logs.toPath());
+                String day = new SimpleDateFormat("yyyyMMdd").format(new Date());
+                File path = new File(logs, "LicenseRecoverGUI-" + day + ".log");
+                String timestamp = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date());
+                Files.write(path.toPath(), ("[" + timestamp + "] " + message).getBytes(StandardCharsets.UTF_8),
+                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            }
+        } catch (IOException ex) {
+            System.err.println("[日志] 无法持久化运行日志: " + ex.getMessage());
+        }
     }
 }

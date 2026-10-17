@@ -1343,6 +1343,47 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                         StandardCharsets.UTF_8).trim()),
                 "slim updater preserves existing embedded JRE");
 
+        Path rollbackInstall = base.resolve("rollback-update-install");
+        Files.createDirectories(rollbackInstall);
+        Files.write(rollbackInstall.resolve("VERSION.txt"), "0.9.0\n".getBytes(StandardCharsets.UTF_8));
+        Files.write(rollbackInstall.resolve("runtime.txt"), "preserve-original\n".getBytes(StandardCharsets.UTF_8));
+        Files.write(rollbackInstall.resolve("user-settings.ini"), "keep-user-data\n".getBytes(StandardCharsets.UTF_8));
+        boolean simulatedFailure = false;
+        try {
+            LicenseRecoverModernGUIUpdateInstaller.applyUpdate(updateZip.toFile(),
+                    rollbackInstall.toFile(), 7);
+        } catch (IOException expected) {
+            simulatedFailure = expected.getMessage().contains("[TEST_INJECT]");
+        }
+        check(simulatedFailure, "updater fault injection reaches partial installation");
+        check("0.9.0".equals(new String(Files.readAllBytes(rollbackInstall.resolve("VERSION.txt")),
+                        StandardCharsets.UTF_8).trim())
+                        && "preserve-original".equals(new String(Files.readAllBytes(rollbackInstall.resolve("runtime.txt")),
+                        StandardCharsets.UTF_8).trim()),
+                "failed updater restores original version and overwritten runtime");
+        check(!Files.exists(rollbackInstall.resolve("LicenseRecoverGUI.exe"))
+                        && !Files.exists(rollbackInstall.resolve("LicenseRecoverRuntime.jar"))
+                        && !Files.exists(rollbackInstall.resolve("nested/new.txt"))
+                        && !Files.exists(rollbackInstall.resolve("nested")),
+                "failed updater removes newly created files and directories");
+        check("keep-user-data".equals(new String(
+                        Files.readAllBytes(rollbackInstall.resolve("user-settings.ini")),
+                        StandardCharsets.UTF_8).trim()),
+                "failed updater preserves unrelated user files");
+        File[] temporaryRollbackDirs = rollbackInstall.toFile().listFiles(
+                file -> file.isDirectory() && file.getName().startsWith(".licenserecover-update-"));
+        check(temporaryRollbackDirs != null && temporaryRollbackDirs.length == 0,
+                "successful rollback cleans its temporary journal");
+
+        LicenseRecoverSharedLog.append(rollbackInstall.toFile(), "[test] synchronized log writer\n");
+        File commonLogDir = rollbackInstall.resolve("logs").toFile();
+        File[] commonLogs = commonLogDir.listFiles((dir, name) -> name.startsWith("LicenseRecoverGUI-")
+                && name.endsWith(".log"));
+        check(commonLogs != null && commonLogs.length == 1
+                        && new String(Files.readAllBytes(commonLogs[0].toPath()),
+                        StandardCharsets.UTF_8).contains("[test] synchronized log writer"),
+                "unified GUI and one-click log writer persists diagnostics");
+
         Path maliciousZip = base.resolve("malicious.zip");
         zout = new ZipOutputStream(new BufferedOutputStream(Files.newOutputStream(maliciousZip)));
         try { writeZipEntry(zout, "../escape.txt", "blocked\n"); }
@@ -1365,6 +1406,10 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         Files.write(legacyDotNetBin.resolve("ITMC.Regedit.dll"), new byte[]{1});
         LicenseRecoverModernGUIAutoRecovery.Detection legacyDotNetDetection =
                 LicenseRecoverModernGUIAutoRecovery.detect(legacyDotNetRoot.toFile());
+        AppInfo sharedDotNetDetection = AppDetector.detectLocal(legacyDotNetRoot.toFile());
+        check(sharedDotNetDetection.type == AppInfo.Type.DOTNET
+                        && sharedDotNetDetection.binDir.equals(legacyDotNetDetection.runtimeDir),
+                "single and one-click detection resolve the same .NET bin directory");
         check(legacyDotNetDetection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY,
                 "DS01xx remains legacy even when an uppercase compatibility ITMC.Regedit.dll is present");
         byte[] legacyConfigBefore = Files.readAllBytes(legacyDotNetRoot.resolve("config.xml"));
@@ -1462,7 +1507,7 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         check(!absentBefore.exists()
                         && "before".equals(new String(Files.readAllBytes(presentBefore.toPath()),
                                 StandardCharsets.UTF_8).trim()),
-                "failed existing-code import rollback deletes newly-created config and restores prior files");
+                "Java one-click rollback deletes newly-created config and restores prior files");
         LicenseRecoverModernGUIAutoRecovery.Result requestOnlyResult =
                 new LicenseRecoverModernGUIAutoRecovery.Result(true,
                         "[JAVA_REQUEST_ONLY] request generated", null, null,
@@ -1511,8 +1556,19 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         check(bridgeSource237.contains("helperDispatch=RunDirect/hosted-AppDomain"),
                 "ASP.NET bridge emits hosted-AppDomain dispatch diagnostics");
         check(hostSource230.contains("ResolveAppRoot(runtimeDir)"), "ASP.NET host resolves target web root from runtime dir");
+        String modernGuiStableSource = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUI.java")), StandardCharsets.UTF_8);
+        check(modernGuiStableSource.contains("LicenseRecoverRecommendedCard")
+                        && modernGuiStableSource.contains("LicenseRecoverAppRoot")
+                        && modernGuiStableSource.contains("LicenseRecoverLogArea"),
+                "modern GUI exposes stable IDs for core components");
+        check(modernGuiStableSource.contains("LicenseRecoverSharedLog.append")
+                        && !modernGuiStableSource.contains("persistentLogLock"),
+                "modern GUI uses shared diagnostic writer");
         String uiPatch230 = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIUiPatchLauncher.java")), StandardCharsets.UTF_8);
         check(uiPatch230.contains("appendPersistentOneClickLog"), "one-click overlay writes persistent diagnostics");
+        check(uiPatch230.contains("findNamed(frame.getContentPane(), \"LicenseRecoverRecommendedCard\")")
+                        && uiPatch230.contains("LicenseRecoverSharedLog.append"),
+                "one-click overlay uses stable component ID and shared persistent logging");
         check(!uiPatch230.contains("已有注册码导入")
                         && !uiPatch230.contains("runExistingJavaAuthorizationImport")
                         && !uiPatch230.contains("importAuthorization"),

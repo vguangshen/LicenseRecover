@@ -1,6 +1,3 @@
-import javax.swing.*;
-import javax.swing.border.TitledBorder;
-import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.*;
@@ -44,94 +41,6 @@ public final class LicenseRecoverModernGUIBackupCleanup {
         public final int deleted, failed; public final long freedBytes;
         DeleteResult(int d, int f, long b) { deleted=d; failed=f; freedBytes=b; }
     }
-
-    public static void installLater(String[] args) {
-        if (contains(args, "--update-only")) return;
-        SwingUtilities.invokeLater(() -> { JFrame f=findMainFrame(); if (f!=null) install(f); });
-    }
-
-    static void install(JFrame frame) {
-        if (frame == null || findNamed(frame.getContentPane(), CONTROL_NAME) != null) return;
-        JTabbedPane tabs = findTabs(frame.getContentPane());
-        if (tabs == null) return;
-        Component batch = null;
-        for (int i=0;i<tabs.getTabCount();i++) if ("批量应用".equals(tabs.getTitleAt(i))) { batch=tabs.getComponentAt(i); break; }
-        if (batch == null) return;
-        JPanel top = findBatchTopPanel(batch);
-        final JTextField rootField = top == null ? null : findFirst(top, JTextField.class);
-        if (top == null || rootField == null) return;
-
-        final JSpinner keep = new JSpinner(new SpinnerNumberModel(3, 0, 50, 1));
-        keep.setToolTipText("按每个原文件计算；0 表示删除全部受管理备份");
-        final JButton clean = new JButton("批量清理备份...");
-        clean.setName(CONTROL_NAME);
-        clean.setToolTipText("仅处理 LicenseRecover 生成的备份；普通 .bak 不处理");
-        clean.addActionListener(e -> runCleanup(frame, rootField, keep, clean));
-
-        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        row.add(new JLabel("每个原文件保留最近")); row.add(keep); row.add(new JLabel("份")); row.add(clean);
-        JLabel hint = new JLabel("（先预览，确认后删除；普通 .bak 不处理）");
-        hint.setForeground(new Color(0x57606a)); row.add(hint);
-
-        GridBagConstraints c = new GridBagConstraints();
-        c.insets=new Insets(4,6,4,6); c.fill=GridBagConstraints.HORIZONTAL; c.anchor=GridBagConstraints.WEST;
-        c.gridx=0; c.gridy=3; c.weightx=0; top.add(new JLabel("备份整理:"),c);
-        c.gridx=1; c.gridwidth=3; c.weightx=1; top.add(row,c);
-        top.revalidate(); top.repaint();
-    }
-
-    private static void runCleanup(final JFrame frame, final JTextField rootField, final JSpinner keepSpinner, final JButton button) {
-        final File root = new File(rootField.getText().trim());
-        if (!root.isDirectory()) {
-            JOptionPane.showMessageDialog(frame,"请先在批量应用页选择有效的父目录。","批量清理备份",JOptionPane.WARNING_MESSAGE); return;
-        }
-        JButton cancel=findButton(frame.getContentPane(),"取消");
-        if (cancel!=null && cancel.isEnabled()) {
-            JOptionPane.showMessageDialog(frame,"当前有批量扫描/执行任务正在运行，请先等待完成或取消任务。","批量清理备份",JOptionPane.WARNING_MESSAGE); return;
-        }
-        final int keep=((Number)keepSpinner.getValue()).intValue();
-        button.setEnabled(false); button.setText("正在扫描备份...");
-        appendGuiLog(frame,"[备份清理] 扫描: "+root.getAbsolutePath()+"；每个原文件保留最近 "+keep+" 份。\n");
-        new SwingWorker<Plan,Void>() {
-            protected Plan doInBackground() throws Exception { return scan(root,keep); }
-            protected void done() {
-                final Plan plan;
-                try { plan=get(); } catch(Exception ex) {
-                    reset(button); JOptionPane.showMessageDialog(frame,"扫描备份失败：\n"+safe(ex),"批量清理备份",JOptionPane.ERROR_MESSAGE); return;
-                }
-                if (plan.matched.isEmpty()) {
-                    reset(button); JOptionPane.showMessageDialog(frame,"没有找到 LicenseRecover 管理的备份文件。\n普通 .bak 文件不会被匹配。","批量清理备份",JOptionPane.INFORMATION_MESSAGE); return;
-                }
-                if (plan.delete.isEmpty()) {
-                    reset(button); JOptionPane.showMessageDialog(frame,"找到 "+plan.matched.size()+" 个 LicenseRecover 备份，当前保留策略无需删除。","批量清理备份",JOptionPane.INFORMATION_MESSAGE); return;
-                }
-                String zero=keep==0?"\n\n注意：当前设置为保留 0 份，将删除扫描范围内全部受管理备份。":"";
-                int yes=JOptionPane.showConfirmDialog(frame,
-                        "扫描目录："+plan.root.getAbsolutePath()+"\n找到受管理备份："+plan.matched.size()+" 个"
-                        +"\n保留："+plan.keepCount+" 个\n准备删除："+plan.delete.size()+" 个\n预计释放："+humanBytes(plan.deleteBytes)
-                        +"\n\n只匹配 LicenseRecover 的 prewrite / prepatch / preoneclick 以及旧版受支持时间戳备份；不会清理普通 .bak。"
-                        +zero+"\n\n确定执行删除吗？","确认批量清理备份",JOptionPane.OK_CANCEL_OPTION,JOptionPane.WARNING_MESSAGE);
-                if (yes!=JOptionPane.OK_OPTION) { reset(button); appendGuiLog(frame,"[备份清理] 用户取消；未删除任何文件。\n"); return; }
-                button.setText("正在清理...");
-                new SwingWorker<DeleteResult,Void>() {
-                    protected DeleteResult doInBackground() {
-                        return LicenseRecoverModernGUIBackupCleanup.execute(plan,s -> appendGuiLog(frame,s));
-                    }
-                    protected void done() {
-                        reset(button);
-                        try {
-                            DeleteResult r=get();
-                            JOptionPane.showMessageDialog(frame,"清理完成。\n已删除："+r.deleted+" 个\n失败："+r.failed+" 个\n实际释放："+humanBytes(r.freedBytes),
-                                    "批量清理备份",r.failed==0?JOptionPane.INFORMATION_MESSAGE:JOptionPane.WARNING_MESSAGE);
-                            appendGuiLog(frame,"[备份清理] 完成：删除 "+r.deleted+"，失败 "+r.failed+"，释放 "+humanBytes(r.freedBytes)+"。\n");
-                        } catch(Exception ex) { JOptionPane.showMessageDialog(frame,"清理失败：\n"+safe(ex),"批量清理备份",JOptionPane.ERROR_MESSAGE); }
-                    }
-                }.execute();
-            }
-        }.execute();
-    }
-
-    private static void reset(JButton b) { b.setEnabled(true); b.setText("批量清理备份..."); }
 
     public static Plan scan(File root, int keepNewest) throws IOException {
         if (root==null || !root.isDirectory()) throw new IOException("清理根目录无效");
@@ -180,17 +89,7 @@ public final class LicenseRecoverModernGUIBackupCleanup {
         m=LEGACY.matcher(n); return m.matches()?new Candidate(path,m.group(1),m.group(2),0,size):null;
     }
 
-    private static JFrame findMainFrame(){for(Frame x:Frame.getFrames())if(x instanceof JFrame&&x.isDisplayable()){JFrame f=(JFrame)x;if("ITMC 离线授权恢复工具".equals(f.getTitle()))return f;}return null;}
-    private static JTabbedPane findTabs(Container r){if(r instanceof JTabbedPane)return(JTabbedPane)r;for(Component c:r.getComponents())if(c instanceof Container){JTabbedPane x=findTabs((Container)c);if(x!=null)return x;}return null;}
-    private static JPanel findBatchTopPanel(Component r){if(r instanceof JPanel){JPanel p=(JPanel)r;if(p.getLayout() instanceof GridBagLayout&&hasLabel(p,"父目录:"))return p;}if(r instanceof Container)for(Component c:((Container)r).getComponents()){JPanel p=findBatchTopPanel(c);if(p!=null)return p;}return null;}
-    private static boolean hasLabel(Container r,String s){for(Component c:r.getComponents())if(c instanceof JLabel&&s.equals(((JLabel)c).getText()))return true;return false;}
-    private static <T extends Component>T findFirst(Container r,Class<T> t){for(Component c:r.getComponents()){if(t.isInstance(c))return t.cast(c);if(c instanceof Container){T x=findFirst((Container)c,t);if(x!=null)return x;}}return null;}
-    private static Component findNamed(Container r,String n){for(Component c:r.getComponents()){if(n.equals(c.getName()))return c;if(c instanceof Container){Component x=findNamed((Container)c,n);if(x!=null)return x;}}return null;}
-    private static JButton findButton(Container r,String s){for(Component c:r.getComponents()){if(c instanceof JButton&&s.equals(((JButton)c).getText()))return(JButton)c;if(c instanceof Container){JButton x=findButton((Container)c,s);if(x!=null)return x;}}return null;}
-    private static void appendGuiLog(JFrame f,String s){if(f==null||s==null||s.isEmpty())return;Runnable r=()->{JTextArea a=findLogArea(f.getContentPane());if(a!=null){a.append(s);a.setCaretPosition(a.getDocument().getLength());}};if(SwingUtilities.isEventDispatchThread())r.run();else SwingUtilities.invokeLater(r);}
-    private static JTextArea findLogArea(Container r){if(r instanceof JPanel){JPanel p=(JPanel)r;if(p.getBorder() instanceof TitledBorder&&"运行日志".equals(((TitledBorder)p.getBorder()).getTitle()))return findFirst(p,JTextArea.class);}for(Component c:r.getComponents())if(c instanceof Container){JTextArea a=findLogArea((Container)c);if(a!=null)return a;}return null;}
     static String formatBytes(long b){if(b<1024)return b+" B";double v=b;String[]u={"KB","MB","GB","TB"};int i=-1;do{v/=1024;i++;}while(v>=1024&&i<u.length-1);return String.format(Locale.ROOT,"%.2f %s",v,u[i]);}
-    private static String humanBytes(long b){return formatBytes(b);}
     private static boolean contains(String[]a,String s){if(a!=null)for(String x:a)if(s.equals(x))return true;return false;}
     private static String safe(Throwable e){Throwable x=e;while(x!=null&&x.getCause()!=null)x=x.getCause();String s=x==null?"未知错误":x.getMessage();return s==null||s.trim().isEmpty()?String.valueOf(x):s;}
 
