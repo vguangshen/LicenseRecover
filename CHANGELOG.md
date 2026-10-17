@@ -1,3 +1,22 @@
+## 1.2.57 - 2026-10-17
+
+### Fixed
+- Hardened self-update with a journal of newly created files/directories, rollback of overwritten files, post-rollback content verification, and retained recovery backups if restoration fails.
+- Updated installer failure-injection regression exercises a partial copy and checks original version/runtime, user files, and removal of new entries.
+- Removed the optional existing-code import UI and dedicated coordinator in the preceding verified mainline change; one-click and batch recovery paths remain.
+
+### Refactored
+- Retired six version-specific one-off migration scripts, a dead legacy GUI product-family stub, and the unused backup-cleanup GUI injection layer. The active backup scan/execute API remains.
+- Unified strict directory recognition between AppDetector and the one-click coordinator while preserving structural-ancestor search behavior.
+- Unified GUI and one-click persistent logging under a shared synchronized writer.
+- Added stable component identifiers for the recommended-operation card, application directory and runtime log panel, with legacy title lookup kept as fallback.
+- Reused the same obsolete-entrypoint cleanup routine in the launcher and updater.
+- Refreshed the simplified README.txt and bumped stable version metadata.
+
+### Verification
+- Java 8 source compilation and smoke tests, synthetic update failure injection, backup cleanup self-test, Windows .NET integration workflows, native launcher packaging and SHA-256 distribution checks.
+- Real vendor-licensed write-back or production IIS sample behavior is not newly claimed as verified by this refactor.
+
 ## 1.2.56 - 2026-10-16
 
 ### Fixed
