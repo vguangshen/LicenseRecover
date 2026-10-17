@@ -174,6 +174,7 @@ public final class LicenseRecoverModernGUI {
         panel.setBorder(new EmptyBorder(8, 4, 8, 4));
 
         JPanel path = new JPanel(new BorderLayout(6, 0));
+        appRootField.setName("LicenseRecoverAppRoot");
         path.setBorder(BorderFactory.createTitledBorder("应用目录"));
         path.add(appRootField, BorderLayout.CENTER);
         JPanel pathButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
@@ -235,6 +236,7 @@ public final class LicenseRecoverModernGUI {
 
     private JComponent buildRecommendedCard() {
         JPanel card = new JPanel(new GridBagLayout());
+        card.setName("LicenseRecoverRecommendedCard");
         card.setBorder(BorderFactory.createTitledBorder("常用操作"));
         GridBagConstraints c = new GridBagConstraints();
         c.insets = new Insets(5, 6, 5, 6);
@@ -381,6 +383,7 @@ public final class LicenseRecoverModernGUI {
     }
 
     private JComponent buildLogPanel() {
+        logArea.setName("LicenseRecoverLogArea");
         JPanel panel = new JPanel(new BorderLayout(6, 4));
         panel.setBorder(BorderFactory.createTitledBorder("运行日志"));
         logArea.setEditable(false);
