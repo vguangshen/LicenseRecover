@@ -691,9 +691,10 @@ public final class LicenseRecoverModernGUI {
                                     ? (dotNetIdentityReady && dotNetRegReady
                                             ? "待执行: DoRegistry + CheckReInfo"
                                             : "未执行: DLL注册证据不足")
-                                    : "禁止自动写回：旧版 .NET 协议";
+                                    : "待执行: 旧协议 DLL Patch（非原生授权校验）";
                             String dotNetStatus = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
-                                    ? "不支持自动写回"
+                                    ? (new File(d.runtimeDir, "itmcRegedit.dll").isFile()
+                                            ? "待处理: 旧版 Patch" : "缺少补丁目标")
                                     : ((!dotNetIdentityReady || !dotNetRegReady) ? "待确认" : "待处理");
                             cells = new Object[]{child.getName(), kind,
                                     valueOrDash(d.versionId), valueOrDash(d.productName), valueOrDash(d.productName),
@@ -996,7 +997,8 @@ public final class LicenseRecoverModernGUI {
         LicenseRecoverModernGUIAutoRecovery.Detection d =
                 LicenseRecoverModernGUIAutoRecovery.detect(target.binDir);
         if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY)
-            return "DS01xx 旧版 .NET 不支持一键授权写回；仅阻断联网不代表授权成功";
+            return new File(d.runtimeDir, "itmcRegedit.dll").isFile()
+                    ? null : "缺少旧版 .NET 补丁目标 itmcRegedit.dll";
         if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN) {
             if (d.productName == null || d.productName.trim().isEmpty())
                 return ".NET 授权产品号未确认";
@@ -1010,8 +1012,9 @@ public final class LicenseRecoverModernGUI {
     private OperationResult runBatchRecommended(BatchTarget target, boolean backup, boolean blockNet, boolean preview) {
         File selected = target.type == BatchTarget.Type.JAVA ? target.appRoot : target.binDir;
         LicenseRecoverModernGUIAutoRecovery.Detection d = LicenseRecoverModernGUIAutoRecovery.detect(selected);
-        if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY) {
-            return legacyBatchBlocked(d);
+        if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
+                && !new File(d.runtimeDir, "itmcRegedit.dll").isFile()) {
+            return OperationResult.failed("[DOTNET_LEGACY_PATCH] 缺少旧版补丁目标 itmcRegedit.dll", 2);
         }
         LicenseRecoverModernGUIAutoRecovery.Result result =
                 LicenseRecoverModernGUIAutoRecovery.recover(selected, backup, blockNet, preview, this::appendLog);
@@ -1037,7 +1040,9 @@ public final class LicenseRecoverModernGUI {
             return result.isSuccess() ? "RegisterMain: OK" : "RegisterMain: FAILED";
         }
         LicenseRecoverModernGUIAutoRecovery.Detection d = LicenseRecoverModernGUIAutoRecovery.detect(target.binDir);
-        if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY) return "兼容方式一: 不适用";
+        if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY)
+            return preview ? "SCAN: 旧版 DLL" : (result.isSuccess()
+                    ? "PATCH: 旧版 DLL 已执行" : "PATCH: FAILED");
         if (preview) return "预览: 未执行写回校验";
         if (!result.isSuccess()) {
             String reason = result.message == null ? "" : result.message;
