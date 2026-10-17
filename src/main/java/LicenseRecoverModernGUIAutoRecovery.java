@@ -11,6 +11,7 @@ import java.security.MessageDigest;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.function.Consumer;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -65,6 +66,12 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (bin != null) {
             File root = "bin".equalsIgnoreCase(bin.getName()) && bin.getParentFile()!=null ? bin.getParentFile() : bin;
             String version = readVersion(root, bin);
+            // DS01xx is a known legacy protocol. Do not parse modern registration
+            // assemblies on the Swing event thread for an unsupported write-back.
+            // The dedicated old-code registration page can still inspect product
+            // metadata separately when explicitly used.
+            if (LegacyDotNetProtocol.isLegacyVersion(version))
+                return new Detection(Kind.DOTNET_LEGACY, s, root, bin, version, null);
             File webDll = new File(bin, "ITMC.Web.dll");
             String configuredProduct = detectConfiguredDotNetProduct(root, bin, version);
             String assemblyProduct = detectProduct(webDll, version);
@@ -614,27 +621,71 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         NativeProcessResult(int exitCode, String output) { this.exitCode=exitCode; this.output=output==null?"":output; }
     }
 
+    private static final long NATIVE_PROCESS_TIMEOUT_SECONDS = 180L;
+
     static NativeProcessResult runNativeCapture(List<String> cmd, File workDir, Consumer<String> log) throws Exception {
+        return runNativeCapture(cmd, workDir, log, NATIVE_PROCESS_TIMEOUT_SECONDS);
+    }
+
+    /**
+     * Bounded helper-process execution with concurrent output draining.
+     * Keeps unresponsive native code from blocking the GUI indefinitely.
+     */
+    static NativeProcessResult runNativeCapture(List<String> cmd, File workDir, Consumer<String> log,
+                                                long timeoutSeconds) throws Exception {
+        if (timeoutSeconds <= 0) throw new IllegalArgumentException("timeoutSeconds must be positive");
         ProcessBuilder pb = new ProcessBuilder(cmd).redirectErrorStream(true);
         if (workDir != null && workDir.isDirectory()) pb.directory(workDir);
-        // Defense in depth for HTTP stacks that honor proxy environment variables.
-        // The Windows Firewall application rule remains the authoritative guard.
         Map<String,String> env = pb.environment();
         env.put("HTTP_PROXY", "http://127.0.0.1:9");
         env.put("HTTPS_PROXY", "http://127.0.0.1:9");
         env.put("ALL_PROXY", "http://127.0.0.1:9");
         env.put("NO_PROXY", "localhost,127.0.0.1,::1");
         Process p = pb.start();
-        BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8));
-        StringBuilder all = new StringBuilder();
-        try {
-            String line;
-            while ((line = r.readLine()) != null) {
-                all.append(line).append('\n');
-                if (log != null) log.accept(line + "\n");
+        StringBuffer output = new StringBuffer();
+        Thread drainer = new Thread(() -> {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (output.length() < 1024 * 1024) output.append(line).append('\n');
+                    if (log != null) {
+                        try { log.accept(line + "\n"); }
+                        catch (RuntimeException ignored) { }
+                    }
+                }
+            } catch (IOException ex) {
+                output.append("[native-output-warning] ").append(ex.toString()).append('\n');
             }
-        } finally { try { r.close(); } catch (IOException ignore) { } }
-        return new NativeProcessResult(p.waitFor(), all.toString());
+        }, "LicenseRecover-native-output");
+        drainer.setDaemon(true);
+        drainer.start();
+        boolean done;
+        try {
+            done = p.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+        } catch (InterruptedException ex) {
+            p.destroyForcibly();
+            Thread.currentThread().interrupt();
+            throw new IOException("[NATIVE_INTERRUPTED] Native operation interrupted; child terminated.", ex);
+        }
+        if (!done) {
+            p.destroyForcibly();
+            try { p.waitFor(3L, TimeUnit.SECONDS); }
+            catch (InterruptedException ex) { Thread.currentThread().interrupt(); }
+        }
+        try { drainer.join(1500L); }
+        catch (InterruptedException ex) { Thread.currentThread().interrupt(); }
+        if (!done) {
+            String message = "[NATIVE_TIMEOUT] Native helper exceeded " + timeoutSeconds
+                    + " seconds and was terminated; inspect the operation log.";
+            output.append(message).append('\n');
+            if (log != null) {
+                try { log.accept(message + "\n"); } catch (RuntimeException ignored) { }
+            }
+            return new NativeProcessResult(124, output.toString());
+        }
+        if (drainer.isAlive()) output.append("[native-output-warning] Output stream did not close in time.\n");
+        return new NativeProcessResult(p.exitValue(), output.toString());
     }
 
     static String findLabeledHex(String output, String... labels) {

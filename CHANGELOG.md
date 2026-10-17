@@ -1,3 +1,15 @@
+## 1.2.58 - 2026-10-17
+
+### Reliability
+- Short-circuit DS01xx detection before parsing modern .NET assemblies, avoiding expensive work on the Swing event thread.
+- Show DS01xx unsupported native write-back state before entering the one-click execution state.
+- Bound native helper execution to 180 seconds, drain output concurrently and return [NATIVE_TIMEOUT] when stuck.
+- Add Java smoke tests for the timeout, legacy detection and GUI preflight.
+
+### Scope
+- This release makes diagnosis and execution more reliable. It does not bypass license checks or add legacy .NET automatic authorization.
+- Read-only DS0101.zip validation confirms SoftVersionID=DS0101 and both uppercase/lowercase registration DLLs; Windows/IIS end-to-end validation remains outstanding.
+
 ## 1.2.57 - 2026-10-17
 
 ### Fixed
