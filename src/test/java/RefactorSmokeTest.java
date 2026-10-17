@@ -1375,6 +1375,15 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         check(temporaryRollbackDirs != null && temporaryRollbackDirs.length == 0,
                 "successful rollback cleans its temporary journal");
 
+        LicenseRecoverSharedLog.append(rollbackInstall.toFile(), "[test] synchronized log writer\n");
+        File commonLogDir = rollbackInstall.resolve("logs").toFile();
+        File[] commonLogs = commonLogDir.listFiles((dir, name) -> name.startsWith("LicenseRecoverGUI-")
+                && name.endsWith(".log"));
+        check(commonLogs != null && commonLogs.length == 1
+                        && new String(Files.readAllBytes(commonLogs[0].toPath()),
+                        StandardCharsets.UTF_8).contains("[test] synchronized log writer"),
+                "unified GUI and one-click log writer persists diagnostics");
+
         Path maliciousZip = base.resolve("malicious.zip");
         zout = new ZipOutputStream(new BufferedOutputStream(Files.newOutputStream(maliciousZip)));
         try { writeZipEntry(zout, "../escape.txt", "blocked\n"); }
@@ -1494,7 +1503,7 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         check(!absentBefore.exists()
                         && "before".equals(new String(Files.readAllBytes(presentBefore.toPath()),
                                 StandardCharsets.UTF_8).trim()),
-                "failed existing-code import rollback deletes newly-created config and restores prior files");
+                "Java one-click rollback deletes newly-created config and restores prior files");
         LicenseRecoverModernGUIAutoRecovery.Result requestOnlyResult =
                 new LicenseRecoverModernGUIAutoRecovery.Result(true,
                         "[JAVA_REQUEST_ONLY] request generated", null, null,
@@ -1543,8 +1552,19 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         check(bridgeSource237.contains("helperDispatch=RunDirect/hosted-AppDomain"),
                 "ASP.NET bridge emits hosted-AppDomain dispatch diagnostics");
         check(hostSource230.contains("ResolveAppRoot(runtimeDir)"), "ASP.NET host resolves target web root from runtime dir");
+        String modernGuiStableSource = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUI.java")), StandardCharsets.UTF_8);
+        check(modernGuiStableSource.contains("LicenseRecoverRecommendedCard")
+                        && modernGuiStableSource.contains("LicenseRecoverAppRoot")
+                        && modernGuiStableSource.contains("LicenseRecoverLogArea"),
+                "modern GUI exposes stable IDs for core components");
+        check(modernGuiStableSource.contains("LicenseRecoverSharedLog.append")
+                        && !modernGuiStableSource.contains("persistentLogLock"),
+                "modern GUI uses shared diagnostic writer");
         String uiPatch230 = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIUiPatchLauncher.java")), StandardCharsets.UTF_8);
         check(uiPatch230.contains("appendPersistentOneClickLog"), "one-click overlay writes persistent diagnostics");
+        check(uiPatch230.contains("findNamed(frame.getContentPane(), \"LicenseRecoverRecommendedCard\")")
+                        && uiPatch230.contains("LicenseRecoverSharedLog.append"),
+                "one-click overlay uses stable component ID and shared persistent logging");
         check(!uiPatch230.contains("已有注册码导入")
                         && !uiPatch230.contains("runExistingJavaAuthorizationImport")
                         && !uiPatch230.contains("importAuthorization"),
