@@ -798,10 +798,10 @@ public final class LicenseRecoverModernGUI {
         final boolean preview = batchDryRunCheck.isSelected();
         if (!usePatch && !preview && containsLegacyPatchTargets(batchTargets)) {
             int answer = JOptionPane.showConfirmDialog(frame,
-                    "本批次包含 DS01xx 旧版 .NET 目标。\\n"
-                    + "推荐操作将对它们使用方式三 DLL Patch，而不是新版 DoRegistry 授权写回。\\n"
-                    + "请先停止相关 IIS 站点/应用池。执行前会逐项建立 prepatch 备份。\\n"
-                    + "Patch 执行成功不等于应用原生授权已验证通过。\\n\\n是否继续？",
+                    "本批次包含 DS01xx 旧版 .NET 目标。\n"
+                    + "推荐操作将对它们使用方式三 DLL Patch，而不是新版 DoRegistry 授权写回。\n"
+                    + "请先停止相关 IIS 站点/应用池。执行前会逐项建立 prepatch 备份。\n"
+                    + "Patch 执行成功不等于应用原生授权已验证通过。\n\n是否继续？",
                     "确认批量旧协议 DLL Patch", JOptionPane.OK_CANCEL_OPTION,
                     JOptionPane.WARNING_MESSAGE);
             if (answer != JOptionPane.OK_OPTION) return;
