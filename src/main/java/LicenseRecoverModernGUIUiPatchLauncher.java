@@ -246,7 +246,6 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
             summary = "DS01xx 旧版 .NET 尚不支持一键授权写回；已安全停止，未修改任何目标文件。";
         } else if ("JAVA_PLAN".equals(stage)) {
             summary = "Java 授权计划尚未满足自动恢复条件；工具已停止，未修改任何文件。";
-
         } else if ("JAVA_REQUEST".equals(stage)) {
             summary = "目标原生 RegisterMain.newRegistry() 未能生成本机申请号；未写入任何授权文件。";
         } else if ("GENCODE".equals(stage)) {
