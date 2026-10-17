@@ -38,7 +38,9 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
 
     static void installOneClickRecovery(final JFrame frame) {
         if (frame == null) return;
-        final JPanel card = findTitledPanel(frame.getContentPane(), "常用操作");
+        final Component namedCard = findNamed(frame.getContentPane(), "LicenseRecoverRecommendedCard");
+        final JPanel card = namedCard instanceof JPanel ? (JPanel) namedCard
+                : findTitledPanel(frame.getContentPane(), "常用操作");
         if (card == null || findNamed(card, ONE_CLICK_CONTROL_NAME) != null) return;
 
         LayoutManager oldLayout = card.getLayout();
@@ -518,6 +520,10 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
     }
 
     private static JTextField findTextFieldInTitledPanel(Container root, String title) {
+        if ("应用目录".equals(title)) {
+            Component named = findNamed(root, "LicenseRecoverAppRoot");
+            if (named instanceof JTextField) return (JTextField) named;
+        }
         JPanel panel = findTitledPanel(root, title);
         return panel == null ? null : findTextField(panel);
     }
@@ -545,6 +551,10 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
     }
 
     private static JTextArea findTextAreaInTitledPanel(Container root, String title) {
+        if ("运行日志".equals(title)) {
+            Component named = findNamed(root, "LicenseRecoverLogArea");
+            if (named instanceof JTextArea) return (JTextArea) named;
+        }
         JPanel panel = findTitledPanel(root, title);
         return panel == null ? null : findTextArea(panel);
     }
