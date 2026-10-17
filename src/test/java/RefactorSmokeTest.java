@@ -1423,6 +1423,12 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                 "DS01xx remains legacy even when an uppercase compatibility ITMC.Regedit.dll is present");
         check(legacyDotNetDetection.productName == null,
                 "DS01xx classification skips costly modern assembly product inspection");
+        check(LicenseRecoverModernGUI.containsLegacyPatchTargets(Arrays.asList(
+                        BatchTarget.dotNetTarget("DS0101", legacyDotNetBin.toFile()))),
+                "recommended batch detects legacy patch targets and requires confirmation");
+        check(!LicenseRecoverModernGUI.containsLegacyPatchTargets(Arrays.asList(
+                        BatchTarget.skipped("empty"))),
+                "recommended batch does not warn when no legacy patch target exists");
         List<String> legacyPatch = LicenseRecoverModernGUIAutoRecovery.legacyDotNetPatchCommand(
                 new File("LicenseRecover.jar"), legacyDotNetBin.toFile(), false);
         List<String> legacyScan = LicenseRecoverModernGUIAutoRecovery.legacyDotNetPatchCommand(
