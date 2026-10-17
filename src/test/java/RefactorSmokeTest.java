@@ -62,6 +62,15 @@ public final class RefactorSmokeTest {
         }
     }
 
+    /** Deterministic child that prints a heartbeat and then deliberately never finishes within 1s. */
+    public static final class HangingNativeFixture {
+        public static void main(String[] args) throws Exception {
+            System.out.println("NATIVE_FIXTURE_STARTED");
+            System.out.flush();
+            Thread.sleep(15000L);
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         Path base = Files.createTempDirectory("licenserecover-smoke");
 
@@ -1412,6 +1421,16 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                 "single and one-click detection resolve the same .NET bin directory");
         check(legacyDotNetDetection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY,
                 "DS01xx remains legacy even when an uppercase compatibility ITMC.Regedit.dll is present");
+        check(legacyDotNetDetection.productName == null,
+                "DS01xx classification skips costly modern assembly product inspection");
+        check(LicenseRecoverModernGUIUiPatchLauncher.isUnsupportedOneClick(legacyDotNetDetection),
+                "DS01xx is blocked at the GUI preflight before the busy status");
+        check(!LicenseRecoverModernGUIUiPatchLauncher.isUnsupportedOneClick(
+                        new LicenseRecoverModernGUIAutoRecovery.Detection(
+                                LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN,
+                                legacyDotNetRoot.toFile(), legacyDotNetRoot.toFile(),
+                                legacyDotNetBin.toFile(), "YX030308", "YX0303")),
+                "modern .NET target can still enter the one-click worker");
         byte[] legacyConfigBefore = Files.readAllBytes(legacyDotNetRoot.resolve("config.xml"));
         int legacyBinFileCount = legacyDotNetBin.toFile().list().length;
         LicenseRecoverModernGUIAutoRecovery.Result unsupportedLegacy =
@@ -1432,6 +1451,22 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         check("DOTNET_LEGACY".equals(legacyFailureUi.stage)
                         && legacyFailureUi.summary.contains("不支持一键授权写回"),
                 "DS0101 one-click displays DOTNET_LEGACY rather than UNKNOWN");
+
+        File testJava = new File(System.getProperty("java.home"), "bin"
+                + File.separator + (System.getProperty("os.name", "").toLowerCase().contains("win")
+                ? "java.exe" : "java"));
+        List<String> hangingCommand = Arrays.asList(testJava.getAbsolutePath(), "-cp",
+                System.getProperty("java.class.path"), "RefactorSmokeTest$HangingNativeFixture");
+        long timeoutStart = System.nanoTime();
+        LicenseRecoverModernGUIAutoRecovery.NativeProcessResult timedOut =
+                LicenseRecoverModernGUIAutoRecovery.runNativeCapture(hangingCommand, null, null, 1L);
+        long timeoutElapsedMs = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                System.nanoTime() - timeoutStart);
+        check(timedOut.exitCode == 124 && timedOut.output.contains("[NATIVE_TIMEOUT]")
+                        && timedOut.output.contains("NATIVE_FIXTURE_STARTED"),
+                "native child process timeout produces actionable failure diagnostics");
+        check(timeoutElapsedMs < 7000L,
+                "timed-out native helper returns control within a bounded interval");
 
         Path toolCpDir = Files.createTempDirectory("lrc-toolcp-");
         Path legacyCore = toolCpDir.resolve("LicenseRecover.jar");
