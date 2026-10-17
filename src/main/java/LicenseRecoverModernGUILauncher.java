@@ -909,7 +909,7 @@ final class LicenseRecoverModernGUIUpdateInstaller {
                 }
                 throw failed;
             }
-            cleanupObsoleteEntrypoints(installDir);
+            LicenseRecoverModernGUILauncher.cleanupObsoleteEntrypoints(installDir);
         } finally {
             if (cleanupWork) deleteTree(work);
         }
@@ -1056,28 +1056,6 @@ final class LicenseRecoverModernGUIUpdateInstaller {
             }
         }
         throw new IOException("多次重试后仍无法替换文件: " + target, last);
-    }
-
-    private static void cleanupObsoleteEntrypoints(File dir) {
-        String[] names = {
-                "LicenseRecoverGUI-legacy.exe",
-                "run.bat",
-                "run_gui.bat",
-                "run_gui_modern.bat",
-                "run_gui_legacy.bat",
-                "run_removenet.bat",
-                "run_removenet_safe.bat",
-                "run_removenet_legacy.bat"
-        };
-        for (String name : names) {
-            File file = new File(dir, name);
-            if (!file.exists()) continue;
-            for (int i = 0; i < 8 && file.exists(); i++) {
-                if (file.delete()) break;
-                try { Thread.sleep(300L); }
-                catch (InterruptedException ex) { Thread.currentThread().interrupt(); break; }
-            }
-        }
     }
 
     private static void write(File file, String text) throws IOException {
