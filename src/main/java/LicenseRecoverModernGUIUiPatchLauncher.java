@@ -194,7 +194,7 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
             targets.setText("config.xml / 授权 sidecar（按检测结果）");
             jar.setText("不适用");
             verify.setText(detection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
-                    ? "待执行: 写回解密校验" : "不支持一键写回：DS01xx 旧版协议（未修改文件）");
+                    ? "待执行: 写回解密校验" : "旧版 .NET：可尝试 DLL Patch（需停 IIS；非原生授权验证）");
         } else {
             generation.setText("未识别"); family.setText("—"); runtime.setText("—"); regStr.setText("—"); targets.setText("—");
             jar.setText("—"); verify.setText("未识别到支持的授权结构");
@@ -244,8 +244,10 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         if (productMatch.find()) product = productMatch.group(1);
 
         String summary;
-        if ("DOTNET_LEGACY".equals(stage)) {
-            summary = "DS01xx 旧版 .NET 尚不支持一键授权写回；已安全停止，未修改任何目标文件。";
+        if ("DOTNET_LEGACY_PATCH".equals(stage)) {
+            summary = "旧版 .NET DLL Patch 执行失败；请查看补丁日志和备份，并检查 IIS 是否已停止。";
+        } else if ("DOTNET_LEGACY".equals(stage)) {
+            summary = "DS01xx 旧版 .NET 目标需要使用旧版兼容路径，请检查日志。";
         } else if ("JAVA_PLAN".equals(stage)) {
             summary = "Java 授权计划尚未满足自动恢复条件；工具已停止，未修改任何文件。";
         } else if ("JAVA_REQUEST".equals(stage)) {
@@ -398,12 +400,6 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         dialog.setVisible(true);
     }
 
-    /** Legacy .NET is fail-closed and must never show a running verification state. */
-    static boolean isUnsupportedOneClick(LicenseRecoverModernGUIAutoRecovery.Detection detection) {
-        return detection != null
-                && detection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY;
-    }
-
     private static void runOneClick(final JFrame frame, final JButton button,
                                     final JLabel generationValue, final JLabel familyValue, final JLabel runtimeValue,
                                     final JTextArea regStrValue, final JTextArea targetValue,
@@ -420,24 +416,26 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         final JCheckBox dryRun = findCheckBox(frame.getContentPane(), "只预览，不写入");
         final JTextArea logArea = findTextAreaInTitledPanel(frame.getContentPane(), "运行日志");
 
-        // .NET legacy targets cannot run the modern one-click writer. Report this
-        // immediately instead of starting a worker with a misleading busy label.
         final LicenseRecoverModernGUIAutoRecovery.Detection preflight =
                 LicenseRecoverModernGUIAutoRecovery.detect(selected);
-        if (isUnsupportedOneClick(preflight)) {
-            final String reason = LicenseRecoverModernGUIAutoRecovery.legacyWritebackUnavailable(preflight);
-            verifyValue.setText("不支持一键写回：" + value(preflight.versionId) + " 旧协议");
-            append(logArea, "[one-click] " + reason + "\n");
-            JOptionPane.showMessageDialog(frame, reason,
-                    "此应用不支持一键恢复", JOptionPane.WARNING_MESSAGE);
-            return;
+        final boolean legacyPatch = preflight.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY;
+        if (legacyPatch && (dryRun == null || !dryRun.isSelected())) {
+            int approval = JOptionPane.showConfirmDialog(frame,
+                    "检测到 " + value(preflight.versionId) + " 旧版 .NET 协议。\n"
+                    + "一键操作将使用原有的“方式三”DLL Patch，不会走新版 DoRegistry 校验。\n"
+                    + "请先停止目标 IIS 站点/应用池；执行前会建立 prepatch 备份。\n"
+                    + "补丁完成仍需由你重启应用并检查业务运行是否正常。\n\n是否继续？",
+                    "确认旧协议 DLL Patch", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
+            if (approval != JOptionPane.OK_OPTION) return;
         }
 
         final boolean doBackup = backup == null || backup.isSelected();
         final boolean doBlock = blockNet == null || blockNet.isSelected();
         final boolean preview = dryRun != null && dryRun.isSelected();
         refreshPlan(frame, generationValue, familyValue, runtimeValue, regStrValue, targetValue, jarValue, verifyValue);
-        verifyValue.setText(preview ? "预览执行中..." : "执行并校验中...");
+        verifyValue.setText(legacyPatch
+                ? (preview ? "旧协议扫描中..." : "旧协议 DLL Patch 执行中...")
+                : (preview ? "预览执行中..." : "执行并校验中..."));
         button.setEnabled(false);
         append(logArea, "\n===== 一键恢复授权 =====\n");
 
@@ -458,6 +456,11 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
                                 ? "REQUEST: 已生成申请号，未写入授权"
                                 : (preview ? "PREVIEW: 未执行写后校验"
                                 : (result.success ? "PASS: RegisterMain.checkReInfo()" : "FAILED: 查看运行日志")));
+                    } else if (result.detection != null
+                            && result.detection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY) {
+                        verifyValue.setText(preview ? "SCAN: 旧协议扫描完成"
+                                : (result.success ? "PATCH: 已执行（需重启站点确认）"
+                                : "FAILED: 旧协议 Patch 失败，查看日志"));
                     } else {
                         verifyValue.setText(preview ? "PREVIEW: 未执行写回校验"
                                 : (result.success ? "PASS: 写回校验" : "FAILED: 查看运行日志"));
@@ -472,8 +475,11 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
                                     .append(preview ? "预览模式未执行" : "RegisterMain.checkReInfo() 通过");
                         }
                         if (result.machineId != null) msg.append("\n机器标识: ").append(result.machineId);
+                        boolean legacyResult = result.detection != null
+                                && result.detection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY;
                         JOptionPane.showMessageDialog(frame, msg.toString(),
-                                requestOnly ? "已生成本地注册申请号" : "一键恢复完成",
+                                requestOnly ? "已生成本地注册申请号"
+                                        : (legacyResult ? "旧协议 DLL Patch 已执行" : "一键恢复完成"),
                                 JOptionPane.INFORMATION_MESSAGE);
                     } else {
                         showOneClickFailureDialog(frame, result);
