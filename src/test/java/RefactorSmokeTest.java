@@ -1425,9 +1425,6 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         check("ABCDEF0123456789".equals(
                         LicenseRecoverJavaHost.invokeNativeRequest(new RequestRegisterMain())),
                 "Java request-only host calls target RegisterMain.newRegistry() without RegStr");
-        check("AABBCCDDEEFF".equals(
-                        LicenseRecoverModernGUIAutoRecovery.normalizeImportedCode(" AA BB\nCC DD EE FF ")),
-                "existing Java authorization import removes transport whitespace only");
         ExistingCodeRegisterMain existingCodeTarget = new ExistingCodeRegisterMain();
         Object existingCodeResult = LicenseRecoverJavaHost.invokeExistingAuthorization(
                 existingCodeTarget, "REQ012345", "CODEABCDEF");
@@ -1516,6 +1513,15 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         check(hostSource230.contains("ResolveAppRoot(runtimeDir)"), "ASP.NET host resolves target web root from runtime dir");
         String uiPatch230 = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIUiPatchLauncher.java")), StandardCharsets.UTF_8);
         check(uiPatch230.contains("appendPersistentOneClickLog"), "one-click overlay writes persistent diagnostics");
+        check(!uiPatch230.contains("已有注册码导入")
+                        && !uiPatch230.contains("runExistingJavaAuthorizationImport")
+                        && !uiPatch230.contains("importAuthorization"),
+                "removed existing-code import UI is absent");
+        String removedImportRecoverySource = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIAutoRecovery.java")), StandardCharsets.UTF_8);
+        check(!removedImportRecoverySource.contains("applyExistingJavaAuthorization")
+                        && !removedImportRecoverySource.contains("normalizeImportedCode")
+                        && !removedImportRecoverySource.contains("[JAVA_IMPORT_"),
+                "removed existing-code import coordinator is absent");
         System.out.println("ALL REFACTOR SMOKE TESTS PASSED");
     }
 
