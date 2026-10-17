@@ -691,9 +691,10 @@ public final class LicenseRecoverModernGUI {
                                     ? (dotNetIdentityReady && dotNetRegReady
                                             ? "待执行: DoRegistry + CheckReInfo"
                                             : "未执行: DLL注册证据不足")
-                                    : "禁止自动写回：旧版 .NET 协议";
+                                    : "待执行: 旧协议 DLL Patch（非原生授权校验）";
                             String dotNetStatus = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
-                                    ? "不支持自动写回"
+                                    ? (new File(d.runtimeDir, "itmcRegedit.dll").isFile()
+                                            ? "待处理: 旧版 Patch" : "缺少补丁目标")
                                     : ((!dotNetIdentityReady || !dotNetRegReady) ? "待确认" : "待处理");
                             cells = new Object[]{child.getName(), kind,
                                     valueOrDash(d.versionId), valueOrDash(d.productName), valueOrDash(d.productName),
@@ -769,6 +770,15 @@ public final class LicenseRecoverModernGUI {
         batchWorker.execute();
     }
 
+    static boolean containsLegacyPatchTargets(List<BatchTarget> targets) {
+        if (targets == null) return false;
+        for (BatchTarget target : targets) {
+            if (target != null && target.type == BatchTarget.Type.DOTNET
+                    && LegacyDotNetProtocol.isLegacyTarget(target.binDir)) return true;
+        }
+        return false;
+    }
+
     private void runBatch() {
         if (batchWorker != null && !batchWorker.isDone()) {
             setStatus("请等待当前批量任务完成，或先取消当前任务", false);
@@ -786,6 +796,16 @@ public final class LicenseRecoverModernGUI {
         final boolean backup = batchBackupCheck.isSelected();
         final boolean blockNet = batchBlockNetCheck.isSelected();
         final boolean preview = batchDryRunCheck.isSelected();
+        if (!usePatch && !preview && containsLegacyPatchTargets(batchTargets)) {
+            int answer = JOptionPane.showConfirmDialog(frame,
+                    "本批次包含 DS01xx 旧版 .NET 目标。\n"
+                    + "推荐操作将对它们使用方式三 DLL Patch，而不是新版 DoRegistry 授权写回。\n"
+                    + "请先停止相关 IIS 站点/应用池。执行前会逐项建立 prepatch 备份。\n"
+                    + "Patch 执行成功不等于应用原生授权已验证通过。\n\n是否继续？",
+                    "确认批量旧协议 DLL Patch", JOptionPane.OK_CANCEL_OPTION,
+                    JOptionPane.WARNING_MESSAGE);
+            if (answer != JOptionPane.OK_OPTION) return;
+        }
         if (usePatch && !preview) {
             int answer = JOptionPane.showConfirmDialog(frame,
                     "批量方式三会逐个修改授权文件，并为每个应用先建立 prepatch 备份。\n请确认相关应用服务已停止。",
@@ -996,7 +1016,8 @@ public final class LicenseRecoverModernGUI {
         LicenseRecoverModernGUIAutoRecovery.Detection d =
                 LicenseRecoverModernGUIAutoRecovery.detect(target.binDir);
         if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY)
-            return "DS01xx 旧版 .NET 不支持一键授权写回；仅阻断联网不代表授权成功";
+            return new File(d.runtimeDir, "itmcRegedit.dll").isFile()
+                    ? null : "缺少旧版 .NET 补丁目标 itmcRegedit.dll";
         if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN) {
             if (d.productName == null || d.productName.trim().isEmpty())
                 return ".NET 授权产品号未确认";
@@ -1010,8 +1031,9 @@ public final class LicenseRecoverModernGUI {
     private OperationResult runBatchRecommended(BatchTarget target, boolean backup, boolean blockNet, boolean preview) {
         File selected = target.type == BatchTarget.Type.JAVA ? target.appRoot : target.binDir;
         LicenseRecoverModernGUIAutoRecovery.Detection d = LicenseRecoverModernGUIAutoRecovery.detect(selected);
-        if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY) {
-            return legacyBatchBlocked(d);
+        if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
+                && !new File(d.runtimeDir, "itmcRegedit.dll").isFile()) {
+            return OperationResult.failed("[DOTNET_LEGACY_PATCH] 缺少旧版补丁目标 itmcRegedit.dll", 2);
         }
         LicenseRecoverModernGUIAutoRecovery.Result result =
                 LicenseRecoverModernGUIAutoRecovery.recover(selected, backup, blockNet, preview, this::appendLog);
@@ -1037,7 +1059,9 @@ public final class LicenseRecoverModernGUI {
             return result.isSuccess() ? "RegisterMain: OK" : "RegisterMain: FAILED";
         }
         LicenseRecoverModernGUIAutoRecovery.Detection d = LicenseRecoverModernGUIAutoRecovery.detect(target.binDir);
-        if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY) return "兼容方式一: 不适用";
+        if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY)
+            return preview ? "SCAN: 旧版 DLL" : (result.isSuccess()
+                    ? "PATCH: 旧版 DLL 已执行" : "PATCH: FAILED");
         if (preview) return "预览: 未执行写回校验";
         if (!result.isSuccess()) {
             String reason = result.message == null ? "" : result.message;

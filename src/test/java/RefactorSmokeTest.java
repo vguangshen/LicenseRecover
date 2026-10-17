@@ -62,6 +62,15 @@ public final class RefactorSmokeTest {
         }
     }
 
+    /** Deterministic child that prints a heartbeat and then deliberately never finishes within 1s. */
+    public static final class HangingNativeFixture {
+        public static void main(String[] args) throws Exception {
+            System.out.println("NATIVE_FIXTURE_STARTED");
+            System.out.flush();
+            Thread.sleep(15000L);
+        }
+    }
+
     public static void main(String[] args) throws Exception {
         Path base = Files.createTempDirectory("licenserecover-smoke");
 
@@ -1412,26 +1421,58 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                 "single and one-click detection resolve the same .NET bin directory");
         check(legacyDotNetDetection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY,
                 "DS01xx remains legacy even when an uppercase compatibility ITMC.Regedit.dll is present");
-        byte[] legacyConfigBefore = Files.readAllBytes(legacyDotNetRoot.resolve("config.xml"));
-        int legacyBinFileCount = legacyDotNetBin.toFile().list().length;
-        LicenseRecoverModernGUIAutoRecovery.Result unsupportedLegacy =
-                LicenseRecoverModernGUIAutoRecovery.recover(legacyDotNetRoot.toFile(), true, true, false, null);
-        check(!unsupportedLegacy.success && unsupportedLegacy.message.startsWith("[DOTNET_LEGACY]")
-                        && unsupportedLegacy.message.contains("未修改任何目标文件"),
-                "DS0101 one-click rejects unsupported legacy write-back with a named stage");
-        check(Arrays.equals(legacyConfigBefore, Files.readAllBytes(legacyDotNetRoot.resolve("config.xml")))
-                        && legacyDotNetBin.toFile().list().length == legacyBinFileCount,
-                "DS0101 rejection does not overwrite config.xml, DLLs or create prepatch backups");
-        OperationResult unsupportedLegacyBatch = LicenseRecoverModernGUI.legacyBatchBlocked(legacyDotNetDetection);
-        check(unsupportedLegacyBatch.status == OperationResult.Status.FAILED
-                        && unsupportedLegacyBatch.exitCode != 0
-                        && unsupportedLegacyBatch.message.startsWith("[DOTNET_LEGACY]"),
-                "DS0101 recommended batch recovery cannot report network blocking as success");
-        LicenseRecoverModernGUIUiPatchLauncher.OneClickFailurePresentation legacyFailureUi =
-                LicenseRecoverModernGUIUiPatchLauncher.describeOneClickFailure(unsupportedLegacy.message);
-        check("DOTNET_LEGACY".equals(legacyFailureUi.stage)
-                        && legacyFailureUi.summary.contains("不支持一键授权写回"),
-                "DS0101 one-click displays DOTNET_LEGACY rather than UNKNOWN");
+        check(legacyDotNetDetection.productName == null,
+                "DS01xx classification skips costly modern assembly product inspection");
+        check(LicenseRecoverModernGUI.containsLegacyPatchTargets(Arrays.asList(
+                        BatchTarget.dotNetTarget("DS0101", legacyDotNetBin.toFile()))),
+                "recommended batch detects legacy patch targets and requires confirmation");
+        check(!LicenseRecoverModernGUI.containsLegacyPatchTargets(Arrays.asList(
+                        BatchTarget.skipped("empty"))),
+                "recommended batch does not warn when no legacy patch target exists");
+        List<String> legacyPatch = LicenseRecoverModernGUIAutoRecovery.legacyDotNetPatchCommand(
+                new File("LicenseRecover.jar"), legacyDotNetBin.toFile(), false);
+        List<String> legacyScan = LicenseRecoverModernGUIAutoRecovery.legacyDotNetPatchCommand(
+                new File("LicenseRecover.jar"), legacyDotNetBin.toFile(), true);
+        check(legacyPatch.contains("--remove-net") && !legacyPatch.contains("--block-net")
+                        && legacyPatch.contains(legacyDotNetBin.toFile().getAbsolutePath()),
+                "DS0101 one-click dispatches to existing legacy DLL patch route");
+        check(legacyScan.contains("--scan-net") && !legacyScan.contains("--remove-net"),
+                "legacy dry-run dispatches to read-only scan rather than patch");
+        LicenseRecoverModernGUIAutoRecovery.Detection unavailableLegacy =
+                new LicenseRecoverModernGUIAutoRecovery.Detection(
+                        LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY,
+                        legacyDotNetRoot.toFile(), legacyDotNetRoot.toFile(),
+                        base.resolve("missing-legacy-dll").toFile(), "DS0101", null);
+        LicenseRecoverModernGUIAutoRecovery.Result legacyFailure =
+                LicenseRecoverModernGUIAutoRecovery.recoverLegacyDotNetPatch(unavailableLegacy, false, null);
+        check(!legacyFailure.success && legacyFailure.message.startsWith("[DOTNET_LEGACY_PATCH]"),
+                "legacy patch rejects a missing or incompatible environment without reporting success");
+        LicenseRecoverModernGUIUiPatchLauncher.OneClickFailurePresentation patchFailureUi =
+                LicenseRecoverModernGUIUiPatchLauncher.describeOneClickFailure(
+                        "[DOTNET_LEGACY_PATCH] helper error; exit=1");
+        check("DOTNET_LEGACY_PATCH".equals(patchFailureUi.stage)
+                        && patchFailureUi.summary.contains("DLL Patch 执行失败"),
+                "legacy patch failure is labeled correctly in GUI");
+        check(new String(Files.readAllBytes(legacyDotNetRoot.resolve("config.xml")),
+                        StandardCharsets.UTF_8).contains("<SoftVersionID>DS0101</SoftVersionID>")
+                        && legacyDotNetBin.toFile().list().length == 3,
+                "legacy synthetic dispatch tests leave application fixtures unchanged");
+
+        File testJava = new File(System.getProperty("java.home"), "bin"
+                + File.separator + (System.getProperty("os.name", "").toLowerCase().contains("win")
+                ? "java.exe" : "java"));
+        List<String> hangingCommand = Arrays.asList(testJava.getAbsolutePath(), "-cp",
+                System.getProperty("java.class.path"), "RefactorSmokeTest$HangingNativeFixture");
+        long timeoutStart = System.nanoTime();
+        LicenseRecoverModernGUIAutoRecovery.NativeProcessResult timedOut =
+                LicenseRecoverModernGUIAutoRecovery.runNativeCapture(hangingCommand, null, null, 1L);
+        long timeoutElapsedMs = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                System.nanoTime() - timeoutStart);
+        check(timedOut.exitCode == 124 && timedOut.output.contains("[NATIVE_TIMEOUT]")
+                        && timedOut.output.contains("NATIVE_FIXTURE_STARTED"),
+                "native child process timeout produces actionable failure diagnostics");
+        check(timeoutElapsedMs < 7000L,
+                "timed-out native helper returns control within a bounded interval");
 
         Path toolCpDir = Files.createTempDirectory("lrc-toolcp-");
         Path legacyCore = toolCpDir.resolve("LicenseRecover.jar");
@@ -1566,6 +1607,10 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                 "modern GUI uses shared diagnostic writer");
         String uiPatch230 = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIUiPatchLauncher.java")), StandardCharsets.UTF_8);
         check(uiPatch230.contains("appendPersistentOneClickLog"), "one-click overlay writes persistent diagnostics");
+        check(uiPatch230.contains("确认旧协议 DLL Patch")
+                        && uiPatch230.contains("PATCH: 已执行（需重启站点确认）")
+                        && !uiPatch230.contains("isUnsupportedOneClick("),
+                "DS01xx one-click confirms legacy patch and does not use unconditional rejection");
         check(uiPatch230.contains("findNamed(frame.getContentPane(), \"LicenseRecoverRecommendedCard\")")
                         && uiPatch230.contains("LicenseRecoverSharedLog.append"),
                 "one-click overlay uses stable component ID and shared persistent logging");
