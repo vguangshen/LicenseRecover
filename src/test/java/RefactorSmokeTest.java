@@ -1517,10 +1517,10 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                         && !uiPatch230.contains("runExistingJavaAuthorizationImport")
                         && !uiPatch230.contains("importAuthorization"),
                 "removed existing-code import UI is absent");
-        String autoRecoverySource = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIAutoRecovery.java")), StandardCharsets.UTF_8);
-        check(!autoRecoverySource.contains("applyExistingJavaAuthorization")
-                        && !autoRecoverySource.contains("normalizeImportedCode")
-                        && !autoRecoverySource.contains("[JAVA_IMPORT_"),
+        String removedImportRecoverySource = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIAutoRecovery.java")), StandardCharsets.UTF_8);
+        check(!removedImportRecoverySource.contains("applyExistingJavaAuthorization")
+                        && !removedImportRecoverySource.contains("normalizeImportedCode")
+                        && !removedImportRecoverySource.contains("[JAVA_IMPORT_"),
                 "removed existing-code import coordinator is absent");
         System.out.println("ALL REFACTOR SMOKE TESTS PASSED");
     }
