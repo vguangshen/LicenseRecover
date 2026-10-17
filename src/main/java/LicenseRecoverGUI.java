@@ -96,7 +96,6 @@ public class LicenseRecoverGUI {
     }
 
     /** Deprecated display helper. Executable paths use target-directory evidence only. */
-    static String productMainFor(String softId) { return null; }
 
     /**
      * 方式二: 生成离线授权码。
