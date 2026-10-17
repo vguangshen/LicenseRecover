@@ -1447,8 +1447,8 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         check("DOTNET_LEGACY_PATCH".equals(patchFailureUi.stage)
                         && patchFailureUi.summary.contains("DLL Patch 执行失败"),
                 "legacy patch failure is labeled correctly in GUI");
-        check(Arrays.equals(Files.readAllBytes(legacyDotNetRoot.resolve("config.xml")),
-                        Files.readAllBytes(legacyDotNetRoot.resolve("config.xml")))
+        check(new String(Files.readAllBytes(legacyDotNetRoot.resolve("config.xml")),
+                        StandardCharsets.UTF_8).contains("<SoftVersionID>DS0101</SoftVersionID>")
                         && legacyDotNetBin.toFile().list().length == 3,
                 "legacy synthetic dispatch tests leave application fixtures unchanged");
 
