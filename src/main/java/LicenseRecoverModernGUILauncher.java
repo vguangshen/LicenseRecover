@@ -851,41 +851,108 @@ final class LicenseRecoverModernGUIUpdateInstaller {
     }
 
     static void applyUpdate(File zip, File installDir) throws IOException {
+        applyUpdate(zip, installDir, -1);
+    }
+
+    /** The third argument is a test-only fault injector: fail after N installed files. */
+    static void applyUpdate(File zip, File installDir, int failAfterCopies) throws IOException {
         if (zip == null || !zip.isFile()) throw new IOException("更新 ZIP 不存在。");
         if (installDir == null || !installDir.isDirectory()) throw new IOException("安装目录不存在。");
-        File work = Files.createTempDirectory("LicenseRecover-apply-").toFile();
+        // Keep the rollback journal on the installation volume. Do not discard it
+        // if rollback fails: the user may need those original files to recover.
+        File work = Files.createTempDirectory(installDir.toPath(), ".licenserecover-update-").toFile();
         File staging = new File(work, "staging");
         File backup = new File(work, "backup");
-        if (!staging.mkdirs() || !backup.mkdirs()) throw new IOException("无法创建更新临时目录。");
+        boolean cleanupWork = true;
         try {
+            if (!staging.mkdirs() || !backup.mkdirs()) throw new IOException("无法创建更新临时目录。");
             unzipSafe(zip, staging);
-            if (!new File(staging, "VERSION.txt").isFile())
-                throw new IOException("更新包缺少 VERSION.txt。");
             File stagedVersion = new File(staging, "VERSION.txt");
+            if (!stagedVersion.isFile()) throw new IOException("更新包缺少 VERSION.txt。");
             File heldVersion = new File(work, "VERSION.txt.new");
             Files.copy(stagedVersion.toPath(), heldVersion.toPath(), StandardCopyOption.REPLACE_EXISTING);
             if (!stagedVersion.delete()) throw new IOException("无法暂存 VERSION.txt。");
 
-            backupExisting(staging, installDir, backup, "");
             File installedVersion = new File(installDir, "VERSION.txt");
-            if (installedVersion.isFile()) {
+            boolean hadVersion = installedVersion.isFile();
+            // Snapshot *all* existing files that the update may replace before
+            // touching a single installed file.
+            backupExisting(staging, installDir, backup, "");
+            if (hadVersion) {
                 Files.copy(installedVersion.toPath(), new File(backup, "VERSION.txt").toPath(),
                         StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
             }
+
+            java.util.List<File> created = new ArrayList<File>();
+            int[] copied = new int[]{0};
             try {
-                copyTree(staging, installDir);
+                copyUpdateTree(staging, installDir, created, copied, failAfterCopies);
                 verifyInstalledCriticalFiles(staging, installDir);
                 Files.copy(heldVersion.toPath(), installedVersion.toPath(),
                         StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
                 if (!sameBytes(heldVersion, installedVersion))
                     throw new IOException("VERSION.txt 写入后校验失败。");
             } catch (IOException failed) {
-                try { copyTree(backup, installDir); }
-                catch (IOException restore) { failed.addSuppressed(restore); }
+                try {
+                    // Remove newly created files/directories and restore every
+                    // overwritten original, not only the files in the new ZIP.
+                    for (int i = created.size() - 1; i >= 0; --i)
+                        Files.deleteIfExists(created.get(i).toPath());
+                    copyTree(backup, installDir);
+                    if (!hadVersion) Files.deleteIfExists(installedVersion.toPath());
+                    verifyRollbackFiles(backup, installDir);
+                } catch (IOException rollbackFailed) {
+                    cleanupWork = false;
+                    failed.addSuppressed(rollbackFailed);
+                    throw new IOException("更新失败且回滚不完整；原文件备份保留在 "
+                            + backup.getAbsolutePath(), failed);
+                }
                 throw failed;
             }
             cleanupObsoleteEntrypoints(installDir);
-        } finally { deleteTree(work); }
+        } finally {
+            if (cleanupWork) deleteTree(work);
+        }
+    }
+
+    private static void copyUpdateTree(File source, File target, java.util.List<File> created,
+                                       int[] copied, int failAfterCopies) throws IOException {
+        if (source.isDirectory()) {
+            if (!target.isDirectory()) {
+                if (target.exists()) throw new IOException("更新目标应为目录: " + target);
+                created.add(target);
+                if (!target.mkdirs() && !target.isDirectory())
+                    throw new IOException("无法创建更新目录: " + target);
+            }
+            File[] files = source.listFiles();
+            if (files == null) throw new IOException("无法列出更新目录: " + source);
+            Arrays.sort(files, (left, right) -> left.getName().compareTo(right.getName()));
+            for (File file : files)
+                copyUpdateTree(file, new File(target, file.getName()), created, copied, failAfterCopies);
+            return;
+        }
+        if (!target.exists()) created.add(target);
+        copyTree(source, target);
+        copied[0]++;
+        if (failAfterCopies > 0 && copied[0] == failAfterCopies)
+            throw new IOException("[TEST_INJECT] 安装阶段模拟失败: " + copied[0]);
+    }
+
+    private static void verifyRollbackFiles(File backup, File installDir) throws IOException {
+        File[] files = backup.listFiles();
+        if (files == null) throw new IOException("无法校验回滚备份: " + backup);
+        for (File file : files) verifyRollbackEntry(file, new File(installDir, file.getName()));
+    }
+
+    private static void verifyRollbackEntry(File original, File restored) throws IOException {
+        if (original.isDirectory()) {
+            File[] files = original.listFiles();
+            if (files == null || !restored.isDirectory())
+                throw new IOException("回滚目录校验失败: " + restored);
+            for (File file : files) verifyRollbackEntry(file, new File(restored, file.getName()));
+        } else if (!sameBytes(original, restored)) {
+            throw new IOException("回滚文件内容校验失败: " + restored);
+        }
     }
 
     private static void unzipSafe(File zip, File staging) throws IOException {
