@@ -40,7 +40,7 @@ internal static class LicenseRecoverAspNetHost
             if (!File.Exists(Path.Combine(runtimeDir, "ITMC.Regedit.dll")))
                 throw new FileNotFoundException("DS0101 uppercase registration DLL is required");
             chain = "DS0101-native-offline";
-            string legacy = Path.Combine(toolDir, "LicenseRecover.NET.Legacy.exe");
+            string legacy = Path.Combine(toolDir, "LicenseRecover.NET.Legacy.dll");
             if (!File.Exists(legacy)) throw new FileNotFoundException("DS0101 legacy helper is missing", legacy);
             return legacy;
         }
