@@ -1,0 +1,167 @@
+using System;
+using System.IO;
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
+
+// Dedicated legacy DS0101 native bridge. It uses the target's own registration
+// methods for request generation, submission and independent verification.
+// It must run inside the target ASP.NET hosted AppDomain via AspNetHost.
+// Never edit vendor DLLs or bypass CheckReInfo / funpublic.CheckReg.
+namespace LicenseRecoverNet
+{
+    public static class Program
+    {
+        public sealed class Options
+        {
+            public string Command, RuntimeDir, Product, Sequence, Code;
+        }
+
+        private static Options ParseArgs(string[] args)
+        {
+            if (args == null || args.Length < 2) return null;
+            Options o = new Options();
+            o.Command = args[0];
+            o.RuntimeDir = Path.GetFullPath(args[1]);
+            o.Product = null;
+            for (int i = 2; i + 1 < args.Length; i += 2)
+            {
+                if (args[i] == "--product") o.Product = args[i + 1];
+                else if (args[i] == "--seq") o.Sequence = args[i + 1];
+                else if (args[i] == "--code") o.Code = args[i + 1];
+                else return null;
+            }
+            if (o.Product != "itmcIEC") return null;
+            if (o.Command != "legacy-gencode" && o.Command != "legacy-doreg"
+                && o.Command != "legacy-verify") return null;
+            if (o.Command == "legacy-doreg" &&
+                (String.IsNullOrEmpty(o.Sequence) || String.IsNullOrEmpty(o.Code)))
+                return null;
+            return o;
+        }
+
+        private static string Encrypt(string text, string password)
+        {
+            // Decompiled target ItmcBtoB.DBUtility.DESEncrypt:
+            // first eight ASCII characters of the uppercase MD5 hex are DES
+            // Key and IV, CBC mode with PKCS7 (PKCS5) padding.
+            byte[] digest = MD5.Create().ComputeHash(Encoding.UTF8.GetBytes(password));
+            StringBuilder hex = new StringBuilder();
+            for (int i = 0; i < digest.Length; i++) hex.Append(digest[i].ToString("X2"));
+            byte[] key = Encoding.ASCII.GetBytes(hex.ToString().Substring(0, 8));
+            using (DES des = DES.Create())
+            {
+                des.Mode = CipherMode.CBC;
+                des.Padding = PaddingMode.PKCS7;
+                des.Key = key;
+                des.IV = key;
+                using (ICryptoTransform transform = des.CreateEncryptor())
+                {
+                    byte[] data = transform.TransformFinalBlock(Encoding.UTF8.GetBytes(text), 0,
+                        Encoding.UTF8.GetByteCount(text));
+                    StringBuilder result = new StringBuilder();
+                    for (int i = 0; i < data.Length; i++) result.Append(data[i].ToString("X2"));
+                    return result.ToString();
+                }
+            }
+        }
+
+        private static object NewNativeMain(Options options, out Type regInfo)
+        {
+            string dll = Path.Combine(options.RuntimeDir, "ITMC.Regedit.dll");
+            if (!File.Exists(dll)) throw new FileNotFoundException("Legacy uppercase DLL missing", dll);
+            Assembly assembly = Assembly.LoadFrom(dll);
+            Type main = assembly.GetType("ITMC.Regedit.RegeditMain", true);
+            regInfo = assembly.GetType("ITMC.Regedit.RegeditInfo", true);
+            // Match the exact Regester.Button1_Click constructor path
+            // from the protected original ITMC.Web.dll.
+            object instance = Activator.CreateInstance(main, new object[] {
+                options.Product, Encrypt("itmcsoft", options.Product + "RegeditNew")
+            });
+            PropertyInfo proName = main.GetProperty("ProName");
+            PropertyInfo userID = main.GetProperty("UserID");
+            if (proName == null || userID == null)
+                throw new MissingMemberException("Target RegeditMain lacks ProName/UserID");
+            proName.SetValue(instance, options.Product, null);
+            userID.SetValue(instance, "itmc", null);
+            return instance;
+        }
+
+        private static object Invoke(object target, string name, object[] args, Type[] signatures)
+        {
+            MethodInfo method = target.GetType().GetMethod(name,
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance,
+                null, signatures, null);
+            if (method == null) throw new MissingMethodException(target.GetType().FullName, name);
+            return method.Invoke(target, args);
+        }
+
+        private static bool CheckTarget(object native, Type infoType)
+        {
+            object info = Activator.CreateInstance(infoType);
+            object[] args = new object[] { info };
+            object value = Invoke(native, "CheckReInfo", args,
+                new Type[] { infoType.MakeByRefType() });
+            return value is bool && (bool)value;
+        }
+
+        public static int RunDirect(Options options)
+        {
+            if (options == null || options.Product != "itmcIEC")
+                throw new ArgumentException("Invalid DS0101 legacy options");
+            Type regInfoType;
+            object native = NewNativeMain(options, out regInfoType);
+            if (options.Command == "legacy-gencode")
+            {
+                string request = Invoke(native, "NewRegistry", new object[0], Type.EmptyTypes) as string;
+                if (String.IsNullOrEmpty(request) || request.Length < 32)
+                    throw new InvalidOperationException("Target native NewRegistry returned no request");
+                // The Java coordinator verifies/decrypts the native request
+                // and generates a machine-bound code locally using its
+                // previously tested LegacyDotNetProtocol implementation.
+                Console.WriteLine("注册申请号: " + request);
+                Console.WriteLine("RESULT: LEGACY_NATIVE_REQUEST_ONLY");
+                return 0;
+            }
+            if (options.Command == "legacy-doreg")
+            {
+                bool ok = (bool)Invoke(native, "DoRegistry",
+                    new object[] { options.Sequence, options.Code },
+                    new Type[] { typeof(string), typeof(string) });
+                if (!ok)
+                {
+                    Console.Error.WriteLine("[LEGACY_DOREG] Native DoRegistry rejected offline code.");
+                    return 4;
+                }
+                Console.WriteLine("RESULT: LEGACY_NATIVE_DOREG_ACCEPTED");
+                return 0;
+            }
+            if (options.Command == "legacy-verify")
+            {
+                if (!CheckTarget(native, regInfoType))
+                {
+                    Console.Error.WriteLine("[LEGACY_VERIFY] Native CheckReInfo returned false");
+                    return 5;
+                }
+                // Cross-check the actual Web front door independently from
+                // the registration helper. A match in CheckReInfo alone
+                // is NOT sufficient to report the application activated.
+                Assembly web = Assembly.LoadFrom(Path.Combine(options.RuntimeDir, "ITMC.Web.dll"));
+                Type funpublic = web.GetType("ITMC.Web.funpublic", true);
+                MethodInfo check = funpublic.GetMethod("CheckReg",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static,
+                    null, Type.EmptyTypes, null);
+                if (check == null || check.ReturnType != typeof(bool))
+                    throw new MissingMethodException("ITMC.Web.funpublic.CheckReg():bool");
+                if (!(bool)check.Invoke(null, null))
+                {
+                    Console.Error.WriteLine("[LEGACY_VERIFY] Target Web.CheckReg returned false");
+                    return 6;
+                }
+                Console.WriteLine("RESULT: LEGACY_NATIVE_CHECKREG_OK");
+                return 0;
+            }
+            throw new ArgumentException("Unsupported legacy command");
+        }
+    }
+}
