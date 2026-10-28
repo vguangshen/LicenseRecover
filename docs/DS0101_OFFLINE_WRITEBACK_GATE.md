@@ -28,3 +28,33 @@ Status: static MethodDef/IL analysis of the user-provided DS0101 sample; offline
 Activation acceptance must include: (1) target-specific native request; (2) compatible offline authorization code; (3) accepted target DoRegistry; (4) native CheckReInfo and independent Web.CheckReg in a fresh process; (5) IIS restart verification; (6) no data loss or incorrect success on failure; (7) independent rollback for each batch target.
 
 Never interpret a successful helper build, synthetic test, offline deobfuscation or metadata probe as evidence of actual DS0101 activation.
+
+## Real Windows preflight (non-destructive)
+
+The new `scripts/test-ds0101-isolated-request.ps1` copies a DS0101
+website into a uniquely named temporary folder and uses the CI-built
+ASP.NET host plus `LicenseRecover.NET.Legacy.dll` to check:
+
+1. The deployed DLL ABI with `legacy-probe`.
+2. The original native `NewRegistry()` request path with
+   `legacy-gencode` (only when the ABI probe succeeds).
+3. Whether the copy's `config.xml`, `Register.xml` or
+   `notRegFile.xml` changed during request generation.
+
+For example, from the checked-out repository on Windows, with the
+verified CI bundle unpacked to `C:\LicenseRecover-test`:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-ds0101-isolated-request.ps1 -SiteRoot "D:\DS0101" -ToolRoot "C:\LicenseRecover-test"
+```
+
+The report shows success flags and *filenames* of any changed files;
+it suppresses machine identifiers, request codes, license material, and
+original exception text. It deletes the isolated site copy by default.
+Do not use `-KeepIsolatedCopy` unless the temporary copy can be
+secured because it contains the website's original configuration.
+
+This preflight does **not** call `DoRegistry`, `CheckReInfo` or
+`funpublic.CheckReg`, and never modifies the selected source site.
+It therefore cannot prove successful activation. A separate, explicitly
+authorized Windows/IIS integration test is still necessary.
