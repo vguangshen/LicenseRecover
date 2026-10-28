@@ -1,4 +1,4 @@
-name: Publish DS0101 release candidate RC2
+name: Publish DS0101 release candidate RC3
 
 # One-time test release, separate from stable main/rolling-latest.
 # Runs only when this release-candidate workflow itself is committed.
@@ -75,7 +75,7 @@ jobs:
           test -s build/LicenseRecover-update.zip
           test -s build/SHA256SUMS.txt
           (cd build && sha256sum -c SHA256SUMS.txt)
-      - name: Publish isolated DS0101 v1.2.59 RC2 prerelease
+      - name: Publish isolated DS0101 v1.2.59 RC3 prerelease
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -83,7 +83,7 @@ jobs:
           set -euo pipefail
           test "$(tr -d '\r\n[:space:]' < VERSION.txt)" = "1.2.59"
           test -s release-notes/v1.2.59.md
-          tag="v1.2.59-rc2"
+          tag="v1.2.59-rc3"
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Existing $tag prerelease left unchanged."
             exit 0
@@ -98,7 +98,7 @@ jobs:
             build/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "LicenseRecover v1.2.59 RC2 — one-click progress and hang fix" \
+            --title "LicenseRecover v1.2.59 RC3 — repair legacy protocol NoSuchMethodError" \
             --notes-file release-notes/v1.2.59.md \
             --prerelease
           echo "Published release candidate $tag from $GITHUB_SHA; stable version remains unchanged."
