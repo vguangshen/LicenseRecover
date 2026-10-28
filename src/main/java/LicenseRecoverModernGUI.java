@@ -710,8 +710,6 @@ public final class LicenseRecoverModernGUI {
         setStatusInfo("正在扫描子目录：0 / " + total);
         appendLog("[批量扫描] 开始扫描 " + total + " 个子目录。\n");
 
-        batchTargets.clear();
-        batchRunButton.setEnabled(false);
         batchWorker = new SwingWorker<Void, BatchScanRow>() {
             private int detectedCount;
             private int skippedCount;
@@ -801,7 +799,7 @@ public final class LicenseRecoverModernGUI {
                 }
 
                 batchWorker = null;
-                if (!cancelled && runAfterScan && !batchTargets.isEmpty()) {
+                if (!cancelled && runAfterScan && hasExecutableBatchTargets()) {
                     SwingUtilities.invokeLater(() -> runBatch());
                 }
             }
@@ -885,10 +883,6 @@ public final class LicenseRecoverModernGUI {
     }
 
     private void runBatch() {
-        if (!hasExecutableBatchTargets()) {
-            setStatus("请先完成扫描并确认存在可处理的应用", false);
-            return;
-        }
         if (batchWorker != null && !batchWorker.isDone()) {
             setStatus("请等待当前批量任务完成，或先取消当前任务", false);
             return;
@@ -899,6 +893,10 @@ public final class LicenseRecoverModernGUI {
         }
         if (batchTargets.isEmpty()) {
             scanBatch(true);
+            return;
+        }
+        if (!hasExecutableBatchTargets()) {
+            setStatus("扫描结果没有可处理的应用，请重新扫描", false);
             return;
         }
         final boolean usePatch = batchWay3.isSelected();
