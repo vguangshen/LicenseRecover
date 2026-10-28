@@ -1779,7 +1779,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         List<File>changed=new ArrayList<File>();List<String>orig=new ArrayList<String>(),upd=new ArrayList<String>();
         for(File f:fs){String a=readUtf8(f),b=p.matcher(a).replaceAll(BLOCK_ENDPOINT);if(!a.equals(b)){validateXml(b);changed.add(f);orig.add(a);upd.add(b);}}
         if(dryRun){for(File f:changed)log.accept("[dry-run] would block authorization URL in "+f.getAbsolutePath()+"\n");return;}
-        try{for(int i=0;i<changed.size();i++){File f=changed.get(i);if(backup){File bk=uniqueBackup(f);Files.copy(f.toPath(),bk.toPath(),StandardCopyOption.REPLACE_EXISTING);log.accept("[backup] "+bk.getAbsolutePath()+"\n");}Files.write(f.toPath(),upd.get(i).getBytes(StandardCharsets.UTF_8));validateXml(readUtf8(f));}}
+        try{for(int i=0;i<changed.size();i++){File f=changed.get(i);if(backup){File bk=uniqueBackup(f);SafetyBackup.requireCopy(f.toPath(),bk.toPath(),log);log.accept("[backup] "+bk.getAbsolutePath()+"\n");}Files.write(f.toPath(),upd.get(i).getBytes(StandardCharsets.UTF_8));validateXml(readUtf8(f));}}
         catch(Throwable ex){for(int i=0;i<changed.size();i++)try{Files.write(changed.get(i).toPath(),orig.get(i).getBytes(StandardCharsets.UTF_8));}catch(Throwable r){ex.addSuppressed(r);}if(ex instanceof Exception)throw(Exception)ex;throw new Exception(ex);}
     }
     private static void addIfFile(List<File>x,File f){if(f!=null&&f.isFile()&&!x.contains(f))x.add(f);} private static void addConfigs(List<File>x,File d){if(d==null||!d.isDirectory())return;File[]fs=d.listFiles();if(fs==null)return;for(File f:fs){String n=f.getName().toLowerCase(Locale.ROOT);if(n.endsWith(".dll.config")||n.endsWith(".exe.config"))addIfFile(x,f);}}
