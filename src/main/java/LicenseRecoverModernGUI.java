@@ -15,6 +15,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -25,6 +31,10 @@ import java.util.regex.Pattern;
  */
 public final class LicenseRecoverModernGUI {
     private static final long PROCESS_TIMEOUT_SECONDS = 600L;
+    private static final long BATCH_SCAN_DIRECTORY_TIMEOUT_MILLIS = 20000L;
+    // Bound orphaned metadata-read threads if Windows/native I/O ignores interruption.
+    private static final Semaphore BATCH_SCAN_INSPECTION_PERMITS = new Semaphore(4);
+    private static final AtomicInteger BATCH_SCAN_THREAD_IDS = new AtomicInteger();
     private static final Pattern GENERATED_CODE_PATTERN = Pattern.compile(
             "(?m)^\\s*离线授权码\\s*[:：]\\s*([0-9A-Fa-f]+)\\s*$");
 
@@ -94,6 +104,67 @@ public final class LicenseRecoverModernGUI {
             this.skipped = skipped;
             this.errors = errors;
             this.name = name;
+        }
+    }
+
+    private static final class BatchScanInspection {
+        final BatchTarget target;
+        final Object[] cells;
+        final int detected, skipped, errors;
+        final String diagnostic;
+
+        BatchScanInspection(BatchTarget target, Object[] cells, int detected,
+                            int skipped, int errors, String diagnostic) {
+            this.target = target;
+            this.cells = cells;
+            this.detected = detected;
+            this.skipped = skipped;
+            this.errors = errors;
+            this.diagnostic = diagnostic;
+        }
+
+        static BatchScanInspection failed(File child, String reason) {
+            return new BatchScanInspection(BatchTarget.skipped(child.getName()),
+                    new Object[]{child.getName(), "检测未完成", "—", "—", "—", "—", "—",
+                            "—", reason, child.getAbsolutePath()}, 0, 0, 1, reason);
+        }
+    }
+
+    /**
+     * A slow class/JAR/DLL metadata read must not block an entire parent-directory scan.
+     * The operation is read-only. A bounded number of daemon probes may outlive a
+     * timeout if a Windows filesystem call is uninterruptible; no writes are issued.
+     */
+    static <T> T runBoundedBatchInspection(Callable<T> inspection, long timeoutMillis) throws Exception {
+        if (timeoutMillis <= 0L) throw new IllegalArgumentException("timeoutMillis");
+        if (!BATCH_SCAN_INSPECTION_PERMITS.tryAcquire()) {
+            throw new TimeoutException("已有 4 个超时的检测线程尚未退出，跳过深度检测");
+        }
+        final FutureTask<T> future = new FutureTask<T>(inspection);
+        Thread worker = new Thread(() -> {
+            try { future.run(); }
+            finally { BATCH_SCAN_INSPECTION_PERMITS.release(); }
+        }, "LicenseRecover-BatchInspect-" + BATCH_SCAN_THREAD_IDS.incrementAndGet());
+        worker.setDaemon(true);
+        try {
+            worker.start();
+        } catch (RuntimeException ex) {
+            BATCH_SCAN_INSPECTION_PERMITS.release();
+            throw ex;
+        }
+        try {
+            return future.get(timeoutMillis, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException ex) {
+            future.cancel(true);
+            throw ex;
+        } catch (InterruptedException ex) {
+            future.cancel(true);
+            Thread.currentThread().interrupt();
+            throw ex;
+        } catch (ExecutionException ex) {
+            Throwable cause = ex.getCause();
+            if (cause instanceof Exception) throw (Exception) cause;
+            throw new RuntimeException(cause);
         }
     }
 
@@ -659,68 +730,31 @@ public final class LicenseRecoverModernGUI {
                         setStatusInfo("正在扫描：" + child.getName() + "（" + current + " / " + total + "）");
                     });
 
-                    BatchTarget target;
-                    Object[] cells;
+                    BatchScanInspection inspection;
                     try {
-                        AppInfo info = AppDetector.detect(child);
-                        if (info.type == AppInfo.Type.JAVA) {
-                            target = BatchTarget.javaTarget(child.getName(), info.appRoot, info.libDir);
-                            LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(info.appRoot);
-                            String verifyText = !plan.detected ? "待识别"
-                                    : (plan.automaticRecoveryReady ? "待执行: RegisterMain"
-                                    : "未执行: " + plan.recoveryReadiness);
-                            String statusText = !plan.detected ? "待识别"
-                                    : (plan.automaticRecoveryReady ? "待处理" : "待确认");
-                            cells = new Object[]{child.getName(),
-                                    plan.detected ? "Java / " + plan.generation : "Java",
-                                    valueOrDash(plan.softVersionId), valueOrDash(plan.authorizationFamily),
-                                    valueOrDash(plan.runtimeProductId), plan.regStrSummary(), plan.configTargets,
-                                    verifyText, statusText, info.appRoot.getAbsolutePath()};
-                            detectedCount++;
-                        } else if (info.type == AppInfo.Type.DOTNET) {
-                            target = BatchTarget.dotNetTarget(child.getName(), info.binDir);
-                            LicenseRecoverModernGUIAutoRecovery.Detection d =
-                                    LicenseRecoverModernGUIAutoRecovery.detect(info.binDir);
-                            String kind = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
-                                    ? ".NET Modern" : ".NET Legacy";
-                            boolean ds0101Ready = LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(d);
-                            String dotNetRegStr = ds0101Ready ? d.versionId
-                                    : (d.productName == null ? null
-                                    : LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(d));
-                            boolean dotNetIdentityReady = d.productName != null && !d.productName.trim().isEmpty();
-                            boolean dotNetRegReady = dotNetRegStr != null && !dotNetRegStr.trim().isEmpty();
-                            String verify = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
-                                    ? (dotNetIdentityReady && dotNetRegReady
-                                            ? "待执行: DoRegistry + CheckReInfo"
-                                            : "未执行: DLL注册证据不足")
-                                    : (ds0101Ready ? "待执行: 原生离线注册 + 网站校验"
-                                            : "禁止自动写回：旧版 .NET 协议");
-                            String dotNetStatus = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
-                                    ? (ds0101Ready ? "待原生校验" : "不支持自动写回")
-                                    : ((!dotNetIdentityReady || !dotNetRegReady) ? "待确认" : "待处理");
-                            cells = new Object[]{child.getName(), kind,
-                                    valueOrDash(d.versionId), valueOrDash(d.productName), valueOrDash(d.productName),
-                                    valueOrDash(dotNetRegStr), "config.xml", verify, dotNetStatus,
-                                    info.binDir.getAbsolutePath()};
-                            detectedCount++;
-                        } else {
-                            target = BatchTarget.skipped(child.getName());
-                            cells = new Object[]{child.getName(), "—", "—", "—", "—", "—", "—", "—",
-                                    "未识别", child.getAbsolutePath()};
-                            skippedCount++;
-                        }
-                    } catch (Throwable ex) {
-                        errorCount++;
-                        target = BatchTarget.skipped(child.getName());
+                        inspection = runBoundedBatchInspection(
+                                () -> inspectBatchDirectory(child),
+                                BATCH_SCAN_DIRECTORY_TIMEOUT_MILLIS);
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    } catch (TimeoutException ex) {
+                        inspection = BatchScanInspection.failed(child,
+                                "检测超时（20 秒），已跳过该目录的深入识别；其他目录继续扫描");
+                    } catch (Exception ex) {
                         String msg = ex.getMessage();
-                        String reason = ex.getClass().getSimpleName()
-                                + (msg == null || msg.trim().isEmpty() ? "" : ": " + msg.trim());
-                        cells = new Object[]{child.getName(), "检测异常", "—", "—", "—", "—", "—", "—",
-                                reason, child.getAbsolutePath()};
-                        appendLog("[批量扫描] " + child.getName() + " 检测异常: " + reason + "\n");
+                        inspection = BatchScanInspection.failed(child,
+                                ex.getClass().getSimpleName()
+                                + (msg == null ? "" : ": " + msg));
                     }
-
-                    publish(new BatchScanRow(target, cells, current, total,
+                    detectedCount += inspection.detected;
+                    skippedCount += inspection.skipped;
+                    errorCount += inspection.errors;
+                    if (inspection.diagnostic != null) {
+                        appendLog("[批量扫描] " + child.getName() + ": "
+                                + inspection.diagnostic + "\n");
+                    }
+                    publish(new BatchScanRow(inspection.target, inspection.cells, current, total,
                             detectedCount, skippedCount, errorCount, child.getName()));
                 }
                 return null;
@@ -770,6 +804,74 @@ public final class LicenseRecoverModernGUI {
             }
         };
         batchWorker.execute();
+    }
+
+
+    /** Read-only per-application inspection. Called on an independently timed daemon. */
+    private BatchScanInspection inspectBatchDirectory(File child) {
+        int detectedCount = 0, skippedCount = 0, errorCount = 0;
+        String diagnostic = null;
+        BatchTarget target;
+        Object[] cells;
+                    try {
+                        AppInfo info = AppDetector.detectLocal(child);
+                        if (info.type == AppInfo.Type.JAVA) {
+                            target = BatchTarget.javaTarget(child.getName(), info.appRoot, info.libDir);
+                            LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(info.appRoot);
+                            String verifyText = !plan.detected ? "待识别"
+                                    : (plan.automaticRecoveryReady ? "待执行: RegisterMain"
+                                    : "未执行: " + plan.recoveryReadiness);
+                            String statusText = !plan.detected ? "待识别"
+                                    : (plan.automaticRecoveryReady ? "待处理" : "待确认");
+                            cells = new Object[]{child.getName(),
+                                    plan.detected ? "Java / " + plan.generation : "Java",
+                                    valueOrDash(plan.softVersionId), valueOrDash(plan.authorizationFamily),
+                                    valueOrDash(plan.runtimeProductId), plan.regStrSummary(), plan.configTargets,
+                                    verifyText, statusText, info.appRoot.getAbsolutePath()};
+                            detectedCount = 1;
+                        } else if (info.type == AppInfo.Type.DOTNET) {
+                            target = BatchTarget.dotNetTarget(child.getName(), info.binDir);
+                            LicenseRecoverModernGUIAutoRecovery.Detection d =
+                                    LicenseRecoverModernGUIAutoRecovery.detect(info.binDir);
+                            String kind = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
+                                    ? ".NET Modern" : ".NET Legacy";
+                            boolean ds0101Ready = LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(d);
+                            String dotNetRegStr = ds0101Ready ? d.versionId
+                                    : (d.productName == null ? null
+                                    : LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(d));
+                            boolean dotNetIdentityReady = d.productName != null && !d.productName.trim().isEmpty();
+                            boolean dotNetRegReady = dotNetRegStr != null && !dotNetRegStr.trim().isEmpty();
+                            String verify = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
+                                    ? (dotNetIdentityReady && dotNetRegReady
+                                            ? "待执行: DoRegistry + CheckReInfo"
+                                            : "未执行: DLL注册证据不足")
+                                    : (ds0101Ready ? "待执行: 原生离线注册 + 网站校验"
+                                            : "禁止自动写回：旧版 .NET 协议");
+                            String dotNetStatus = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
+                                    ? (ds0101Ready ? "待原生校验" : "不支持自动写回")
+                                    : ((!dotNetIdentityReady || !dotNetRegReady) ? "待确认" : "待处理");
+                            cells = new Object[]{child.getName(), kind,
+                                    valueOrDash(d.versionId), valueOrDash(d.productName), valueOrDash(d.productName),
+                                    valueOrDash(dotNetRegStr), "config.xml", verify, dotNetStatus,
+                                    info.binDir.getAbsolutePath()};
+                            detectedCount = 1;
+                        } else {
+                            target = BatchTarget.skipped(child.getName());
+                            cells = new Object[]{child.getName(), "—", "—", "—", "—", "—", "—", "—",
+                                    "未识别", child.getAbsolutePath()};
+                            skippedCount = 1;
+                        }
+                    } catch (Throwable ex) {
+                        errorCount = 1;
+                        target = BatchTarget.skipped(child.getName());
+                        String msg = ex.getMessage();
+                        String reason = ex.getClass().getSimpleName()
+                                + (msg == null || msg.trim().isEmpty() ? "" : ": " + msg.trim());
+                        cells = new Object[]{child.getName(), "检测异常", "—", "—", "—", "—", "—", "—",
+                                reason, child.getAbsolutePath()};
+                        diagnostic = reason;
+                    }
+        return new BatchScanInspection(target, cells, detectedCount, skippedCount, errorCount, diagnostic);
     }
 
     private void runBatch() {
@@ -1130,11 +1232,14 @@ public final class LicenseRecoverModernGUI {
 
     private void appendLog(String text) {
         if (text == null || text.isEmpty()) return;
-        appendPersistentLog(text);
-        SwingUtilities.invokeLater(() -> {
+        Runnable render = () -> {
             logArea.append(text);
             logArea.setCaretPosition(logArea.getDocument().getLength());
-        });
+        };
+        if (SwingUtilities.isEventDispatchThread()) render.run();
+        else SwingUtilities.invokeLater(render);
+        // Never wait for filesystem logging on Swing's event dispatch thread.
+        appendPersistentLog(text);
     }
 
     private void appendPersistentLog(String text) {
@@ -1173,11 +1278,29 @@ public final class LicenseRecoverModernGUI {
 /** Shared persistent logging for the modern UI and one-click overlay. */
 final class LicenseRecoverSharedLog {
     private static final Object LOCK = new Object();
+    private static final java.util.concurrent.ExecutorService WRITER =
+            java.util.concurrent.Executors.newSingleThreadExecutor(task -> {
+                Thread thread = new Thread(task, "LicenseRecover-GUI-LogWriter");
+                thread.setDaemon(true);
+                return thread;
+            });
 
     private LicenseRecoverSharedLog() { }
 
     static void append(File appDir, String message) {
         if (appDir == null || message == null || message.isEmpty()) return;
+        WRITER.execute(() -> appendToDisk(appDir, message));
+    }
+
+    /** Only for tests or non-EDT shutdown checks; never call this on the GUI thread. */
+    static void awaitPendingWrites(long timeoutMillis) throws Exception {
+        if (SwingUtilities.isEventDispatchThread()) {
+            throw new IllegalStateException("Never wait for disk logs on the Swing event thread");
+        }
+        WRITER.submit(() -> { }).get(timeoutMillis, TimeUnit.MILLISECONDS);
+    }
+
+    private static void appendToDisk(File appDir, String message) {
         try {
             synchronized (LOCK) {
                 File logs = new File(appDir, "logs");
