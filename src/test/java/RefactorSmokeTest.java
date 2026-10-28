@@ -1577,8 +1577,35 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                         legacyDotNetRoot.toFile(), legacyDotNetRoot.toFile(),
                         legacyDotNetBin.toFile(), "DS0107", null);
         check(LicenseRecoverModernGUIAutoRecovery.probeLegacySignatures(otherLegacy, null)
-                        .contains("仅核对 DS0101"),
-                "DS0101-only ABI signature assumptions do not silently apply to DS0107");
+                        .startsWith("[LEGACY_PROBE]"),
+                "DS0107 receives an independent read-only ABI diagnostic rather than a DS0101-only rejection");
+        Path ds0107Root = base.resolve("dotnet-DS0107-family-candidate");
+        Path ds0107Bin = ds0107Root.resolve("bin");
+        Files.createDirectories(ds0107Bin);
+        Files.write(ds0107Root.resolve("config.xml"),
+                "<ROOT><SystemSoft><SoftVersionID>DS0107</SoftVersionID></SystemSoft></ROOT>"
+                        .getBytes(StandardCharsets.UTF_8));
+        Files.write(ds0107Root.resolve("Regester.aspx"),
+                "<%@ Page Language='C#' %>".getBytes(StandardCharsets.UTF_8));
+        writeUtf16Fixture(ds0107Bin.resolve("ITMC.Web.dll"), "itmcIEC", "DS0107");
+        Files.write(ds0107Bin.resolve("ITMC.Regedit.dll"), new byte[]{1});
+        LicenseRecoverModernGUIAutoRecovery.Detection ds0107Detected =
+                LicenseRecoverModernGUIAutoRecovery.detect(ds0107Root.toFile());
+        check(ds0107Detected.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
+                        && "itmcIEC".equals(ds0107Detected.productName)
+                        && LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(ds0107Detected),
+                "DS0107 can be recognized by family evidence without using DS0101 exact DLL hashes");
+        check(!LicenseRecoverModernGUIAutoRecovery.supportsDs0101NativeRecovery(ds0107Detected),
+                "DS0107 family candidate never masquerades as validated DS0101 exact-binary match");
+        Files.delete(ds0107Root.resolve("Regester.aspx"));
+        check(!LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(ds0107Detected),
+                "missing registration page fails closed before attempting a native write");
+        Files.write(ds0107Root.resolve("Regester.aspx"), new byte[]{1});
+        Files.write(ds0107Root.resolve("config.xml"),
+                "<ROOT><SystemSoft><SoftVersionID>DS0108</SoftVersionID></SystemSoft></ROOT>"
+                        .getBytes(StandardCharsets.UTF_8));
+        check(!LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(ds0107Detected),
+                "version mismatch invalidates the legacy recovery candidate");
         String guiLegacySource = new String(Files.readAllBytes(
                 Paths.get("src/main/java/LicenseRecoverModernGUIUiPatchLauncher.java")),
                 StandardCharsets.UTF_8);
@@ -1765,7 +1792,7 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         String legacyGuiBranch = "preflight.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY";
         String nativeVerifyBusy = "final String[] activeStage = {preview ? \"预览检测中\" : \"准备执行本地授权检查\"}";
         check(uiPatch230.contains(legacyGuiBranch)
-                        && uiPatch230.contains("!LicenseRecoverModernGUIAutoRecovery.supportsDs0101NativeRecovery(preflight)")
+                        && uiPatch230.contains("!LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(preflight)")
                         && uiPatch230.contains("旧协议：只读接口诊断中（不会执行授权写回）")
                         && uiPatch230.contains("旧协议：接口兼容，未执行授权写回")
                         && uiPatch230.contains("probeLegacySignatures(")
