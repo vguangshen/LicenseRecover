@@ -1555,6 +1555,14 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         Files.delete(legacySiteNotReg.toPath());
         check(LicenseRecoverModernGUIAutoRecovery.restoreDotNetRegistrationFiles(legacySnapshot, null),
                 "rollback succeeds after removing the synthetic blocker");
+        LicenseRecoverModernGUIAutoRecovery.Detection otherLegacy =
+                new LicenseRecoverModernGUIAutoRecovery.Detection(
+                        LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY,
+                        legacyDotNetRoot.toFile(), legacyDotNetRoot.toFile(),
+                        legacyDotNetBin.toFile(), "DS0107", null);
+        check(LicenseRecoverModernGUIAutoRecovery.probeLegacySignatures(otherLegacy, null)
+                        .contains("仅核对 DS0101"),
+                "DS0101-only ABI signature assumptions do not silently apply to DS0107");
         String guiLegacySource = new String(Files.readAllBytes(
                 Paths.get("src/main/java/LicenseRecoverModernGUIUiPatchLauncher.java")),
                 StandardCharsets.UTF_8);
