@@ -29,7 +29,7 @@ using System.Security.Cryptography;
 using System.Text;
 
 namespace ITMC.Regedit {
-  public sealed class RegeditInfo {}
+  public sealed class RegeditInfo { public string ProName { get; set; } public string RegStr { get; set; } public DateTime EndDate { get; set; } }
   public sealed class RegeditMain {
     public string ProName { get; set; }
     public string UserID { get; set; }
@@ -84,9 +84,15 @@ namespace ITMC.Regedit {
       return true;
     }
 
+    public bool CheckLocalReg(ref RegeditInfo info) {
+      EnsureHosted("CheckLocalReg");
+      bool registered = File.Exists(Path.Combine(Root, "mock-authorized.marker"));
+      if (registered) { info.ProName = "itmcIEC"; info.RegStr = "DS0101"; info.EndDate = new DateTime(2099,12,31); }
+      return registered;
+    }
     public bool CheckReInfo(ref RegeditInfo info) {
       EnsureHosted("CheckReInfo");
-      return File.Exists(Path.Combine(Root, "mock-authorized.marker"));
+      return !File.Exists(Path.Combine(Root, "mock-authorized.marker"));
     }
   }
 }
@@ -99,8 +105,8 @@ namespace ITMC.Web {
   public sealed class funpublic {
     public static bool CheckReg() {
       string root = Environment.GetEnvironmentVariable("DS0101_MOCK_ROOT");
-      return File.Exists(Path.Combine(root, "mock-authorized.marker"))
-        && Environment.GetEnvironmentVariable("DS0101_MOCK_WEB_OK") == "yes";
+      return !(File.Exists(Path.Combine(root, "mock-authorized.marker"))
+        && Environment.GetEnvironmentVariable("DS0101_MOCK_WEB_OK") == "yes");
     }
   }
 }
@@ -168,7 +174,7 @@ if (-not (Test-Path -LiteralPath $marker)) { throw 'Accepted mock registration d
 # native registration and the application's own Web.CheckReg front door.
 $env:DS0101_MOCK_WEB_OK = 'no'
 $refused = Invoke-HostTest @('legacy-verify',$bin,'--product','itmcIEC')
-if ($refused.ExitCode -eq 0) { throw 'Web.CheckReg false was incorrectly reported as success' }
+if ($refused.ExitCode -eq 0) { throw 'Web.CheckReg registration-error flag was incorrectly ignored' }
 
 $env:DS0101_MOCK_WEB_OK = 'yes'
 $verified = Invoke-HostTest @('legacy-verify',$bin,'--product','itmcIEC')
