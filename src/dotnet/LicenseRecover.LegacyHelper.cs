@@ -244,7 +244,9 @@ namespace LicenseRecoverNet
             {
                 // Separate website front-door result, only from an isolated copy.
                 // This may run vendor code and should never be used on live IIS.
-                if (!CheckWebFrontDoor(options.RuntimeDir))
+                bool rawWebCheck = CheckWebFrontDoor(options.RuntimeDir);
+                Console.WriteLine("[LEGACY_WEB_RAW] returned=" + (rawWebCheck ? "true" : "false"));
+                if (!rawWebCheck)
                 {
                     Console.WriteLine("RESULT: LEGACY_WEB_CHECK_REJECTED");
                     return 9;
@@ -254,7 +256,9 @@ namespace LicenseRecoverNet
             }
             if (options.Command == "legacy-verify")
             {
-                if (!CheckTarget(native, regInfoType))
+                bool rawCheckReInfo = CheckTarget(native, regInfoType);
+                Console.WriteLine("[LEGACY_CHECKREINFO_RAW] returned=" + (rawCheckReInfo ? "true" : "false"));
+                if (!rawCheckReInfo)
                 {
                     Console.Error.WriteLine("[LEGACY_VERIFY] Native CheckReInfo returned false");
                     return 5;
