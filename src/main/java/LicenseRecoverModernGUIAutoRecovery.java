@@ -639,12 +639,15 @@ public final class LicenseRecoverModernGUIAutoRecovery {
 
         // Even a preview invokes native vendor code (gencode/getRegNo), which
         // may lazily create XML state. Snapshot so preview is reversible too.
+        log.accept("[dotnet-stage] SNAPSHOT: start\n");
         LinkedHashMap<File, byte[]> originals = snapshotDotNetRegistrationFiles(d);
+        log.accept("[dotnet-stage] SNAPSHOT: OK\n");
         String firewallRule = null;
         try {
             // Network isolation is established BEFORE any vendor registration code is invoked.
             // The selected helper loads the selected target registration assembly; an
             // application-specific Windows Firewall rule blocks even hard-coded outbound URLs.
+            log.accept("[dotnet-stage] PRE_BLOCK: start\n");
             firewallRule = installTemporaryDotNetNetworkGuard(helper, log);
             if (blank(firewallRule))
                 throw new IOException("[PRE_BLOCK] 无法建立 .NET 临时出站防火墙隔离。请从 LicenseRecoverGUI.exe 启动并通过管理员权限(UAC)，"
