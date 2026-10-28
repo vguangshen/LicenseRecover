@@ -870,14 +870,27 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         return candidates.size() == 1 ? candidates.iterator().next() : null;
     }
 
-    private static LinkedHashMap<File, byte[]> snapshotDotNetRegistrationFiles(Detection d) throws IOException {
+    /**
+     * Snapshot every known native registration output, including paths that do
+     * NOT exist yet. A null entry is a deletion tombstone on rollback.
+     *
+     * DS01xx CheckServerID creates/updates notRegFile.xml and CheckLocalReg
+     * can update config.xml even during a verification attempt. Filtering
+     * candidates with addIfFile silently loses those creation tombstones.
+     */
+    static LinkedHashMap<File, byte[]> snapshotDotNetRegistrationFiles(Detection d) throws IOException {
+        if (d == null || d.appRoot == null || d.runtimeDir == null)
+            throw new IOException("[SNAPSHOT] Invalid .NET site root/bin directory");
         LinkedHashMap<File, byte[]> out = new LinkedHashMap<File, byte[]>();
         List<File> candidates = new ArrayList<File>();
-        addIfFile(candidates, new File(d.appRoot, "config.xml"));
-        addIfFile(candidates, new File(d.runtimeDir, "config.xml"));
-        addIfFile(candidates, new File(d.appRoot, "Register.xml"));
-        addIfFile(candidates, new File(d.runtimeDir, "Register.xml"));
-        addIfFile(candidates, new File(d.appRoot, "Web.config"));
+        // Keep fixed output paths even if absent at the beginning of a run.
+        for (File directory : new File[]{d.appRoot, d.runtimeDir}) {
+            candidates.add(new File(directory, "config.xml"));
+            candidates.add(new File(directory, "Register.xml"));
+            candidates.add(new File(directory, "notRegFile.xml"));
+        }
+        candidates.add(new File(d.appRoot, "Web.config"));
+        // Sidecar configs are only included if they already exist.
         addConfigs(candidates, d.appRoot);
         addConfigs(candidates, d.runtimeDir);
         HashSet<String> seen = new HashSet<String>();
@@ -901,12 +914,20 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         }
     }
 
-    private static void restoreDotNetRegistrationFiles(LinkedHashMap<File, byte[]> originals, Consumer<String> log) {
+    static void restoreDotNetRegistrationFiles(LinkedHashMap<File, byte[]> originals, Consumer<String> log) {
+        if (originals == null) return;
         for (Map.Entry<File, byte[]> e : originals.entrySet()) {
             try {
-                if (e.getValue() == null) Files.deleteIfExists(e.getKey().toPath());
-                else Files.write(e.getKey().toPath(), e.getValue());
-                if (log != null) log.accept("[rollback] restored " + e.getKey().getAbsolutePath() + "\n");
+                File f = e.getKey();
+                byte[] original = e.getValue();
+                if (original == null) {
+                    if (Files.deleteIfExists(f.toPath()) && log != null)
+                        log.accept("[rollback] removed newly-created " + f.getAbsolutePath() + "\n");
+                } else if (!f.isFile() || !Arrays.equals(original, Files.readAllBytes(f.toPath()))) {
+                    Files.write(f.toPath(), original);
+                    if (log != null) log.accept("[rollback] restored " + f.getAbsolutePath() + "\n");
+                }
+                // If the contents match, do not unnecessarily rewrite files.
             } catch (Throwable r) {
                 if (log != null) log.accept("[rollback-warning] " + e.getKey().getAbsolutePath() + ": " + safe(r) + "\n");
             }
