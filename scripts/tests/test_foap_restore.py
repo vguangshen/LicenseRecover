@@ -10,6 +10,7 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS))
 from itmc_foap_unpack_stdlib import rc4, method_length, restore
 from ds0101_unpack_site import _target_members, recover_site
+from inspect_ds01xx_registration_chain import call_edges
 
 
 class ProtectedILTests(unittest.TestCase):
@@ -43,6 +44,45 @@ class ProtectedILTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 restore(p, p, None)
             self.assertEqual(p.read_bytes(), b'MZ' + b'\0' * 128)
+
+
+class RegistrationCallTraceTests(unittest.TestCase):
+    def test_tiny_cil_method_call_reference(self):
+        # Tiny CIL: call (MethodDef token 0x06000002), ret.
+        code = b'\x28\x02\x00\x00\x06\x2a'
+        image = b'\x00' + bytes([(len(code) << 2) | 2]) + code
+
+        class FakePE:
+            b = image
+            def rva_to_offset(self, rva):
+                return rva
+
+        class FakeMetadata:
+            methods = {1: 1}
+            def target_name(self, token):
+                return 'Demo.RegeditMain.CheckReInfo' if token == 0x06000002 else 'unexpected'
+
+        edges = call_edges(FakePE(), FakeMetadata(), 1)
+        self.assertEqual([edge['target'] for edge in edges],
+                         ['Demo.RegeditMain.CheckReInfo'])
+
+    def test_token_bytes_in_ldstr_are_not_false_method_calls(self):
+        # The operand to ldstr contains a 0x28 byte, but must not become a
+        # phantom call in the static registration-chain report.
+        code = b'\x72\x28\x00\x00\x70\x2a'
+        image = b'\x00' + bytes([(len(code) << 2) | 2]) + code
+
+        class FakePE:
+            b = image
+            def rva_to_offset(self, rva):
+                return rva
+
+        class FakeMetadata:
+            methods = {1: 1}
+            def target_name(self, token):
+                return 'phantom'
+
+        self.assertEqual(call_edges(FakePE(), FakeMetadata(), 1), [])
 
 
 class SiteArchiveTests(unittest.TestCase):
