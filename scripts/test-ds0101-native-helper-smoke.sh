@@ -14,7 +14,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 namespace ITMC.Regedit {
-  public sealed class RegeditInfo {}
+  public sealed class RegeditInfo { public string ProName { get; set; } public string RegStr { get; set; } public DateTime EndDate { get; set; } }
   public sealed class RegeditMain {
     public string ProName { get; set; }
     public string UserID { get; set; }
@@ -46,10 +46,12 @@ namespace ITMC.Regedit {
       return true;
     }
     public bool CheckReInfo(ref RegeditInfo info) {
-      return File.Exists(Environment.GetEnvironmentVariable("DS0101_MOCK_STATE"));
+      return !File.Exists(Environment.GetEnvironmentVariable("DS0101_MOCK_STATE"));
     }
     public bool CheckLocalReg(ref RegeditInfo info) {
-      return File.Exists(Environment.GetEnvironmentVariable("DS0101_MOCK_STATE"));
+      bool registered = File.Exists(Environment.GetEnvironmentVariable("DS0101_MOCK_STATE"));
+      if (registered) { info.ProName = "itmcIEC"; info.RegStr = "DS0101"; info.EndDate = new DateTime(2099,12,31); }
+      return registered;
     }
   }
 }
@@ -60,8 +62,8 @@ using System.IO;
 namespace ITMC.Web {
   public sealed class funpublic {
     public static bool CheckReg() {
-      return File.Exists(Environment.GetEnvironmentVariable("DS0101_MOCK_STATE"))
-        && Environment.GetEnvironmentVariable("DS0101_MOCK_WEB_OK") == "yes";
+      return !(File.Exists(Environment.GetEnvironmentVariable("DS0101_MOCK_STATE"))
+        && Environment.GetEnvironmentVariable("DS0101_MOCK_WEB_OK") == "yes");
     }
   }
 }
