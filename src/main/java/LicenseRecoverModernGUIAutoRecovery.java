@@ -590,7 +590,9 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (compatibility != null && compatibility.relationCount > 0)
             log.accept("[one-click] target RegisterVersion.db compatibility: " + compatibility.summary() + "\n");
 
-        LinkedHashMap<File, byte[]> originals = dryRun ? null : snapshotDotNetRegistrationFiles(d);
+        // Even a preview invokes native vendor code (gencode/getRegNo), which
+        // may lazily create XML state. Snapshot so preview is reversible too.
+        LinkedHashMap<File, byte[]> originals = snapshotDotNetRegistrationFiles(d);
         String firewallRule = null;
         try {
             // Network isolation is established BEFORE any vendor registration code is invoked.
@@ -641,7 +643,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                     + " registrationProduct=" + valueOrPending(registrationProduct)
                     + " products=" + valueOrPending(regStr) + " RegID=" + valueOrPending(machine) + "\n");
             if (dryRun) {
-                log.accept("[dry-run] native request/auth codes generated under outbound isolation; no file was changed.\n");
+                log.accept("[dry-run] native request/auth codes generated under outbound isolation; registered files will be restored to the initial snapshot before exit.\n");
                 return new Result(true, "Preview completed under temporary outbound isolation; no file was changed.",
                         d, machine, request, auth);
             }
@@ -697,10 +699,13 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                     ".NET local authorization was applied and verified through the target-preferred registration chain while outbound traffic was isolated. Restart the IIS app pool/site.",
                     d, machine, request, auth);
         } catch (Throwable ex) {
-            if (!dryRun && originals != null) restoreDotNetRegistrationFiles(originals, log);
+            if (originals != null) restoreDotNetRegistrationFiles(originals, log);
             if (ex instanceof Exception) throw (Exception) ex;
             throw new Exception(ex);
         } finally {
+            // A successful preview also needs to remove files created by
+            // native request generation and restore any changed config values.
+            if (dryRun && originals != null) restoreDotNetRegistrationFiles(originals, log);
             removeTemporaryDotNetNetworkGuard(firewallRule, log);
         }
     }
