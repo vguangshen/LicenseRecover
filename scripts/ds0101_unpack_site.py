@@ -15,6 +15,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 from itmc_foap_unpack_stdlib import restore
+from inspect_ds01xx_registration_chain import inspect_web_assembly
 
 ASSEMBLIES = ('ITMC.Web.dll', 'ITMC.Regedit.dll', 'itmcRegedit.dll')
 MAX_DLL_SIZE = 32 * 1024 * 1024
@@ -109,8 +110,18 @@ def recover_site(source: Path, output: Path):
             target = output / (name[:-4] + '.unpacked.dll')
             report = output / (name[:-4] + '.report.json')
             summaries.append(restore(scratch / name, target, report))
+        try:
+            chain = inspect_web_assembly(output / 'ITMC.Web.unpacked.dll')
+        except ValueError as ex:
+            # Other DS01xx builds may not expose the identical names or metadata.
+            # In that case, preserve the recovered DLLs and explicitly mark
+            # the hybrid registration chain as unverified, not absent.
+            chain = {'static_dual_registration_chain_evidenced': False,
+                     'inspection_error': str(ex)[:240],
+                     'runtime_licensing_tested': False}
         manifest = {
             'source': source.name,
+            'registration_chain': chain,
             'soft_version_id': version,
             'restored_methods_total': sum(x['restored_method_count'] for x in summaries),
             'assemblies': summaries,
