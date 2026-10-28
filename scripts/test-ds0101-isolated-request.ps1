@@ -17,8 +17,8 @@ function RootFrom([string]$p) {
     if ((Split-Path $full -Leaf) -ieq 'bin') { return Split-Path $full -Parent }
     return $full
 }
-function NativeStage([string]$exe,[string[]]$args) {
-    $output = & $exe @args 2>&1 | Out-String
+function NativeStage([string]$exe,[string[]]$arguments) {
+    $output = & $exe @arguments 2>&1 | Out-String
     return @{ ExitCode = $LASTEXITCODE; Text = [string]$output }
 }
 $root = RootFrom $SiteRoot
@@ -51,10 +51,10 @@ try {
                  'bin\Register.xml','bin\notRegFile.xml')
     $before = @{}
     foreach ($path in $watched) { $before[$path] = HashOf (Join-Path $copy $path) }
-    $probe = NativeStage $hostExe @('legacy-probe',$testBin)
+    $probe = NativeStage -exe $hostExe -arguments @('legacy-probe',$testBin)
     $gencode = @{ ExitCode = -1; Text = '' }
     if ($probe.ExitCode -eq 0 -and $probe.Text -match 'LEGACY_SIGNATURES_VERIFIED_ONLY') {
-        $gencode = NativeStage $hostExe @('legacy-gencode',$testBin,'--product','itmcIEC')
+        $gencode = NativeStage -exe $hostExe -arguments @('legacy-gencode',$testBin,'--product','itmcIEC')
     }
     $after = @{}
     foreach ($path in $watched) { $after[$path] = HashOf (Join-Path $copy $path) }
