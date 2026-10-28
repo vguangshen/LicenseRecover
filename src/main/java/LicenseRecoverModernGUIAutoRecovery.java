@@ -136,13 +136,48 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         }
     }
 
-    /** Explicitly fail closed: DS01xx legacy registration is not the modern DoRegistry protocol. */
+    /**
+     * Lightweight, read-only legacy profile. Never inspect or log regName,
+     * stored authorization strings, host identifiers, or customer details.
+     * This is deliberately inexpensive enough for the Swing preflight.
+     */
+    static String legacyChainReadOnlyEvidence(Detection d) {
+        if (d == null || d.appRoot == null || d.runtimeDir == null)
+            return "只读组件检查：未取得完整网站目录";
+        boolean web = new File(d.runtimeDir, "ITMC.Web.dll").isFile();
+        boolean upper = new File(d.runtimeDir, "ITMC.Regedit.dll").isFile();
+        boolean lower = new File(d.runtimeDir, "itmcRegedit.dll").isFile();
+        boolean page = new File(d.appRoot, "Regester.aspx").isFile();
+        boolean register = new File(d.appRoot, "Register.xml").isFile();
+        String regType = "未确认";
+        File rootConfig = new File(d.appRoot, "config.xml");
+        try {
+            if (rootConfig.isFile() && Files.size(rootConfig.toPath()) <= 1024 * 1024) {
+                String xml = new String(Files.readAllBytes(rootConfig.toPath()), StandardCharsets.UTF_8);
+                Matcher m = Pattern.compile("(?is)<regType\\\\b[^>]*>\\\\s*([123])\\\\s*</regType\\\\s*>").matcher(xml);
+                if (m.find()) regType = m.group(1);
+            }
+        } catch (Exception ignore) { /* unreadable config must never imply valid registration */ }
+        return "只读注册链：ITMC.Web.dll=" + (web ? "有" : "无")
+                + "、ITMC.Regedit.dll=" + (upper ? "有" : "无")
+                + "、itmcRegedit.dll=" + (lower ? "有" : "无")
+                + "、Regester.aspx=" + (page ? "有" : "无")
+                + "、Register.xml=" + (register ? "有" : "无")
+                + "、站点根目录regType=" + regType
+                + "；以上仅为文件/配置结构证据，不代表授权有效。";
+    }
+
+    /** DS01xx may contain both an uppercase native page registration chain
+     * and a lowercase runtime compatibility check. Neither is proof of
+     * a modern JSON authorization format or safe unattended write-back. */
     static String legacyWritebackUnavailable(Detection detection) {
         String version = detection == null || blank(detection.versionId)
                 ? "DS01xx" : detection.versionId.trim();
         return "[DOTNET_LEGACY] " + version
-                + " 使用旧版 .NET 注册协议，尚未实现经原生校验的自动写回。"
-                + " 该目录即使同时存在 ITMC.Regedit.dll，也不能仅凭文件存在就视为 Modern 协议。"
+                + " 尚未实现经目标站点原生校验的一键授权写回。"
+                + " DS0101 样本的注册页实际调用大写 ITMC.Regedit 的 NewRegistry/DoRegistry，"
+                + "而 Web.CheckReg 还会调用大小写两套 CheckReInfo；不能把这两套校验当成单一路径。"
+                + " " + legacyChainReadOnlyEvidence(detection)
                 + " 本次未生成注册码、未执行写回、未修改任何目标文件。"
                 + " 仅阻断授权服务器不代表授权成功；请通过目标程序原有的注册流程提交合法授权并验证。";
     }
