@@ -239,6 +239,37 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                 + " 仅阻断授权服务器不代表授权成功；请通过目标程序原有的注册流程提交合法授权并验证。";
     }
 
+    /**
+     * DS01xx one-click GUI safety diagnostic, intentionally NOT a registration
+     * or a success path. The host dispatches legacy-probe before its hosted
+     * bridge setup; ReflectionOnlyLoadFrom must never execute vendor code.
+     */
+    static String probeLegacySignatures(Detection d, Consumer<String> logger) {
+        Consumer<String> log = logger == null ? x -> { } : logger;
+        if (d == null || d.kind != Kind.DOTNET_LEGACY || d.runtimeDir == null)
+            return "[LEGACY_PROBE] 未识别 DS01xx .NET 旧协议目录，未执行检查。";
+        if (!isWindows())
+            return "[LEGACY_PROBE] 仅支持 Windows .NET Framework；当前环境无法执行原生元数据探针。";
+        File helper = findDotNetAspNetHostHelper();
+        if (helper == null)
+            return "[LEGACY_PROBE] 未找到 LicenseRecover.NET.AspNetHost.exe，无法确认原生接口。";
+        try {
+            log.accept("[LEGACY_PROBE] 开始仅检查目标 DLL 元数据，不执行注册和授权校验。\n");
+            NativeProcessResult result = runNativeCapture(Arrays.asList(
+                    helper.getAbsolutePath(), "legacy-probe",
+                    d.runtimeDir.getAbsolutePath()), d.appRoot, log, 30L);
+            if (result.exitCode == 0
+                    && result.output.contains("RESULT: LEGACY_SIGNATURES_VERIFIED_ONLY"))
+                return "[LEGACY_PROBE] PASS: 原生方法签名匹配 DS0101 已知结构；"
+                        + "仅证实接口兼容，未注册、未改动软件、未验证许可证。";
+            return "[LEGACY_PROBE] 未能证实原生接口兼容（exit="
+                    + result.exitCode + "）。请查看运行日志；未执行注册写回。";
+        } catch (Exception ex) {
+            return "[LEGACY_PROBE] 元数据检查未完成：" + safe(ex)
+                    + "；未执行注册写回。";
+        }
+    }
+
     private static Result recoverJava(Detection d, boolean backup, boolean blockNet, boolean dryRun, Consumer<String> log) throws Exception {
         LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(d.appRoot);
         if (plan.detected) log.accept(plan.logSummary());
