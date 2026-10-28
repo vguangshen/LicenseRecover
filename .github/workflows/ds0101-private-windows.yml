@@ -34,7 +34,7 @@ jobs:
           repository: vguangshen/LicenseRecover
           # Pin executed diagnostic source; do not follow a mutable branch
           # when running private proprietary binaries.
-          ref: 5bb3461126d570b94d4a2dbbddfe8d377252084c
+          ref: 17f76de6071eef767bb9761a49dc79b58d01900a
           path: lrc-tools
           persist-credentials: false
       - name: Prepare Python (stdlib-only offline CIL restoration)
