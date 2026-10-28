@@ -16,6 +16,7 @@ import zipfile
 from pathlib import Path
 from itmc_foap_unpack_stdlib import restore
 from inspect_ds01xx_registration_chain import inspect_web_assembly
+from inspect_ds01xx_registration_modes import inspect_registration_assembly
 
 ASSEMBLIES = ('ITMC.Web.dll', 'ITMC.Regedit.dll', 'itmcRegedit.dll')
 MAX_DLL_SIZE = 32 * 1024 * 1024
@@ -121,9 +122,22 @@ def recover_site(source: Path, output: Path):
                 chain = {'static_dual_registration_chain_evidenced': False,
                          'inspection_error': str(ex)[:240],
                          'runtime_licensing_tested': False}
+            registration_modes = []
+            for name in ('ITMC.Regedit.dll', 'itmcRegedit.dll'):
+                try:
+                    registration_modes.append(inspect_registration_assembly(
+                        stage / (name[:-4] + '.unpacked.dll')))
+                except ValueError as ex:
+                    registration_modes.append({
+                        'assembly': name,
+                        'static_priorities_proven': False,
+                        'inspection_error': str(ex)[:240],
+                        'runtime_license_validity_tested': False,
+                    })
             manifest = {
                 'source': source.name,
                 'registration_chain': chain,
+                'registration_modes': registration_modes,
                 'soft_version_id': version,
                 'restored_methods_total': sum(x['restored_method_count'] for x in summaries),
                 'assemblies': summaries,
