@@ -34,7 +34,7 @@ jobs:
           repository: vguangshen/LicenseRecover
           # Pin executed diagnostic source; do not follow a mutable branch
           # when running private proprietary binaries.
-          ref: 89766bd8ad4c0592445e299cf3eef8bd5d294f60
+          ref: bcd3093d207407d4a6ae67b2480b97b1015c3dcf
           path: lrc-tools
           persist-credentials: false
       - name: Prepare Python (stdlib-only offline CIL restoration)
@@ -106,6 +106,11 @@ jobs:
             # registered or patched; output omits machine/request/license IDs.
             & (Join-Path $toolSrc 'scripts/test-ds0101-isolated-request.ps1') -SiteRoot $site -ToolRoot $scratch
             if (-not $?) { throw 'Private Windows DS0101 preflight failed' }
+            # New gate: generate an offline candidate with production Java
+            # protocol and test the original native DoRegistry/CheckReg only
+            # against a disposable sanitized site copy. Never print secrets.
+            & (Join-Path $toolSrc 'scripts/test-ds0101-isolated-offline-gate.ps1') -SiteRoot $site -ToolRoot $scratch -SourceRoot $toolSrc
+            if (-not $?) { throw 'Private Windows DS0101 offline gate diagnostic failed' }
           }
           finally {
             Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
