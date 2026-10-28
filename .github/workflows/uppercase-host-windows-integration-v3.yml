@@ -11,6 +11,19 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: PowerShell 5.1 default fixture path regression (no repo creation)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $messages = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts/tests/test-ds0101-psroot-default.ps1" 2>&1 | Out-String
+          $exit = $LASTEXITCODE
+          $ErrorActionPreference = 'Stop'
+          if ($exit -eq 0) { throw 'Expected test fixture to stop before any GitHub operation' }
+          if ($messages -notmatch 'Private fixture ZIP not found') {
+            throw ('PowerShell 5.1 parameter default initialization regressed: ' + $messages)
+          }
+          Write-Host 'PASS: Windows PowerShell 5.1 resolves script directory after parameter binding.'
+
       - name: DS0101 native hosted registration workflow (synthetic fixtures only)
         shell: pwsh
         run: |
