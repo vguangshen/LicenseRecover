@@ -49,6 +49,9 @@ jobs:
           fi
           x86_64-w64-mingw32-gcc --version | head -n 1
           mcs --version
+      - name: Verify DS0101 legacy-probe without executing vendor code
+        shell: bash
+        run: bash scripts/test-ds0101-legacy-probe.sh
       - name: Prepare Java sample compatibility
         shell: bash
         run: |
