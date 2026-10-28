@@ -1486,24 +1486,26 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                 "DS0101 preflight never reveals existing local authorization data");
         // Regression: a native DS0101 CheckServerID may create notRegFile.xml,
         // and CheckLocalReg may mutate config.xml even during verification.
-        // The hosted native probe must inspect method metadata only: calling
-        // CheckReInfo/CheckReg directly may mutate config.xml or use counters.
+        // Legacy probe must be offline and non-mutating: the standalone host
+        // handles it BEFORE choosing helpers or staging any ASP.NET bridge.
+        String nativeHostSource = new String(Files.readAllBytes(
+                Paths.get("src/dotnet/LicenseRecover.AspNetHost.cs")), StandardCharsets.UTF_8);
         String nativeBridgeSource = new String(Files.readAllBytes(
                 Paths.get("src/dotnet/LicenseRecover.AspNetBridge.cs")), StandardCharsets.UTF_8);
-        int probeStart = nativeBridgeSource.indexOf("private static int RunLegacySignatureProbe(");
-        int probeEnd = nativeBridgeSource.indexOf("private static bool IsGenCodeWithoutExplicitRequest(", probeStart);
-        check(nativeBridgeSource.contains("\"legacy-probe\"") && probeStart >= 0 && probeEnd > probeStart,
-                "ASP.NET host offers a distinct DS0101 read-only signature probe command");
-        String probeBody = probeEnd > probeStart ? nativeBridgeSource.substring(probeStart, probeEnd) : "";
-        check(probeBody.contains("GetConstructor(")
-                        && probeBody.contains("GetMethod(\"NewRegistry\"")
-                        && probeBody.contains("GetMethod(\"DoRegistry\"")
-                        && probeBody.contains("GetMethod(\"CheckReInfo\"")
-                        && probeBody.contains("GetMethod(\"CheckReg\"")
-                        && probeBody.contains("LEGACY_SIGNATURES_VERIFIED_ONLY")
-                        && !probeBody.contains(".Invoke("),
-                "legacy native probe validates full signatures without invoking authorization methods");
-
+        int probeDispatch = nativeHostSource.indexOf("return LicenseRecoverLegacyMetadataProbe.Inspect(runtimeDir)");
+        int helperSelect = nativeHostSource.indexOf("helper = SelectHelper(toolDir, runtimeDir, out chain)");
+        int probeBodyStart = nativeHostSource.indexOf("internal static class LicenseRecoverLegacyMetadataProbe");
+        String offlineProbeSource = probeBodyStart < 0 ? "" : nativeHostSource.substring(probeBodyStart);
+        check(probeDispatch >= 0 && helperSelect > probeDispatch,
+                "DS0101 offline legacy-probe runs before helper selection or bridge staging");
+        check(offlineProbeSource.contains("Assembly.ReflectionOnlyLoadFrom(")
+                        && offlineProbeSource.contains("ReflectionOnlyAssemblyResolve")
+                        && offlineProbeSource.contains("LEGACY_SIGNATURES_VERIFIED_ONLY")
+                        && !offlineProbeSource.contains("EnsureBridgeInTargetBin(")
+                        && !offlineProbeSource.contains(".Invoke("),
+                "legacy-probe only reads CLR metadata and never invokes vendor methods");
+        check(!nativeBridgeSource.contains("RunLegacySignatureProbe("),
+                "ASP.NET hosted bridge never exposes a misleading stateful legacy-probe");
         File legacySiteNotReg = legacyDotNetRoot.resolve("notRegFile.xml").toFile();
         File legacyBinNotReg = legacyDotNetBin.resolve("notRegFile.xml").toFile();
         File legacyBinConfig = legacyDotNetBin.resolve("config.xml").toFile();
