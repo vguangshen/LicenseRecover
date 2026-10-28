@@ -28,7 +28,7 @@ permissions:
   contents: read
 jobs:
   private-diagnostics:
-    uses: vguangshen/LicenseRecover/.github/workflows/ds0101-private-windows.yml@fix/ds0101-foap-analysis-20261028
+    uses: vguangshen/LicenseRecover/.github/workflows/ds0101-private-windows.yml@eda1aac4a4868d046455a09a22af2c8ff6dea5db
     with:
       archive_path: DS0101-private-Windows-fixture.zip
       restore_cil: true
@@ -36,7 +36,7 @@ jobs:
 
 4. In the private repository, open Actions and manually Run workflow.
 
-Pin the reusable workflow to an audited immutable Git commit instead of the moving branch ref if adopting this permanently.
+The example pins the reusable workflow to an immutable commit. Its checkout of LicenseRecover diagnostic source is independently pinned to an earlier tested commit as well; do not replace either with an unreviewed moving branch.
 
 ## What Windows Runner actually does
 
