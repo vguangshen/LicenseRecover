@@ -70,8 +70,12 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             // assemblies on the Swing event thread for an unsupported write-back.
             // The dedicated old-code registration page can still inspect product
             // metadata separately when explicitly used.
-            if (LegacyDotNetProtocol.isLegacyVersion(version))
-                return new Detection(Kind.DOTNET_LEGACY, s, root, bin, version, null);
+            if (LegacyDotNetProtocol.isLegacyVersion(version)) {
+                // Discover the real legacy ProName from the selected Web DLL,
+                // not a product/version hardcoded in the recovery coordinator.
+                String nativeProduct = detectProduct(new File(bin, "ITMC.Web.dll"), version);
+                return new Detection(Kind.DOTNET_LEGACY, s, root, bin, version, nativeProduct);
+            }
             File webDll = new File(bin, "ITMC.Web.dll");
             String configuredProduct = detectConfiguredDotNetProduct(root, bin, version);
             String assemblyProduct = detectProduct(webDll, version);
@@ -120,10 +124,30 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         return configured != null ? configured : assembly;
     }
 
-    // Enable the DS0101 adapter only for the exact two original DLL hashes
-    // validated from the user's test site. Other legacy versions remain blocked.
+    /**
+     * Cheap discovery of a DS01xx native registration candidate.
+     *
+     * This is a family *candidate*, NOT authorization or ABI evidence. Before
+     * any backup/config writes, recoverDotNet runs the Windows reflection-only
+     * legacy-probe against the selected DLLs; the original DoRegistry, local
+     * record and website checks must subsequently all agree. This lets DS0107
+     * and other members reuse the existing path without matching one DLL hash.
+     */
+    static boolean supportsLegacyFamilyRecovery(Detection d) {
+        if (d == null || d.kind != Kind.DOTNET_LEGACY
+                || !LegacyDotNetProtocol.isLegacyVersion(d.versionId)
+                || d.appRoot == null || d.runtimeDir == null) return false;
+        if (!"itmcIEC".equals(d.productName)) return false;
+        if (!new File(d.runtimeDir, "ITMC.Regedit.dll").isFile()
+                || !new File(d.runtimeDir, "ITMC.Web.dll").isFile()
+                || !new File(d.appRoot, "Regester.aspx").isFile()) return false;
+        String actual = readVersion(d.appRoot, d.runtimeDir);
+        return actual != null && actual.equalsIgnoreCase(d.versionId);
+    }
+
+    /** Kept for DS0101 exact-binary regression checks and diagnostics. */
     static boolean supportsDs0101NativeRecovery(Detection d) {
-        return d != null && d.kind == Kind.DOTNET_LEGACY
+        return supportsLegacyFamilyRecovery(d)
                 && "DS0101".equalsIgnoreCase(d.versionId)
                 && isKnownDs0101RegistrationPair(d.runtimeDir);
     }
@@ -137,7 +161,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             if (d.kind == Kind.JAVA) return recoverJava(d,backup,blockNet,dryRun,log);
             if (d.kind == Kind.DOTNET_MODERN) return recoverDotNet(d,backup,blockNet,dryRun,log);
             if (d.kind == Kind.DOTNET_LEGACY) {
-                if (supportsDs0101NativeRecovery(d))
+                if (supportsLegacyFamilyRecovery(d))
                     return recoverDotNet(d,backup,blockNet,dryRun,log);
                 log.accept("[one-click] " + legacyChainReadOnlyEvidence(d) + "\n");
                 return Result.fail(legacyWritebackUnavailable(d), d);
@@ -258,9 +282,6 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         Consumer<String> log = logger == null ? x -> { } : logger;
         if (d == null || d.kind != Kind.DOTNET_LEGACY || d.runtimeDir == null)
             return "[LEGACY_PROBE] 未识别 DS01xx .NET 旧协议目录，未执行检查。";
-        if (!"DS0101".equalsIgnoreCase(d.versionId))
-            return "[LEGACY_PROBE] 当前仅核对 DS0101 的已确认原生接口；"
-                    + "其他 DS01xx 版本尚无完整 ABI 证据，未执行检查。";
         if (!isWindows())
             return "[LEGACY_PROBE] 仅支持 Windows .NET Framework；当前环境无法执行原生元数据探针。";
         File helper = findDotNetAspNetHostHelper();
@@ -273,7 +294,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                     d.runtimeDir.getAbsolutePath()), d.appRoot, log, 30L);
             if (result.exitCode == 0
                     && result.output.contains("RESULT: LEGACY_SIGNATURES_VERIFIED_ONLY"))
-                return "[LEGACY_PROBE] PASS: 原生方法签名匹配 DS0101 已知结构；"
+                return "[LEGACY_PROBE] PASS: 原生方法签名匹配 DS01xx 旧协议接口；"
                         + "仅证实接口兼容，未注册、未改动软件、未验证许可证。";
             return "[LEGACY_PROBE] 未能证实原生接口兼容（exit="
                     + result.exitCode + "）。请查看运行日志；未执行注册写回。";
@@ -592,7 +613,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
 
     private static Result recoverDotNet(Detection d, boolean backup, boolean blockNet, boolean dryRun, Consumer<String> log) throws Exception {
         if (!isWindows()) return Result.fail(".NET native registration runs only on Windows.", d);
-        final boolean legacyDs0101 = supportsDs0101NativeRecovery(d);
+        final boolean legacyDs01xx = supportsLegacyFamilyRecovery(d);
 
         File targetRegedit = selectDotNetRegeditAssembly(d.runtimeDir);
         if (targetRegedit == null)
@@ -607,8 +628,19 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (helper == null) {
             return Result.fail("[HELPER] LicenseRecover.NET.AspNetHost.exe was not found; selected target registration chain cannot run.", d);
         }
+        if (legacyDs01xx) {
+            // Reflection-only metadata preflight: no target method execution,
+            // no file/config mutation and no need to assume DS0101's DLL hash.
+            log.accept("[dotnet-stage] LEGACY_ABI: read-only native compatibility check\\n".replace("\\n", "\n"));
+            NativeProcessResult abi = runNativeCapture(Arrays.asList(
+                    helper.getAbsolutePath(), "legacy-probe", d.runtimeDir.getAbsolutePath()),
+                    d.appRoot, null, 30L);
+            if (abi.exitCode != 0 || !abi.output.contains("LEGACY_SIGNATURES_VERIFIED_ONLY"))
+                return Result.fail("[LEGACY_ABI] DS01xx native signature mismatch; no write attempted.", d);
+            log.accept("[dotnet-stage] LEGACY_ABI: OK\\n".replace("\\n", "\n"));
+        }
 
-        String appProduct = legacyDs0101 ? "itmcIEC" : d.productName;
+        String appProduct = d.productName;
         if (blank(appProduct))
             return Result.fail("Target ITMC.Web.dll did not prove a ProName; default product fallback is disabled.", d);
 
@@ -625,7 +657,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                     + appProduct + "\n");
         }
 
-        String regStr = legacyDs0101 ? d.versionId : detectDotNetRegStr(d);
+        String regStr = legacyDs01xx ? d.versionId : detectDotNetRegStr(d);
         if (blank(regStr))
             return Result.fail("Target application directory did not prove a usable current SoftVersionID/RegStr.", d);
         if (!blank(d.versionId) && !containsRegStrToken(regStr, d.versionId))
@@ -655,7 +687,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             log.accept("[dotnet-stage] PRE_BLOCK: OK (" + helper.getName() + ")\n");
 
             if (!dryRun) {
-                if (backup || legacyDs0101) backupDotNetRegistrationFiles(originals, log);
+                if (backup || legacyDs01xx) backupDotNetRegistrationFiles(originals, log);
                 blockPrimaryDotNetConfigs(d, log);
                 blockSidecars(d, false, false, log);
                 log.accept("[pre-block] authorization network isolation is active before gencode / DoRegistry / CheckReInfo.\n");
@@ -665,10 +697,11 @@ public final class LicenseRecoverModernGUIAutoRecovery {
 
             List<String> generate = new ArrayList<String>();
             generate.add(helper.getAbsolutePath());
-            if (legacyDs0101) generate.add("legacy-gencode"); else generate.add("gencode");
+            if (legacyDs01xx) generate.add("legacy-gencode"); else generate.add("gencode");
             generate.add(d.runtimeDir.getAbsolutePath());
             generate.add("--product"); generate.add(registrationProduct);
-            if (!legacyDs0101) { generate.add("--regstr"); generate.add(regStr); }
+            if (legacyDs01xx) { generate.add("--version"); generate.add(d.versionId); }
+            if (!legacyDs01xx) { generate.add("--regstr"); generate.add(regStr); }
             log.accept("[dotnet-stage] GENCODE: start\n");
             NativeProcessResult generated = runNativeCapture(generate, d.appRoot, log);
             if (generated.exitCode != 0)
@@ -676,7 +709,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             log.accept("[dotnet-stage] GENCODE: OK\n");
 
             String request = findLabeledHex(generated.output, "注册申请号", "申请号");
-            String auth = legacyDs0101
+            String auth = legacyDs01xx
                     ? (blank(request) ? null : LegacyDotNetProtocol.generateAuthorizationCode(
                             request, d.versionId, registrationProduct).code)
                     : findLabeledHex(generated.output, "离线授权码", "授权码");
@@ -688,7 +721,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             String machine = null;
             try {
                 String plain = desDecryptHex(request, "itmcsoft");
-                if (!legacyDs0101 && plain != null && plain.length() >= 20) machine = plain.substring(4, 20);
+                if (!legacyDs01xx && plain != null && plain.length() >= 20) machine = plain.substring(4, 20);
             } catch (Throwable ignore) { }
 
             log.accept("[one-click] .NET native registration flow: PRE-BLOCK -> gencode -> DoRegistry -> CheckReInfo\n");
@@ -698,19 +731,20 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             if (dryRun) {
                 log.accept("[dry-run] native request/auth codes generated under outbound isolation; registered files will be restored to the initial snapshot before exit.\n");
                 return new Result(true, "Preview completed under temporary outbound isolation; no file was changed.",
-                        d, machine, legacyDs0101 ? null : request, legacyDs0101 ? null : auth);
+                        d, machine, legacyDs01xx ? null : request, legacyDs01xx ? null : auth);
             }
 
             List<String> apply = new ArrayList<String>();
             apply.add(helper.getAbsolutePath());
-            if (legacyDs0101) apply.add("legacy-doreg"); else apply.add("doreg");
+            if (legacyDs01xx) apply.add("legacy-doreg"); else apply.add("doreg");
             apply.add(d.runtimeDir.getAbsolutePath());
             apply.add("--seq"); apply.add(request);
             apply.add("--code"); apply.add(auth);
             apply.add("--product"); apply.add(registrationProduct);
+            if (legacyDs01xx) { apply.add("--version"); apply.add(d.versionId); }
             // Keep the helper from changing network settings itself; the outer coordinator
             // already established isolation before the first vendor-code call.
-            if (!legacyDs0101) {
+            if (!legacyDs01xx) {
                 apply.add("--no-block-net");
                 if (!backup) apply.add("--no-backup");
             }
@@ -722,18 +756,19 @@ public final class LicenseRecoverModernGUIAutoRecovery {
 
             List<String> verify = new ArrayList<String>();
             verify.add(helper.getAbsolutePath());
-            if (legacyDs0101) verify.add("legacy-verify"); else verify.add("verify");
+            if (legacyDs01xx) verify.add("legacy-verify"); else verify.add("verify");
             verify.add(d.runtimeDir.getAbsolutePath());
             verify.add("--product"); verify.add(registrationProduct);
+            if (legacyDs01xx) { verify.add("--version"); verify.add(d.versionId); }
             log.accept("[dotnet-stage] VERIFY: start\n");
             NativeProcessResult checked = runNativeCapture(verify, d.appRoot, log);
             if (checked.exitCode != 0
-                    || (legacyDs0101 && !checked.output.contains("LEGACY_NATIVE_CHECKREG_OK")))
+                    || (legacyDs01xx && !checked.output.contains("LEGACY_NATIVE_CHECKREG_OK")))
                 throw nativeFailure("VERIFY", "target-native registration validation did not confirm the write-back", checked);
             log.accept("[dotnet-stage] VERIFY: OK\n");
 
             // Check the exact site-root record consumed by the modern Web runtime.
-            if (!lowercaseChain && !legacyDs0101) {
+            if (!lowercaseChain && !legacyDs01xx) {
                 File siteConfig = new File(d.appRoot, "config.xml");
                 String persistedRegStr = recoverDotNetLocalRegStrFromConfig(siteConfig, appProduct);
                 if (blank(persistedRegStr))
@@ -750,18 +785,18 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             } else {
                 restoreDotNetAuthorizationNetworkSettings(originals, d, log);
             }
-            if (legacyDs0101) {
+            if (legacyDs01xx) {
                 NativeProcessResult finalCheck = runNativeCapture(Arrays.asList(
                         helper.getAbsolutePath(), "legacy-verify", d.runtimeDir.getAbsolutePath(),
-                        "--product", registrationProduct), d.appRoot, null);
+                        "--product", registrationProduct, "--version", d.versionId), d.appRoot, null);
                 if (finalCheck.exitCode != 0 || !finalCheck.output.contains("LEGACY_NATIVE_CHECKREG_OK"))
                     throw new IOException("[VERIFY] DS0101 final configuration did not pass the native website check.");
             }
             log.accept("[verify] selected native registration and website validation passed while outbound traffic was isolated.\n");
             return new Result(true,
-                    legacyDs0101 ? "DS0101 registration files accepted by the original native and website checks. Restart IIS to confirm persistence."
+                    legacyDs01xx ? "DS01xx original native registration and website checks passed for " + d.versionId + ". Restart IIS to confirm persistence."
                     : ".NET local authorization was applied and verified through the target-preferred registration chain while outbound traffic was isolated. Restart the IIS app pool/site.",
-                    d, machine, legacyDs0101 ? null : request, legacyDs0101 ? null : auth);
+                    d, machine, legacyDs01xx ? null : request, legacyDs01xx ? null : auth);
         } catch (Throwable ex) {
             boolean rollbackOk = originals == null || restoreDotNetRegistrationFiles(originals, log);
             if (!rollbackOk)
