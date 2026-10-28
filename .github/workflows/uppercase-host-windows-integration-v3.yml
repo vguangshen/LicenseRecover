@@ -11,6 +11,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: DS0101 native hosted registration workflow (synthetic fixtures only)
+        shell: pwsh
+        run: |
+          ./scripts/test-ds0101-windows-host-smoke.ps1
+
       - name: Build dual-assembly fixture and hosted helpers
         shell: pwsh
         run: |
