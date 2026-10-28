@@ -1192,6 +1192,22 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         check("001122AABB".equals(LicenseRecoverModernGUIAutoRecovery.findLabeledHex(nativeOut, "离线授权码")),
                 "native .NET one-click parses target authorization code");
 
+        check("Windows 防火墙隔离".equals(
+                        LicenseRecoverModernGUIUiPatchLauncher.oneClickStageFromLog(
+                                "[dotnet-stage] PRE_BLOCK: OK"))
+                        && "生成本机申请号".equals(
+                        LicenseRecoverModernGUIUiPatchLauncher.oneClickStageFromLog(
+                                "[dotnet-stage] GENCODE: start"))
+                        && "原生注册与网站校验".equals(
+                        LicenseRecoverModernGUIUiPatchLauncher.oneClickStageFromLog(
+                                "[dotnet-stage] VERIFY: start"))
+                        && LicenseRecoverModernGUIUiPatchLauncher.oneClickStageFromLog(
+                                "授权码: ABCDEF012345") == null,
+                "one-click GUI displays bounded native-stage progress without exposing raw license strings");
+        String timeoutGuardSource = new String(Files.readAllBytes(Paths.get(
+                        "src/main/java/LicenseRecoverModernGUIAutoRecovery.java")), StandardCharsets.UTF_8);
+        check(timeoutGuardSource.contains("return runNativeCapture(cmd, null, null, 20L);"),
+                "Windows Firewall commands use bounded native process execution");
         LicenseRecoverModernGUIUiPatchLauncher.OneClickFailurePresentation failureUi =
                 LicenseRecoverModernGUIUiPatchLauncher.describeOneClickFailure(
                         "[GENCODE] target-native request-code generation failed; exit=1; output="
