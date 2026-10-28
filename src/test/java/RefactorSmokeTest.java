@@ -1597,10 +1597,10 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                 "DS0107 can be recognized by family evidence without using DS0101 exact DLL hashes");
         check(!LicenseRecoverModernGUIAutoRecovery.supportsDs0101NativeRecovery(ds0107Detected),
                 "DS0107 family candidate never masquerades as validated DS0101 exact-binary match");
-        Files.delete(ds0107Root.resolve("Regester.aspx"));
+        Files.delete(ds0107Bin.resolve("ITMC.Regedit.dll"));
         check(!LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(ds0107Detected),
-                "missing registration page fails closed before attempting a native write");
-        Files.write(ds0107Root.resolve("Regester.aspx"), new byte[]{1});
+                "missing native registration DLL fails closed before attempting a write");
+        Files.write(ds0107Bin.resolve("ITMC.Regedit.dll"), new byte[]{1});
         Files.write(ds0107Root.resolve("config.xml"),
                 "<ROOT><SystemSoft><SoftVersionID>DS0108</SoftVersionID></SystemSoft></ROOT>"
                         .getBytes(StandardCharsets.UTF_8));
