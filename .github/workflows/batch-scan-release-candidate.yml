@@ -2,6 +2,7 @@ name: Publish batch scan v1.2.60 RC1
 
 # One-time test build: branch-only prerelease, stable main unchanged.
 # Verify asynchronous GUI log persistence smoke tests before packaging.
+# Verify candidate README version matches packaged VERSION.txt.
 # Runs only when this release-candidate workflow itself is committed.
 on:
   push:
