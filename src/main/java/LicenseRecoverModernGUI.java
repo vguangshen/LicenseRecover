@@ -877,8 +877,7 @@ public final class LicenseRecoverModernGUI {
 
     private boolean hasExecutableBatchTargets() {
         for (BatchTarget target : batchTargets) {
-            if (target != null && target.appInfo != null
-                    && target.appInfo.type != AppInfo.Type.UNKNOWN) return true;
+            if (target != null && target.type != BatchTarget.Type.NONE) return true;
         }
         return false;
     }
