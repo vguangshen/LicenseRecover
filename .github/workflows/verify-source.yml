@@ -52,6 +52,9 @@ jobs:
       - name: Verify DS0101 legacy-probe without executing vendor code
         shell: bash
         run: bash scripts/test-ds0101-legacy-probe.sh
+      - name: Exercise DS0101 native helper against synthetic .NET registration stubs
+        shell: bash
+        run: bash scripts/test-ds0101-native-helper-smoke.sh
       - name: Prepare Java sample compatibility
         shell: bash
         run: |
