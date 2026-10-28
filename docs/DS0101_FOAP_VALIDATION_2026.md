@@ -171,3 +171,53 @@ The batch archive analyzer includes this non-sensitive evidence in
 `manifest.json` when it can be proven from the selected binaries.
 Do not apply the order to unverified builds merely because their folder
 name begins with `DS01`.
+
+## Native registration side effects and rollback fix (2026-10-28)
+
+Static CIL inspection of the actual uploaded `ITMC.Regedit.dll` revealed
+an important transactional gap unrelated to the FOAP unpacker:
+
+- `RegeditMain.DoRegistry` invokes `CheckServerID`. The latter reads,
+  creates or updates **site-root `notRegFile.xml`**. This file is absent
+  in the supplied DS0101 archive, so rollback must remember its original
+  *absence* rather than only backing up existing files.
+- `DoRegistry` writes **site-root `config.xml`** with registration state
+  and writes messages to **`Register.xml`**.
+- `RegeditMain.CheckLocalReg` itself can rewrite `config.xml`
+  while updating local registration usage. A request/verification
+  attempt must not be assumed side-effect-free.
+- The uppercase native local-license writer uses
+  `get_lastNOpsw` (the `*ITMC<ProName>OK*` family) and serializes
+  `RegeditInfo`. The lowercase component contains a distinct local
+  registration format. This is further evidence not to force either
+  generation's write-back schema onto the other.
+
+Prior code only added **existing** registration files to a memory
+snapshot with `addIfFile`, even though its rollback logic attempted
+to delete `null`/initially-absent entries. Thus newly generated
+`notRegFile.xml`, `Register.xml`, or `config.xml` files could survive
+a failed native operation.
+
+The transaction now snapshots six fixed output paths at both the
+website root and `bin`: `config.xml`, `Register.xml`, and
+`notRegFile.xml`, including absence tombstones. Existing sidecar
+configurations are also captured. Restore deletes created outputs and
+restores modified originals byte-for-byte; it skips unchanged files,
+returns an explicit success flag, and surfaces incomplete rollback
+instead of silently indicating success. Disk backup copies are also
+checked against the initial snapshot and verified with SHA-256 before
+any write.
+
+Modern .NET one-click `dryRun` also invokes native request generation,
+so it now snapshots and restores the same set of files even when the
+operation is a preview. A successful preview does not claim that the
+native program was intrinsically read-only.
+
+Added synthetic Java regression tests for successful restore, repeated
+restore, absent-to-created file cleanup, and a deliberately unremovable
+file whose rollback must return failure.
+
+**Limitations:** This is an important data-safety fix, not an authorized
+or unauthorized license bypass. DS01xx still fails closed before
+automatic registration; a genuine Windows/IIS execution and restored
+application verification are required before enabling it.
