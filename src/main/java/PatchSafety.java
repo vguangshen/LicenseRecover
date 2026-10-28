@@ -1,6 +1,7 @@
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
@@ -52,15 +53,23 @@ public final class PatchSafety {
             sink.accept("[错误] 安全预检失败：.NET bin 目录无效。\n");
             return false;
         }
-        File dll = new File(binDir, "itmcRegedit.dll");
-        if (!dll.isFile()) {
-            sink.accept("[错误] 安全预检失败：未找到 itmcRegedit.dll。\n");
+        // DS01xx deployments can contain BOTH registration generations.
+        // The native runtime may load the uppercase assembly, and some patch paths
+        // touch ITMC.Web.dll. Protect every existing candidate before any write.
+        File web = new File(binDir, "ITMC.Web.dll");
+        File upper = new File(binDir, "ITMC.Regedit.dll");
+        File lower = new File(binDir, "itmcRegedit.dll");
+        if (!upper.isFile() && !lower.isFile()) {
+            sink.accept("[错误] 安全预检失败：未找到 ITMC.Regedit.dll / itmcRegedit.dll。\n");
             return false;
         }
         sink.accept("--- 安全预检：建立 .NET prepatch 备份 ---\n");
         try {
-            backup(dll, stamp(), sink);
-            sink.accept("安全预检通过：itmcRegedit.dll 已建立可校验备份。\n");
+            String backupStamp = stamp();
+            if (web.isFile()) backup(web, backupStamp, sink);
+            if (upper.isFile()) backup(upper, backupStamp, sink);
+            if (lower.isFile()) backup(lower, backupStamp, sink);
+            sink.accept("安全预检通过：现有 .NET 核心 DLL 已逐一建立可校验备份。\n");
             return true;
         } catch (Exception ex) {
             sink.accept("[错误] 安全预检未通过，方式三已取消。\n");
@@ -74,6 +83,7 @@ public final class PatchSafety {
     }
 
     private static String stamp() {
-        return new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());
+        return new SimpleDateFormat("yyyyMMddHHmmssSSS").format(new Date())
+                + "-" + UUID.randomUUID().toString().substring(0, 8);
     }
 }

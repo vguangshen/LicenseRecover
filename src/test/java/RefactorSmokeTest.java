@@ -931,6 +931,32 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         check(!Files.exists(modernBin.resolve("itmcRegedit.dll")),
                 "uppercase-only detector does not require legacy lowercase assembly");
 
+        check(PatchSafety.prepareDotNetPatch(modernBin.toFile(), System.out::print),
+                "uppercase-only .NET target can pass mandatory patch backup");
+        check(Files.list(modernBin).anyMatch(p -> p.getFileName().toString()
+                        .startsWith("ITMC.Regedit.dll.prepatch.")),
+                "uppercase registration assembly is backed up before an explicit patch");
+        check(Files.list(modernBin).anyMatch(p -> p.getFileName().toString()
+                        .startsWith("ITMC.Web.dll.prepatch.")),
+                ".NET Web assembly is also backed up when present");
+
+        Path dualRoot = base.resolve("dotnetDualRegistration");
+        Path dualBin = dualRoot.resolve("bin");
+        Files.createDirectories(dualBin);
+        Files.write(dualBin.resolve("ITMC.Web.dll"), new byte[]{11});
+        Files.write(dualBin.resolve("ITMC.Regedit.dll"), new byte[]{12});
+        Files.write(dualBin.resolve("itmcRegedit.dll"), new byte[]{13});
+        check(PatchSafety.prepareDotNetPatch(dualBin.toFile(), System.out::print),
+                "DS01xx-style dual-registration deployment backs up safely");
+        for (String dllName : Arrays.asList("ITMC.Web.dll", "ITMC.Regedit.dll", "itmcRegedit.dll")) {
+            final String name = dllName;
+            check(Files.list(dualBin).anyMatch(p -> p.getFileName().toString()
+                            .startsWith(name + ".prepatch.")),
+                    "dual-registration backup includes " + name);
+        }
+        check(!PatchSafety.prepareDotNetPatch(base.toFile(), null),
+                ".NET patch backup fails closed without either registration assembly");
+
         Path productFixture = base.resolve("YX0303-Web.dll");
         writeUtf16Fixture(productFixture, "YX0303", "YX030301", "YX030308", "YX030322");
         check("YX0303".equals(LicenseRecoverModernGUIAutoRecovery.detectProduct(
@@ -1166,6 +1192,22 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         check("001122AABB".equals(LicenseRecoverModernGUIAutoRecovery.findLabeledHex(nativeOut, "离线授权码")),
                 "native .NET one-click parses target authorization code");
 
+        check("Windows 防火墙隔离".equals(
+                        LicenseRecoverModernGUIUiPatchLauncher.oneClickStageFromLog(
+                                "[dotnet-stage] PRE_BLOCK: OK"))
+                        && "生成本机申请号".equals(
+                        LicenseRecoverModernGUIUiPatchLauncher.oneClickStageFromLog(
+                                "[dotnet-stage] GENCODE: start"))
+                        && "原生注册与网站校验".equals(
+                        LicenseRecoverModernGUIUiPatchLauncher.oneClickStageFromLog(
+                                "[dotnet-stage] VERIFY: start"))
+                        && LicenseRecoverModernGUIUiPatchLauncher.oneClickStageFromLog(
+                                "授权码: ABCDEF012345") == null,
+                "one-click GUI displays bounded native-stage progress without exposing raw license strings");
+        String timeoutGuardSource = new String(Files.readAllBytes(Paths.get(
+                        "src/main/java/LicenseRecoverModernGUIAutoRecovery.java")), StandardCharsets.UTF_8);
+        check(timeoutGuardSource.contains("return runNativeCapture(cmd, null, null, 20L);"),
+                "Windows Firewall commands use bounded native process execution");
         LicenseRecoverModernGUIUiPatchLauncher.OneClickFailurePresentation failureUi =
                 LicenseRecoverModernGUIUiPatchLauncher.describeOneClickFailure(
                         "[GENCODE] target-native request-code generation failed; exit=1; output="
@@ -1409,7 +1451,11 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         Path legacyDotNetBin = legacyDotNetRoot.resolve("bin");
         Files.createDirectories(legacyDotNetBin);
         Files.write(legacyDotNetRoot.resolve("config.xml"), Arrays.asList(
-                "<ROOT><SystemSoft><SoftVersionID>DS0101</SoftVersionID></SystemSoft></ROOT>"), StandardCharsets.UTF_8);
+                "<ROOT><SystemSoft><SoftVersionID>DS0101</SoftVersionID></SystemSoft>"
+                + "<reg><regType>3</regType><regName>SECRET_DO_NOT_LOG</regName></reg></ROOT>"),
+                StandardCharsets.UTF_8);
+        Files.write(legacyDotNetRoot.resolve("Regester.aspx"), new byte[]{1});
+        Files.write(legacyDotNetRoot.resolve("Register.xml"), new byte[]{1});
         Files.write(legacyDotNetBin.resolve("ITMC.Web.dll"), new byte[]{1});
         Files.write(legacyDotNetBin.resolve("itmcRegedit.dll"), new byte[]{1});
         Files.write(legacyDotNetBin.resolve("ITMC.Regedit.dll"), new byte[]{1});
@@ -1423,6 +1469,157 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                 "DS01xx remains legacy even when an uppercase compatibility ITMC.Regedit.dll is present");
         check(legacyDotNetDetection.productName == null,
                 "legacy detector avoids slow modern DLL product inspection");
+        String legacyEvidence = LicenseRecoverModernGUIAutoRecovery.legacyChainReadOnlyEvidence(
+                legacyDotNetDetection);
+        check(legacyEvidence.contains("ITMC.Regedit.dll=有")
+                        && legacyEvidence.contains("itmcRegedit.dll=有")
+                        && legacyEvidence.contains("Regester.aspx=有")
+                        && legacyEvidence.contains("Register.xml=有")
+                        && legacyEvidence.contains("notRegFile.xml=无")
+                        && legacyEvidence.contains("站点根目录regType=3"),
+                "DS0101 read-only preflight reports dual registration files and root regType");
+        check(!LicenseRecoverModernGUIAutoRecovery.isKnownDs0101RegistrationPair(legacyDotNetBin.toFile()),
+                "synthetic DS0101 binaries do not receive the real-sample mode-priority label");
+        check(!legacyEvidence.contains("精确 SHA-256 匹配"),
+                "DS0101 mode-specific diagnostics require matching real binary hashes");
+        check(LicenseRecoverModernGUIAutoRecovery.knownDs0101ModePriority("3")
+                        .contains("联网→本地→加密狗"),
+                "DS0101 real CIL mode 3 is short-circuit network/local/dongle priority");
+        check(LicenseRecoverModernGUIAutoRecovery.knownDs0101ModePriority("1")
+                        .contains("小写DLL: 本地→加密狗→联网"),
+                "DS0101 mode 1 differs between uppercase and lowercase DLLs");
+        check(LicenseRecoverModernGUIAutoRecovery.knownDs0101ModePriority("invalid") == null,
+                "unknown registration modes cannot inherit a guessed check priority");
+        Path tinyShaFixture = base.resolve("sha-test.bin");
+        Files.write(tinyShaFixture, "abc".getBytes(StandardCharsets.US_ASCII));
+        check(LicenseRecoverModernGUIAutoRecovery.fileSha256Equals(tinyShaFixture.toFile(),
+                        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+                "DS01xx exact sample gate computes real SHA-256, not only file sizes");
+
+        check(!legacyEvidence.contains("SECRET_DO_NOT_LOG")
+                        && !LicenseRecoverModernGUIAutoRecovery.legacyWritebackUnavailable(
+                                legacyDotNetDetection).contains("SECRET_DO_NOT_LOG"),
+                "DS0101 preflight never reveals existing local authorization data");
+        // Regression: a native DS0101 CheckServerID may create notRegFile.xml,
+        // and CheckLocalReg may mutate config.xml even during verification.
+        // Legacy probe must be offline and non-mutating: the standalone host
+        // handles it BEFORE choosing helpers or staging any ASP.NET bridge.
+        String nativeHostSource = new String(Files.readAllBytes(
+                Paths.get("src/dotnet/LicenseRecover.AspNetHost.cs")), StandardCharsets.UTF_8);
+        String nativeBridgeSource = new String(Files.readAllBytes(
+                Paths.get("src/dotnet/LicenseRecover.AspNetBridge.cs")), StandardCharsets.UTF_8);
+        int probeDispatch = nativeHostSource.indexOf("return LicenseRecoverLegacyMetadataProbe.Inspect(runtimeDir)");
+        int helperSelect = nativeHostSource.indexOf("helper = SelectHelper(toolDir, runtimeDir, args[0], out chain)");
+        int probeBodyStart = nativeHostSource.indexOf("internal static class LicenseRecoverLegacyMetadataProbe");
+        String offlineProbeSource = probeBodyStart < 0 ? "" : nativeHostSource.substring(probeBodyStart);
+        check(probeDispatch >= 0 && helperSelect > probeDispatch,
+                "DS0101 offline legacy-probe runs before helper selection or bridge staging");
+        check(offlineProbeSource.contains("Assembly.ReflectionOnlyLoadFrom(")
+                        && offlineProbeSource.contains("ReflectionOnlyAssemblyResolve")
+                        && offlineProbeSource.contains("LEGACY_SIGNATURES_VERIFIED_ONLY")
+                        && !offlineProbeSource.contains("EnsureBridgeInTargetBin(")
+                        && !offlineProbeSource.contains(".Invoke("),
+                "legacy-probe only reads CLR metadata and never invokes vendor methods");
+        check(!nativeBridgeSource.contains("RunLegacySignatureProbe("),
+                "ASP.NET hosted bridge never exposes a misleading stateful legacy-probe");
+        File legacySiteNotReg = legacyDotNetRoot.resolve("notRegFile.xml").toFile();
+        File legacyBinNotReg = legacyDotNetBin.resolve("notRegFile.xml").toFile();
+        File legacyBinConfig = legacyDotNetBin.resolve("config.xml").toFile();
+        File legacyBinRegister = legacyDotNetBin.resolve("Register.xml").toFile();
+        check(!legacySiteNotReg.exists() && !legacyBinNotReg.exists()
+                        && !legacyBinConfig.exists() && !legacyBinRegister.exists(),
+                "DS0101 synthetic preflight starts without native-generated registration files");
+        java.util.LinkedHashMap<File, byte[]> legacySnapshot =
+                LicenseRecoverModernGUIAutoRecovery.snapshotDotNetRegistrationFiles(legacyDotNetDetection);
+        check(legacySnapshot.containsKey(legacySiteNotReg) && legacySnapshot.get(legacySiteNotReg) == null
+                        && legacySnapshot.containsKey(legacyBinNotReg) && legacySnapshot.get(legacyBinNotReg) == null
+                        && legacySnapshot.containsKey(legacyBinConfig) && legacySnapshot.get(legacyBinConfig) == null
+                        && legacySnapshot.containsKey(legacyBinRegister) && legacySnapshot.get(legacyBinRegister) == null,
+                "missing DS0101 registration files are captured as rollback deletion tombstones");
+        byte[] originalSiteConfig = Files.readAllBytes(legacyDotNetRoot.resolve("config.xml"));
+        byte[] originalSiteRegister = Files.readAllBytes(legacyDotNetRoot.resolve("Register.xml"));
+        Files.write(legacyDotNetRoot.resolve("config.xml"),
+                "changed-by-CheckLocalReg".getBytes(StandardCharsets.UTF_8));
+        Files.write(legacyDotNetRoot.resolve("Register.xml"),
+                "changed-by-DoRegistry".getBytes(StandardCharsets.UTF_8));
+        Files.write(legacySiteNotReg.toPath(), "created-by-CheckServerID".getBytes(StandardCharsets.UTF_8));
+        Files.write(legacyBinNotReg.toPath(), "created-in-bin".getBytes(StandardCharsets.UTF_8));
+        Files.write(legacyBinConfig.toPath(), "created-config-in-bin".getBytes(StandardCharsets.UTF_8));
+        Files.write(legacyBinRegister.toPath(), "created-register-in-bin".getBytes(StandardCharsets.UTF_8));
+        check(LicenseRecoverModernGUIAutoRecovery.restoreDotNetRegistrationFiles(legacySnapshot, null),
+                "DS0101 restoration reports success when all snapshot entries were restored");
+        check(Arrays.equals(originalSiteConfig, Files.readAllBytes(legacyDotNetRoot.resolve("config.xml")))
+                        && Arrays.equals(originalSiteRegister, Files.readAllBytes(legacyDotNetRoot.resolve("Register.xml"))),
+                "DS0101 rollback restores modified original site registration files byte-for-byte");
+        check(!legacySiteNotReg.exists() && !legacyBinNotReg.exists()
+                        && !legacyBinConfig.exists() && !legacyBinRegister.exists(),
+                "DS0101 rollback deletes all native-generated registration files that were initially absent");
+        // Idempotent rollback should preserve a stable, already-restored site.
+        check(LicenseRecoverModernGUIAutoRecovery.restoreDotNetRegistrationFiles(legacySnapshot, null),
+                "repeated DS0101 rollback reports success");
+        check(Arrays.equals(originalSiteConfig, Files.readAllBytes(legacyDotNetRoot.resolve("config.xml")))
+                        && !legacySiteNotReg.exists(),
+                "repeated DS0101 rollback is safe and idempotent");
+
+        // An unremovable nonempty directory at a native registration output
+        // must be reported as a rollback failure, not silently treated as OK.
+        Files.createDirectory(legacySiteNotReg.toPath());
+        Files.write(legacySiteNotReg.toPath().resolve("blocker.txt"), new byte[]{1});
+        check(!LicenseRecoverModernGUIAutoRecovery.restoreDotNetRegistrationFiles(legacySnapshot, null),
+                "unrestorable native output causes explicit failed-rollback status");
+        Files.delete(legacySiteNotReg.toPath().resolve("blocker.txt"));
+        Files.delete(legacySiteNotReg.toPath());
+        check(LicenseRecoverModernGUIAutoRecovery.restoreDotNetRegistrationFiles(legacySnapshot, null),
+                "rollback succeeds after removing the synthetic blocker");
+        LicenseRecoverModernGUIAutoRecovery.Detection otherLegacy =
+                new LicenseRecoverModernGUIAutoRecovery.Detection(
+                        LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY,
+                        legacyDotNetRoot.toFile(), legacyDotNetRoot.toFile(),
+                        legacyDotNetBin.toFile(), "DS0107", null);
+        check(LicenseRecoverModernGUIAutoRecovery.probeLegacySignatures(otherLegacy, null)
+                        .startsWith("[LEGACY_PROBE]"),
+                "DS0107 receives an independent read-only ABI diagnostic rather than a DS0101-only rejection");
+        Path ds0107Root = base.resolve("dotnet-DS0107-family-candidate");
+        Path ds0107Bin = ds0107Root.resolve("bin");
+        Files.createDirectories(ds0107Bin);
+        Files.write(ds0107Root.resolve("config.xml"),
+                "<ROOT><SystemSoft><SoftVersionID>DS0107</SoftVersionID></SystemSoft></ROOT>"
+                        .getBytes(StandardCharsets.UTF_8));
+        Files.write(ds0107Root.resolve("Regester.aspx"),
+                "<%@ Page Language='C#' %>".getBytes(StandardCharsets.UTF_8));
+        writeUtf16Fixture(ds0107Bin.resolve("ITMC.Web.dll"), "itmcIEC", "DS0107");
+        Files.write(ds0107Bin.resolve("ITMC.Regedit.dll"), new byte[]{1});
+        LicenseRecoverModernGUIAutoRecovery.Detection ds0107Detected =
+                LicenseRecoverModernGUIAutoRecovery.detect(ds0107Root.toFile());
+        check(ds0107Detected.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
+                        && "itmcIEC".equals(ds0107Detected.productName)
+                        && LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(ds0107Detected),
+                "DS0107 can be recognized by family evidence without using DS0101 exact DLL hashes");
+        check(!LicenseRecoverModernGUIAutoRecovery.supportsDs0101NativeRecovery(ds0107Detected),
+                "DS0107 family candidate never masquerades as validated DS0101 exact-binary match");
+        Files.delete(ds0107Bin.resolve("ITMC.Regedit.dll"));
+        check(!LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(ds0107Detected),
+                "missing native registration DLL fails closed before attempting a write");
+        Files.write(ds0107Bin.resolve("ITMC.Regedit.dll"), new byte[]{1});
+        Files.write(ds0107Root.resolve("config.xml"),
+                "<ROOT><SystemSoft><SoftVersionID>DS0108</SoftVersionID></SystemSoft></ROOT>"
+                        .getBytes(StandardCharsets.UTF_8));
+        check(!LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(ds0107Detected),
+                "version mismatch invalidates the legacy recovery candidate");
+        String guiLegacySource = new String(Files.readAllBytes(
+                Paths.get("src/main/java/LicenseRecoverModernGUIUiPatchLauncher.java")),
+                StandardCharsets.UTF_8);
+        check(guiLegacySource.contains("probeLegacySignatures(")
+                        && guiLegacySource.contains("旧协议：接口兼容，未执行授权写回")
+                        && guiLegacySource.contains("new SwingWorker<String, Void>()"),
+                "legacy one-click UI runs ABI inspection asynchronously without claiming license restoration");
+        if (!System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win")) {
+            String offlineStatus = LicenseRecoverModernGUIAutoRecovery.probeLegacySignatures(
+                    legacyDotNetDetection, null);
+            check(offlineStatus.startsWith("[LEGACY_PROBE]")
+                            && offlineStatus.contains("仅支持 Windows"),
+                    "legacy ABI diagnostic clearly reports unavailable platform without target mutation");
+        }
         byte[] legacyConfigBefore = Files.readAllBytes(legacyDotNetRoot.resolve("config.xml"));
         int legacyBinFileCount = legacyDotNetBin.toFile().list().length;
         LicenseRecoverModernGUIAutoRecovery.Result unsupportedLegacy =
@@ -1592,9 +1789,15 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                 "modern GUI uses shared diagnostic writer");
         String uiPatch230 = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIUiPatchLauncher.java")), StandardCharsets.UTF_8);
         check(uiPatch230.contains("appendPersistentOneClickLog"), "one-click overlay writes persistent diagnostics");
-        check(uiPatch230.contains("preflight.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY")
-                        && uiPatch230.contains("旧协议：不支持一键授权写回（未修改文件）"),
-                "DS01xx fails before entering the misleading verification busy state");
+        String legacyGuiBranch = "preflight.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY";
+        String nativeVerifyBusy = "final String[] activeStage = {preview ? \"预览检测中\" : \"准备执行本地授权检查\"}";
+        check(uiPatch230.contains(legacyGuiBranch)
+                        && uiPatch230.contains("!LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(preflight)")
+                        && uiPatch230.contains("旧协议：只读接口诊断中（不会执行授权写回）")
+                        && uiPatch230.contains("旧协议：接口兼容，未执行授权写回")
+                        && uiPatch230.contains("probeLegacySignatures(")
+                        && uiPatch230.indexOf(legacyGuiBranch) < uiPatch230.indexOf(nativeVerifyBusy),
+                "DS01xx enters read-only ABI diagnostic instead of claiming to execute authorization writeback");
         check(uiPatch230.contains("findNamed(frame.getContentPane(), \"LicenseRecoverRecommendedCard\")")
                         && uiPatch230.contains("LicenseRecoverSharedLog.append"),
                 "one-click overlay uses stable component ID and shared persistent logging");

@@ -23,6 +23,12 @@ import java.util.regex.Pattern;
 public final class LicenseRecoverModernGUIUiPatchLauncher {
     private static final String UPDATE_CONTROL_NAME = "LicenseRecoverUpdateControl";
     private static final String ONE_CLICK_CONTROL_NAME = "LicenseRecoverOneClickControl";
+    private static final java.util.concurrent.ExecutorService ONE_CLICK_LOG_WRITER =
+            java.util.concurrent.Executors.newSingleThreadExecutor(task -> {
+                Thread worker = new Thread(task, "LicenseRecover-OneClick-LogWriter");
+                worker.setDaemon(true);
+                return worker;
+            });
 
     private LicenseRecoverModernGUIUiPatchLauncher() { }
 
@@ -190,11 +196,16 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
             generation.setText(detection.kind.toString());
             family.setText(value(detection.productName));
             runtime.setText(value(detection.productName));
-            regStr.setText(".NET 由对应适配器自动识别");
+            boolean legacyCandidate = detection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
+                    && LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(detection);
+            regStr.setText(legacyCandidate ? value(detection.versionId) : ".NET 由对应适配器自动识别");
             targets.setText("config.xml / 授权 sidecar（按检测结果）");
-            jar.setText("不适用");
+            jar.setText(legacyCandidate ? "原生 ITMC.Regedit（执行前检查 ABI）" : "不适用");
             verify.setText(detection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
-                    ? "待执行: 写回解密校验" : "不支持一键写回：DS01xx 旧版协议（未修改文件）");
+                    ? "待执行: 写回解密校验"
+                    : (legacyCandidate
+                        ? "DS01xx 同族候选：待原生接口与注册校验"
+                        : "旧协议证据不足：仅支持只读诊断"));
         } else {
             generation.setText("未识别"); family.setText("—"); runtime.setText("—"); regStr.setText("—"); targets.setText("—");
             jar.setText("—"); verify.setText("未识别到支持的授权结构");
@@ -256,6 +267,8 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
             summary = "生成结果解析失败：辅助程序已返回，但没有读取到完整的申请号或授权码。";
         } else if ("DOREG".equals(stage)) {
             summary = "本地注册提交失败，目标 DoRegistry() 没有接受本次授权数据。";
+        } else if ("LEGACY_ABI".equals(stage)) {
+            summary = "目标 DS01xx 注册接口签名与共享协议不兼容；未进行注册写入。";
         } else if ("VERIFY".equals(stage)) {
             summary = "写入后的原生校验失败，目标 CheckReInfo() 没有确认授权状态。";
         } else if ("PRE_BLOCK".equals(stage)) {
@@ -398,6 +411,22 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         dialog.setVisible(true);
     }
 
+    // Progress is deliberately derived only from fixed stage markers. Never
+    // put machine IDs, raw native stdout or authorization strings in the label.
+    static String oneClickStageFromLog(String line) {
+        if (line == null) return null;
+        if (line.contains("[dotnet-stage] SNAPSHOT:")) return "保存注册文件快照";
+        if (line.contains("[dotnet-stage] PRE_BLOCK:")) return "Windows 防火墙隔离";
+        if (line.contains("[dotnet-stage] GENCODE:")) return "生成本机申请号";
+        if (line.contains("[dotnet-stage] GENCODE_PARSE:")) return "校验申请号格式";
+        if (line.contains("[dotnet-stage] DOREG:")) return "写入原生注册记录";
+        if (line.contains("[dotnet-stage] VERIFY:")) return "原生注册与网站校验";
+        if (line.contains("[rollback-dotnet]")) return "恢复原始注册文件";
+        if (line.contains("[NATIVE_TIMEOUT]")) return "原生进程超时";
+        if (line.contains("[one-click] detect:")) return "检查软件授权结构";
+        return null;
+    }
+
     private static void runOneClick(final JFrame frame, final JButton button,
                                     final JLabel generationValue, final JLabel familyValue, final JLabel runtimeValue,
                                     final JTextArea regStrValue, final JTextArea targetValue,
@@ -418,12 +447,34 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         // "executing and verifying" state. Keep diagnostic details available.
         LicenseRecoverModernGUIAutoRecovery.Detection preflight =
                 LicenseRecoverModernGUIAutoRecovery.detect(selected);
-        if (preflight.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY) {
-            String reason = LicenseRecoverModernGUIAutoRecovery.legacyWritebackUnavailable(preflight);
-            verifyValue.setText("旧协议：不支持一键授权写回（未修改文件）");
+        if (preflight.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
+                && !LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(preflight)) {
+            final String reason = LicenseRecoverModernGUIAutoRecovery.legacyWritebackUnavailable(preflight);
+            // A DS01xx click is diagnostic only. Keep Swing responsive and
+            // never invoke recoverDotNet or a target authorization method.
+            verifyValue.setText("旧协议：只读接口诊断中（不会执行授权写回）");
+            button.setEnabled(false);
             append(logArea, "[one-click] " + reason + "\n");
-            showOneClickFailureDialog(frame,
-                    LicenseRecoverModernGUIAutoRecovery.Result.fail(reason, preflight));
+            new SwingWorker<String, Void>() {
+                protected String doInBackground() {
+                    return LicenseRecoverModernGUIAutoRecovery.probeLegacySignatures(
+                            preflight, line -> append(logArea, line));
+                }
+                protected void done() {
+                    button.setEnabled(true);
+                    String abi = "[LEGACY_PROBE] 未完成";
+                    try { abi = get(); }
+                    catch (Exception ex) { abi = "[LEGACY_PROBE] 检查发生异常：" + ex.getMessage(); }
+                    boolean matched = abi.contains("[LEGACY_PROBE] PASS:");
+                    verifyValue.setText(matched
+                            ? "旧协议：接口兼容，未执行授权写回"
+                            : "旧协议：不能执行一键写回（查看诊断日志）");
+                    append(logArea, "[one-click] " + abi + "\n");
+                    showOneClickFailureDialog(frame,
+                            LicenseRecoverModernGUIAutoRecovery.Result.fail(
+                                    reason + "\n\n" + abi, preflight));
+                }
+            }.execute();
             return;
         }
 
@@ -431,16 +482,31 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         final boolean doBlock = blockNet == null || blockNet.isSelected();
         final boolean preview = dryRun != null && dryRun.isSelected();
         refreshPlan(frame, generationValue, familyValue, runtimeValue, regStrValue, targetValue, jarValue, verifyValue);
-        verifyValue.setText(preview ? "预览执行中..." : "执行并校验中...");
+        final String[] activeStage = {preview ? "预览检测中" : "准备执行本地授权检查"};
+        final long startNanos = System.nanoTime();
+        verifyValue.setText(activeStage[0]);
         button.setEnabled(false);
         append(logArea, "\n===== 一键恢复授权 =====\n");
+        final javax.swing.Timer elapsedTimer = new javax.swing.Timer(1000, event -> {
+            long seconds = java.util.concurrent.TimeUnit.NANOSECONDS.toSeconds(
+                    System.nanoTime() - startNanos);
+            verifyValue.setText(activeStage[0] + "（已用时 " + seconds + " 秒）");
+        });
+        elapsedTimer.start();
 
         new SwingWorker<LicenseRecoverModernGUIAutoRecovery.Result, Void>() {
             protected LicenseRecoverModernGUIAutoRecovery.Result doInBackground() {
                 return LicenseRecoverModernGUIAutoRecovery.recover(
-                        selected, doBackup, doBlock, preview, s -> append(logArea, s));
+                        selected, doBackup, doBlock, preview, line -> {
+                            append(logArea, line);
+                            String stage = oneClickStageFromLog(line);
+                            if (stage != null) SwingUtilities.invokeLater(() -> {
+                                activeStage[0] = stage;
+                            });
+                        });
             }
             protected void done() {
+                elapsedTimer.stop();
                 button.setEnabled(true);
                 try {
                     LicenseRecoverModernGUIAutoRecovery.Result result = get();
@@ -584,11 +650,21 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
     }
 
     private static void append(final JTextArea area, final String text) {
-        if (area == null || text == null || text.isEmpty()) return;
-        appendPersistentOneClickLog(text);
-        SwingUtilities.invokeLater(() -> {
-            area.append(text);
-            area.setCaretPosition(area.getDocument().getLength());
+        if (text == null || text.isEmpty()) return;
+        // Never perform filesystem logging on the Swing event-dispatch thread.
+        // Update the visible log immediately when already on the EDT so the
+        // stage marker appears before starting a potentially slow child process.
+        if (area != null) {
+            Runnable render = () -> {
+                area.append(text);
+                area.setCaretPosition(area.getDocument().getLength());
+            };
+            if (SwingUtilities.isEventDispatchThread()) render.run();
+            else SwingUtilities.invokeLater(render);
+        }
+        ONE_CLICK_LOG_WRITER.execute(() -> {
+            try { appendPersistentOneClickLog(text); }
+            catch (RuntimeException ignored) { /* The UI log must stay responsive. */ }
         });
     }
 

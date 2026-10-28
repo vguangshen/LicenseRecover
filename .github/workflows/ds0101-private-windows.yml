@@ -1,0 +1,125 @@
+name: DS0101 private Windows native diagnosis (reusable)
+
+# This workflow runs in the *calling private repository*. Do not add
+# pull_request or public-repo triggers: the original DLLs are proprietary.
+on:
+  workflow_call:
+    inputs:
+      archive_path:
+        description: "Path to DS0101 private fixture ZIP inside the calling repository"
+        required: true
+        type: string
+      restore_cil:
+        description: "Restore protected FOAP CIL into temporary site copy before native request test"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout private sample from calling repository
+        uses: actions/checkout@v5
+        with:
+          path: private-fixture
+          persist-credentials: false
+      - name: Checkout LicenseRecover diagnostic sources
+        uses: actions/checkout@v5
+        with:
+          repository: vguangshen/LicenseRecover
+          # Pin executed diagnostic source; do not follow a mutable branch
+          # when running private proprietary binaries.
+          ref: 886e487f0e95ebd8a2422dcb0d7e434cc1c6dbef
+          path: lrc-tools
+          persist-credentials: false
+      - name: Prepare Python (stdlib-only offline CIL restoration)
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Run private-only Windows diagnostic, remove scratch data
+        shell: pwsh
+        env:
+          INPUT_ARCHIVE: ${{ inputs.archive_path }}
+          RESTORE_CIL: ${{ inputs.restore_cil }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $sampleRoot = (Resolve-Path 'private-fixture').Path
+          $archive = Join-Path $sampleRoot $env:INPUT_ARCHIVE
+          $archive = (Resolve-Path -LiteralPath $archive).Path
+          if (-not $archive.StartsWith($sampleRoot + [IO.Path]::DirectorySeparatorChar,
+                  [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Archive must be located inside the private sample checkout'
+          }
+          if (-not $archive.EndsWith('.zip',[StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Expected private DS0101 .zip archive'
+          }
+          $toolSrc = (Resolve-Path 'lrc-tools').Path
+          $scratch = Join-Path $env:RUNNER_TEMP ('DS0101-private-' + [guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $scratch -Force | Out-Null
+          try {
+            $expanded = Join-Path $scratch 'expanded'
+            Expand-Archive -LiteralPath $archive -DestinationPath $expanded
+            $site = Join-Path $expanded 'DS0101'
+            $bin = Join-Path $site 'bin'
+            if (-not (Test-Path -LiteralPath $bin -PathType Container)) {
+              throw 'DS0101/bin not found in the private test archive'
+            }
+            # Keep the exact original protected DLLs for the Java coordinator
+            # test; the existing native diagnostic uses a separate CIL-restored copy.
+            $rawOriginal = Join-Path $scratch 'original-site'
+            Copy-Item -LiteralPath $site -Destination $rawOriginal -Recurse -Force
+            if ($env:RESTORE_CIL -eq 'true') {
+              $analysis = Join-Path $scratch 'analysis'
+              & python (Join-Path $toolSrc 'scripts/ds0101_unpack_site.py') $archive $analysis |
+                Out-Null
+              if ($LASTEXITCODE -ne 0) { throw 'Offline CIL analysis failed' }
+              foreach ($name in @('ITMC.Web','ITMC.Regedit','itmcRegedit')) {
+                $from = Join-Path $analysis ($name + '.unpacked.dll')
+                $to = Join-Path $bin ($name + '.dll')
+                if (-not (Test-Path -LiteralPath $from -PathType Leaf)) {
+                  throw 'Protected CIL restoration output missing'
+                }
+                Copy-Item -LiteralPath $from -Destination $to -Force
+              }
+            }
+            $nativeDir = Join-Path $scratch 'LicenseRecover.NET'
+            New-Item -ItemType Directory -Path $nativeDir -Force | Out-Null
+            $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+            if (-not (Test-Path $csc)) {
+              $csc = "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe"
+            }
+            if (-not (Test-Path $csc)) { throw '.NET Framework C# compiler unavailable' }
+            $sources = @(
+              @('library','LicenseRecover.NET.AspNetBridge.dll','LicenseRecover.AspNetBridge.cs'),
+              @('exe','LicenseRecover.NET.AspNetHost.exe','LicenseRecover.AspNetHost.cs'),
+              @('library','LicenseRecover.NET.Legacy.dll','LicenseRecover.LegacyHelper.cs')
+            )
+            foreach ($component in $sources) {
+              $out = Join-Path $nativeDir $component[1]
+              $src = Join-Path $toolSrc ('src/dotnet/' + $component[2])
+              & $csc /nologo ("/target:" + $component[0]) ("/out:" + $out) /r:System.Web.dll $src
+              if ($LASTEXITCODE -ne 0) { throw 'Diagnostic host compile failed' }
+            }
+            # A separate copy is used inside this test. The source is never
+            # registered or patched; output omits machine/request/license IDs.
+            & (Join-Path $toolSrc 'scripts/test-ds0101-isolated-request.ps1') -SiteRoot $site -ToolRoot $scratch
+            if (-not $?) { throw 'Private Windows DS0101 preflight failed' }
+            # New gate: generate an offline candidate with production Java
+            # protocol and test the original native DoRegistry/CheckReg only
+            # against a disposable sanitized site copy. Never print secrets.
+            & (Join-Path $toolSrc 'scripts/test-ds0101-isolated-offline-gate.ps1') -SiteRoot $site -ToolRoot $scratch -SourceRoot $toolSrc
+            if (-not $?) { throw 'Private Windows DS0101 offline gate diagnostic failed' }
+            # Exercise the packaged Java one-click coordinator on original
+            # protected assemblies, never against the source or live IIS.
+            & (Join-Path $toolSrc 'scripts/test-ds0101-private-oneclick.ps1') -SiteRoot $rawOriginal -ToolRoot $scratch -SourceRoot $toolSrc
+            if (-not $?) { throw 'Java one-click disposable integration failed' }
+          }
+          finally {
+            Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
+          }

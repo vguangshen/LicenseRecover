@@ -20,6 +20,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '8'
+      - name: Verify DS01xx offline inspection tools (no vendor binaries)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/itmc_foap_unpack_stdlib.py scripts/ds0101_unpack_site.py scripts/inspect_ds01xx_registration_chain.py scripts/inspect_ds01xx_registration_modes.py
+          python3 -m unittest discover -s scripts/tests -v
       - name: Prepare Windows native and .NET helper toolchains
         shell: bash
         run: |
@@ -43,6 +49,28 @@ jobs:
           fi
           x86_64-w64-mingw32-gcc --version | head -n 1
           mcs --version
+      - name: Verify DS0101 legacy-probe without executing vendor code
+        shell: bash
+        run: bash scripts/test-ds0101-legacy-probe.sh
+      - name: Exercise DS0101 native helper against synthetic .NET registration stubs
+        shell: bash
+        run: bash scripts/test-ds0101-native-helper-smoke.sh
+      - name: Parse isolated DS0101 Windows diagnostic script
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            'scripts/test-ds0101-isolated-request.ps1',
+            [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) { throw ($errors | Out-String) }
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            'scripts/test-ds0101-isolated-offline-gate.ps1',
+            [ref]$tokens, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) { throw ($errors | Out-String) }
       - name: Prepare Java sample compatibility
         shell: bash
         run: |
