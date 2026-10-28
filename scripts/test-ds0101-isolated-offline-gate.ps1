@@ -120,6 +120,13 @@ public final class DS0101OfflineProbe {
 
     # Original target untouched: all native writes are confined to the copy.
     # Vendor exception output is deliberately discarded (may embed identifiers).
+    $unregisteredSite = Join-Path $temp 'local-before-registration'
+    Copy-Item -LiteralPath $copy -Destination $unregisteredSite -Recurse -Force
+    $beforeLocal = Invoke-Native $hostExe @(
+        'legacy-local-probe', (Join-Path $unregisteredSite 'bin'),
+        '--product', 'itmcIEC') 45
+    $unregisteredLocalAccepted = $beforeLocal.ExitCode -eq 0 -and
+        $beforeLocal.Out.Contains('LEGACY_NATIVE_LOCAL_CHECK_OK')
     $submitted = Invoke-Native $hostExe @(
         'legacy-doreg', $copyBin, '--product', 'itmcIEC',
         '--seq', $request, '--code', $candidate) 45
@@ -133,6 +140,12 @@ public final class DS0101OfflineProbe {
     $localSignatureSupported = -not $local.Out.Contains('LEGACY_LOCAL_SIGNATURE_UNSUPPORTED')
     $nativeLocalAccepted = $local.ExitCode -eq 0 -and
         $local.Out.Contains('LEGACY_NATIVE_LOCAL_CHECK_OK')
+    # A local check may update config.xml. Verify again on that exact copy
+    # to distinguish a persistent local write-back from an initial false.
+    $afterLocalVerify = Invoke-Native $hostExe @(
+        'legacy-verify', (Join-Path $localSite 'bin'), '--product', 'itmcIEC') 45
+    $verifiedAfterLocal = $afterLocalVerify.ExitCode -eq 0 -and
+        $afterLocalVerify.Out.Contains('LEGACY_NATIVE_CHECKREG_OK')
     $verified = Invoke-Native $hostExe @(
         'legacy-verify', $copyBin, '--product', 'itmcIEC') 45
     $valid = $verified.ExitCode -eq 0 -and $verified.Out.Contains('LEGACY_NATIVE_CHECKREG_OK')
@@ -188,6 +201,9 @@ public final class DS0101OfflineProbe {
         nativeCheckReInfoAndWebCheckRegPassed = $valid
         nativeLocalCheckSignatureSupported = $localSignatureSupported
         nativeCheckLocalRegPassed = $nativeLocalAccepted
+        nativeLocalCheckBeforeRegistrationPassed = $unregisteredLocalAccepted
+        nativeVerifyAfterLocalCheckPassed = $verifiedAfterLocal
+        nativeVerifyAfterLocalCheckExitCode = $afterLocalVerify.ExitCode
         nativeLocalCheckExitCode = $local.ExitCode
         nativeLocalCheckTimedOut = $local.Timeout
         nativeDoRegistryExitCode = $submitted.ExitCode
