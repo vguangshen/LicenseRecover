@@ -32,7 +32,9 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: vguangshen/LicenseRecover
-          ref: fix/ds0101-foap-analysis-20261028
+          # Pin executed diagnostic source; do not follow a mutable branch
+          # when running private proprietary binaries.
+          ref: 89766bd8ad4c0592445e299cf3eef8bd5d294f60
           path: lrc-tools
           persist-credentials: false
       - name: Prepare Python (stdlib-only offline CIL restoration)
