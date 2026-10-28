@@ -910,12 +910,20 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     }
 
     private static void backupDotNetRegistrationFiles(LinkedHashMap<File, byte[]> originals, Consumer<String> log) throws IOException {
+        if (originals == null) throw new IOException("[BACKUP] missing registration snapshot");
         for (Map.Entry<File, byte[]> e : originals.entrySet()) {
             if (e.getValue() == null) continue;
             File f = e.getKey();
+            // Reject concurrent changes between the memory snapshot and disk
+            // backup; a stale backup cannot be relied on for safe rollback.
+            if (!f.isFile() || !Arrays.equals(e.getValue(), Files.readAllBytes(f.toPath())))
+                throw new IOException("[BACKUP] target changed since snapshot: " + f.getAbsolutePath());
             File bak = uniqueBackup(f);
-            Files.write(bak.toPath(), e.getValue());
-            if (log != null) log.accept("[backup] " + bak.getAbsolutePath() + "\n");
+            try {
+                SafetyBackup.requireCopy(f.toPath(), bak.toPath(), log);
+            } catch (Exception ex) {
+                throw new IOException("[BACKUP] verified backup failed for " + f.getName(), ex);
+            }
         }
     }
 
