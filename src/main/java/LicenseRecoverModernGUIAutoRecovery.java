@@ -592,6 +592,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
 
     private static Result recoverDotNet(Detection d, boolean backup, boolean blockNet, boolean dryRun, Consumer<String> log) throws Exception {
         if (!isWindows()) return Result.fail(".NET native registration runs only on Windows.", d);
+        final boolean legacyDs0101 = supportsDs0101NativeRecovery(d);
 
         File targetRegedit = selectDotNetRegeditAssembly(d.runtimeDir);
         if (targetRegedit == null)
@@ -607,7 +608,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             return Result.fail("[HELPER] LicenseRecover.NET.AspNetHost.exe was not found; selected target registration chain cannot run.", d);
         }
 
-        String appProduct = d.productName;
+        String appProduct = legacyDs0101 ? "itmcIEC" : d.productName;
         if (blank(appProduct))
             return Result.fail("Target ITMC.Web.dll did not prove a ProName; default product fallback is disabled.", d);
 
@@ -624,7 +625,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                     + appProduct + "\n");
         }
 
-        String regStr = detectDotNetRegStr(d);
+        String regStr = legacyDs0101 ? d.versionId : detectDotNetRegStr(d);
         if (blank(regStr))
             return Result.fail("Target application directory did not prove a usable current SoftVersionID/RegStr.", d);
         if (!blank(d.versionId) && !containsRegStrToken(regStr, d.versionId))
@@ -661,10 +662,10 @@ public final class LicenseRecoverModernGUIAutoRecovery {
 
             List<String> generate = new ArrayList<String>();
             generate.add(helper.getAbsolutePath());
-            generate.add("gencode");
+            generate.add(legacyDs0101 ? "legacy-gencode" : "gencode");
             generate.add(d.runtimeDir.getAbsolutePath());
             generate.add("--product"); generate.add(registrationProduct);
-            generate.add("--regstr"); generate.add(regStr);
+            if (!legacyDs0101) { generate.add("--regstr"); generate.add(regStr); }
             log.accept("[dotnet-stage] GENCODE: start\n");
             NativeProcessResult generated = runNativeCapture(generate, d.appRoot, log);
             if (generated.exitCode != 0)
@@ -672,7 +673,10 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             log.accept("[dotnet-stage] GENCODE: OK\n");
 
             String request = findLabeledHex(generated.output, "注册申请号", "申请号");
-            String auth = findLabeledHex(generated.output, "离线授权码", "授权码");
+            String auth = legacyDs0101
+                    ? (blank(request) ? null : LegacyDotNetProtocol.generateAuthorizationCode(
+                            request, d.versionId, registrationProduct).code)
+                    : findLabeledHex(generated.output, "离线授权码", "授权码");
             if (blank(request) || blank(auth))
                 throw new IOException("[GENCODE_PARSE] helper returned success but request/auth fields were not parsed; output="
                         + compactNativeOutput(generated.output));
@@ -696,15 +700,17 @@ public final class LicenseRecoverModernGUIAutoRecovery {
 
             List<String> apply = new ArrayList<String>();
             apply.add(helper.getAbsolutePath());
-            apply.add("doreg");
+            apply.add(legacyDs0101 ? "legacy-doreg" : "doreg");
             apply.add(d.runtimeDir.getAbsolutePath());
             apply.add("--seq"); apply.add(request);
             apply.add("--code"); apply.add(auth);
             apply.add("--product"); apply.add(registrationProduct);
             // Keep the helper from changing network settings itself; the outer coordinator
             // already established isolation before the first vendor-code call.
-            apply.add("--no-block-net");
-            if (!backup) apply.add("--no-backup");
+            if (!legacyDs0101) {
+                apply.add("--no-block-net");
+                if (!backup) apply.add("--no-backup");
+            }
             log.accept("[dotnet-stage] DOREG: start\n");
             NativeProcessResult applied = runNativeCapture(apply, d.appRoot, log);
             if (applied.exitCode != 0)
@@ -713,17 +719,18 @@ public final class LicenseRecoverModernGUIAutoRecovery {
 
             List<String> verify = new ArrayList<String>();
             verify.add(helper.getAbsolutePath());
-            verify.add("verify");
+            verify.add(legacyDs0101 ? "legacy-verify" : "verify");
             verify.add(d.runtimeDir.getAbsolutePath());
             verify.add("--product"); verify.add(registrationProduct);
             log.accept("[dotnet-stage] VERIFY: start\n");
             NativeProcessResult checked = runNativeCapture(verify, d.appRoot, log);
-            if (checked.exitCode != 0)
-                throw nativeFailure("VERIFY", "selected target RegeditMain.CheckReInfo() did not confirm the native write-back", checked);
+            if (checked.exitCode != 0
+                    || (legacyDs0101 && !checked.output.contains("LEGACY_NATIVE_CHECKREG_OK")))
+                throw nativeFailure("VERIFY", "target-native registration validation did not confirm the write-back", checked);
             log.accept("[dotnet-stage] VERIFY: OK\n");
 
             // Check the exact site-root record consumed by the modern Web runtime.
-            if (!lowercaseChain) {
+            if (!lowercaseChain && !legacyDs0101) {
                 File siteConfig = new File(d.appRoot, "config.xml");
                 String persistedRegStr = recoverDotNetLocalRegStrFromConfig(siteConfig, appProduct);
                 if (blank(persistedRegStr))
