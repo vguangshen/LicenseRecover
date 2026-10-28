@@ -1461,6 +1461,24 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                         && legacyEvidence.contains("Register.xml=有")
                         && legacyEvidence.contains("站点根目录regType=3"),
                 "DS0101 read-only preflight reports dual registration files and root regType");
+        check(!LicenseRecoverModernGUIAutoRecovery.isKnownDs0101RegistrationPair(legacyDotNetBin.toFile()),
+                "synthetic DS0101 binaries do not receive the real-sample mode-priority label");
+        check(!legacyEvidence.contains("精确 SHA-256 匹配"),
+                "DS0101 mode-specific diagnostics require matching real binary hashes");
+        check(LicenseRecoverModernGUIAutoRecovery.knownDs0101ModePriority("3")
+                        .contains("联网→本地→加密狗"),
+                "DS0101 real CIL mode 3 is short-circuit network/local/dongle priority");
+        check(LicenseRecoverModernGUIAutoRecovery.knownDs0101ModePriority("1")
+                        .contains("小写DLL: 本地→加密狗→联网"),
+                "DS0101 mode 1 differs between uppercase and lowercase DLLs");
+        check(LicenseRecoverModernGUIAutoRecovery.knownDs0101ModePriority("invalid") == null,
+                "unknown registration modes cannot inherit a guessed check priority");
+        Path tinyShaFixture = base.resolve("sha-test.bin");
+        Files.write(tinyShaFixture, "abc".getBytes(StandardCharsets.US_ASCII));
+        check(LicenseRecoverModernGUIAutoRecovery.fileSha256Equals(tinyShaFixture.toFile(),
+                        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+                "DS01xx exact sample gate computes real SHA-256, not only file sizes");
+
         check(!legacyEvidence.contains("SECRET_DO_NOT_LOG")
                         && !LicenseRecoverModernGUIAutoRecovery.legacyWritebackUnavailable(
                                 legacyDotNetDetection).contains("SECRET_DO_NOT_LOG"),
