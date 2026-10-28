@@ -47,6 +47,9 @@ public sealed class LicenseRecoverAspNetBridgeRunner : MarshalByRefObject, IRegi
             Console.WriteLine("[ASPNET_HOST] appDomainConfig=" + AppDomain.CurrentDomain.SetupInformation.ConfigurationFile);
 
             PreloadTargetRegistrationAssembly(runtimeDir);
+            if (args != null && args.Length > 0
+                    && string.Equals(args[0], "legacy-probe", StringComparison.OrdinalIgnoreCase))
+                return RunLegacySignatureProbe(runtimeDir);
             return InvokeHelperDirect(helper, args);
         }
         catch (Exception ex)
@@ -191,6 +194,55 @@ public sealed class LicenseRecoverAspNetBridgeRunner : MarshalByRefObject, IRegi
             + "; chain=" + chain);
         Assembly loaded = Assembly.LoadFrom(target);
         Console.WriteLine("[ASPNET_HOST] target registration assembly location=" + loaded.Location);
+    }
+
+    // Strict read-only compatibility probe: inspect metadata signatures only.
+    // Never call NewRegistry, DoRegistry, CheckReInfo, or funpublic.CheckReg:
+    // these target methods may create XML files or change use counters.
+    private static int RunLegacySignatureProbe(string runtimeDir)
+    {
+        string upper = Path.Combine(runtimeDir, "ITMC.Regedit.dll");
+        string web = Path.Combine(runtimeDir, "ITMC.Web.dll");
+        if (!File.Exists(upper) || !File.Exists(web))
+        {
+            Console.Error.WriteLine("[LEGACY_PROBE] required uppercase registration/Web DLL missing");
+            return 2;
+        }
+
+        Assembly regAssembly = Assembly.LoadFrom(upper);
+        Assembly webAssembly = Assembly.LoadFrom(web);
+        Type main = regAssembly.GetType("ITMC.Regedit.RegeditMain", true);
+        Type info = regAssembly.GetType("ITMC.Regedit.RegeditInfo", true);
+        Type funpublic = webAssembly.GetType("ITMC.Web.funpublic", true);
+        const BindingFlags any = BindingFlags.Public | BindingFlags.NonPublic
+                                 | BindingFlags.Instance | BindingFlags.Static;
+
+        ConstructorInfo ctor = main.GetConstructor(any, null,
+            new Type[] { typeof(string), typeof(string) }, null);
+        MethodInfo request = main.GetMethod("NewRegistry", any, null, Type.EmptyTypes, null);
+        MethodInfo submit = main.GetMethod("DoRegistry", any, null,
+            new Type[] { typeof(string), typeof(string) }, null);
+        MethodInfo check = main.GetMethod("CheckReInfo", any, null,
+            new Type[] { info.MakeByRefType() }, null);
+        MethodInfo webCheck = funpublic.GetMethod("CheckReg", any, null, Type.EmptyTypes, null);
+
+        if (ctor == null || request == null || request.ReturnType != typeof(string)
+                || submit == null || submit.ReturnType != typeof(bool)
+                || check == null || check.ReturnType != typeof(bool)
+                || webCheck == null || !webCheck.IsStatic || webCheck.ReturnType != typeof(bool))
+        {
+            Console.Error.WriteLine("[LEGACY_PROBE] native method signatures do not match the DS0101 contract");
+            return 3;
+        }
+
+        Console.WriteLine("[LEGACY_PROBE] DS0101 uppercase RegeditMain(string,string), "
+            + "NewRegistry():string, DoRegistry(string,string):bool, "
+            + "CheckReInfo(ref RegeditInfo):bool");
+        Console.WriteLine("[LEGACY_PROBE] ITMC.Web.funpublic.CheckReg():bool (static)");
+        Console.WriteLine("[LEGACY_PROBE] Metadata-only: no authorization method invoked, "
+            + "no registration result claimed");
+        Console.WriteLine("RESULT: LEGACY_SIGNATURES_VERIFIED_ONLY");
+        return 0;
     }
 
     private static bool IsGenCodeWithoutExplicitRequest(string[] args)
