@@ -140,6 +140,53 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     }
 
     /**
+     * DS0101-specific SHA-256 evidence gate. Registration implementations
+     * differ across deployments; do not infer check order from SoftVersionID
+     * or assembly names alone. Only the two exact analyzed DLLs qualify.
+     */
+    static boolean isKnownDs0101RegistrationPair(File runtimeDir) {
+        if (runtimeDir == null) return false;
+        File upper = new File(runtimeDir, "ITMC.Regedit.dll");
+        File lower = new File(runtimeDir, "itmcRegedit.dll");
+        return upper.isFile() && upper.length() == 439296L
+                && lower.isFile() && lower.length() == 408064L
+                && fileSha256Equals(upper,
+                   "735a7f868825111cd437cb5093eaa79f0a977330a79121fb2d18885290da743f")
+                && fileSha256Equals(lower,
+                   "6872470895de743974d5c565215d5b227678281fb9f863688d92b3f85856056d");
+    }
+
+    static boolean fileSha256Equals(File file, String expectedHex) {
+        if (file == null || expectedHex == null || expectedHex.length() != 64) return false;
+        try (InputStream in = new BufferedInputStream(new FileInputStream(file))) {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[65536];
+            int n;
+            while ((n = in.read(buffer)) >= 0) if (n > 0) digest.update(buffer, 0, n);
+            byte[] actual = digest.digest();
+            for (int i = 0; i < actual.length; i++) {
+                int value = actual[i] & 0xFF;
+                if (Character.digit(expectedHex.charAt(i * 2), 16) != (value >>> 4)
+                        || Character.digit(expectedHex.charAt(i * 2 + 1), 16) != (value & 15))
+                    return false;
+            }
+            return true;
+        } catch (Exception ignore) {
+            return false;
+        }
+    }
+
+    static String knownDs0101ModePriority(String regType) {
+        if ("1".equals(regType))
+            return "大写DLL: 本地→联网→加密狗；小写DLL: 本地→加密狗→联网";
+        if ("2".equals(regType))
+            return "大写DLL: 加密狗→本地→联网；小写DLL: 加密狗→本地→联网";
+        if ("3".equals(regType))
+            return "大写DLL: 联网→本地→加密狗；小写DLL: 联网→本地→加密狗";
+        return null;
+    }
+
+    /**
      * Lightweight, read-only legacy profile. Never inspect or log regName,
      * stored authorization strings, host identifiers, or customer details.
      * This is deliberately inexpensive enough for the Swing preflight.
@@ -161,12 +208,17 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                 if (m.find()) regType = m.group(1);
             }
         } catch (Exception ignore) { /* unreadable config must never imply valid registration */ }
+        String modeEvidence = null;
+        if ("DS0101".equalsIgnoreCase(d.versionId) && isKnownDs0101RegistrationPair(d.runtimeDir))
+            modeEvidence = knownDs0101ModePriority(regType);
         return "只读注册链：ITMC.Web.dll=" + (web ? "有" : "无")
                 + "、ITMC.Regedit.dll=" + (upper ? "有" : "无")
                 + "、itmcRegedit.dll=" + (lower ? "有" : "无")
                 + "、Regester.aspx=" + (page ? "有" : "无")
                 + "、Register.xml=" + (register ? "有" : "无")
                 + "、站点根目录regType=" + regType
+                + (modeEvidence == null ? "" : "；精确 SHA-256 匹配的 DS0101 注册 DLL 静态调用优先顺序："
+                        + modeEvidence + "（提前返回分支，非三项必须全部通过）")
                 + "；以上仅为文件/配置结构证据，不代表授权有效。";
     }
 
