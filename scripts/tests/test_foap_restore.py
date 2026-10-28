@@ -12,6 +12,7 @@ sys.path.insert(0, str(SCRIPTS))
 from itmc_foap_unpack_stdlib import rc4, method_length, restore
 from ds0101_unpack_site import _target_members, recover_site
 from inspect_ds01xx_registration_chain import call_edges
+from inspect_ds01xx_registration_modes import mode_order_from_instructions
 
 
 class ProtectedILTests(unittest.TestCase):
@@ -66,6 +67,51 @@ class RegistrationCallTraceTests(unittest.TestCase):
         edges = call_edges(FakePE(), FakeMetadata(), 1)
         self.assertEqual([edge['target'] for edge in edges],
                          ['Demo.RegeditMain.CheckReInfo'])
+
+    def test_float_operand_is_not_a_false_method_call(self):
+        # ldc.r4 floating point value contains opcode 0x28, but it is data.
+        code = b'\x22\x28\x00\x00\x00\x2a'
+        image = b'\x00' + bytes([(len(code) << 2) | 2]) + code
+
+        class FakePE:
+            b = image
+            def rva_to_offset(self, rva):
+                return rva
+
+        class FakeMetadata:
+            methods = {1: 1}
+            def target_name(self, token):
+                return 'phantom call'
+
+        self.assertEqual(call_edges(FakePE(), FakeMetadata(), 1), [])
+
+    def test_registration_mode_three_priority_is_scoped_to_jump_target(self):
+        # A synthetic CIL mode selector with an early unrelated CheckDog call.
+        # It must trace the call sequence FROM the branch target only.
+        inst = [
+            (0,5,0x28,0x06000003,4),
+            (5,10,0x72,0x70000001,4),
+            (10,15,0x28,0x0a000001,4),
+            (15,17,0x2d,0x17,1),   # brtrue.s 17+23 => 40
+            (17,18,0x2a,None,0),
+            (40,45,0x28,0x06000001,4),
+            (45,50,0x28,0x06000002,4),
+            (50,55,0x28,0x06000003,4),
+        ]
+
+        class FakeMetadata:
+            def target_name(self, token):
+                return {
+                    0x06000001: 'ITMC.Regedit.RegeditMain.CheckNet',
+                    0x06000002: 'ITMC.Regedit.RegeditMain.CheckLocalReg',
+                    0x06000003: 'ITMC.Regedit.RegeditMain.CheckHASPDog',
+                }.get(token, 'String.op_Equality')
+
+        with patch('inspect_ds01xx_registration_modes.user_string',
+                   side_effect=lambda meta, tok: '3' if tok == 0x70000001 else None):
+            self.assertEqual(mode_order_from_instructions(inst, FakeMetadata(), '3'),
+                             ['CheckNet', 'CheckLocalReg', 'CheckHASPDog'])
+            self.assertEqual(mode_order_from_instructions(inst, FakeMetadata(), '1'), [])
 
     def test_token_bytes_in_ldstr_are_not_false_method_calls(self):
         # The operand to ldstr contains a 0x28 byte, but must not become a
