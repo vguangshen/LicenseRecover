@@ -31,8 +31,19 @@ internal static class LicenseRecoverAspNetHost
         return full;
     }
 
-    private static string SelectHelper(string toolDir, string runtimeDir, out string chain)
+    private static string SelectHelper(string toolDir, string runtimeDir, string command, out string chain)
     {
+        if (string.Equals(command, "legacy-gencode", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(command, "legacy-doreg", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(command, "legacy-verify", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!File.Exists(Path.Combine(runtimeDir, "ITMC.Regedit.dll")))
+                throw new FileNotFoundException("DS0101 uppercase registration DLL is required");
+            chain = "DS0101-native-offline";
+            string legacy = Path.Combine(toolDir, "LicenseRecover.NET.Legacy.exe");
+            if (!File.Exists(legacy)) throw new FileNotFoundException("DS0101 legacy helper is missing", legacy);
+            return legacy;
+        }
         string lower = Path.Combine(runtimeDir, "itmcRegedit.dll");
         string upper = Path.Combine(runtimeDir, "ITMC.Regedit.dll");
         string helper;
@@ -184,7 +195,7 @@ internal static class LicenseRecoverAspNetHost
         string helper;
         try
         {
-            helper = SelectHelper(toolDir, runtimeDir, out chain);
+            helper = SelectHelper(toolDir, runtimeDir, args[0], out chain);
         }
         catch (Exception ex)
         {
