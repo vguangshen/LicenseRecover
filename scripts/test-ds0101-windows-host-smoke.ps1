@@ -151,7 +151,7 @@ if (Test-Path -LiteralPath $bridgeInSite) { throw 'legacy-probe unexpectedly sta
 $request = Invoke-HostTest @('legacy-gencode',$bin,'--product','itmcIEC')
 if ($request.ExitCode -ne 0) { throw "Hosted NewRegistry failed: $($request.Output)" }
 Assert-Contains $request.Output 'RESULT: LEGACY_NATIVE_REQUEST_ONLY'
-Assert-Contains $request.Output 'target registration chain=DS0101-native-offline'
+Assert-Contains $request.Output 'target registration chain=DS01xx-native-offline'
 if (Test-Path -LiteralPath $marker) { throw 'request-only call falsely registered the site' }
 
 $before = Invoke-HostTest @('legacy-verify',$bin,'--product','itmcIEC')
