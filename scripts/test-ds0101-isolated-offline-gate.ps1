@@ -124,6 +124,15 @@ public final class DS0101OfflineProbe {
         'legacy-doreg', $copyBin, '--product', 'itmcIEC',
         '--seq', $request, '--code', $candidate) 45
     $accepted = $submitted.ExitCode -eq 0 -and $submitted.Out.Contains('LEGACY_NATIVE_DOREG_ACCEPTED')
+    # Probe the native local check directly in its own independent copy.
+    # It can mutate site configuration; never reuse this copy for global verify.
+    $localSite = Join-Path $temp 'local-postreg'
+    Copy-Item -LiteralPath $copy -Destination $localSite -Recurse -Force
+    $local = Invoke-Native $hostExe @(
+        'legacy-local-probe', (Join-Path $localSite 'bin'), '--product', 'itmcIEC') 45
+    $localSignatureSupported = -not $local.Out.Contains('LEGACY_LOCAL_SIGNATURE_UNSUPPORTED')
+    $nativeLocalAccepted = $local.ExitCode -eq 0 -and
+        $local.Out.Contains('LEGACY_NATIVE_LOCAL_CHECK_OK')
     $verified = Invoke-Native $hostExe @(
         'legacy-verify', $copyBin, '--product', 'itmcIEC') 45
     $valid = $verified.ExitCode -eq 0 -and $verified.Out.Contains('LEGACY_NATIVE_CHECKREG_OK')
@@ -177,6 +186,10 @@ public final class DS0101OfflineProbe {
         registeredRegType = $registeredRegType
         verificationByRegType = $modeResults
         nativeCheckReInfoAndWebCheckRegPassed = $valid
+        nativeLocalCheckSignatureSupported = $localSignatureSupported
+        nativeCheckLocalRegPassed = $nativeLocalAccepted
+        nativeLocalCheckExitCode = $local.ExitCode
+        nativeLocalCheckTimedOut = $local.Timeout
         nativeDoRegistryExitCode = $submitted.ExitCode
         nativeVerifyExitCode = $verified.ExitCode
         nativeRegistrationTimedOut = $submitted.Timeout
