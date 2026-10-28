@@ -23,6 +23,12 @@ import java.util.regex.Pattern;
 public final class LicenseRecoverModernGUIUiPatchLauncher {
     private static final String UPDATE_CONTROL_NAME = "LicenseRecoverUpdateControl";
     private static final String ONE_CLICK_CONTROL_NAME = "LicenseRecoverOneClickControl";
+    private static final java.util.concurrent.ExecutorService ONE_CLICK_LOG_WRITER =
+            java.util.concurrent.Executors.newSingleThreadExecutor(task -> {
+                Thread worker = new Thread(task, "LicenseRecover-OneClick-LogWriter");
+                worker.setDaemon(true);
+                return worker;
+            });
 
     private LicenseRecoverModernGUIUiPatchLauncher() { }
 
@@ -606,11 +612,21 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
     }
 
     private static void append(final JTextArea area, final String text) {
-        if (area == null || text == null || text.isEmpty()) return;
-        appendPersistentOneClickLog(text);
-        SwingUtilities.invokeLater(() -> {
-            area.append(text);
-            area.setCaretPosition(area.getDocument().getLength());
+        if (text == null || text.isEmpty()) return;
+        // Never perform filesystem logging on the Swing event-dispatch thread.
+        // Update the visible log immediately when already on the EDT so the
+        // stage marker appears before starting a potentially slow child process.
+        if (area != null) {
+            Runnable render = () -> {
+                area.append(text);
+                area.setCaretPosition(area.getDocument().getLength());
+            };
+            if (SwingUtilities.isEventDispatchThread()) render.run();
+            else SwingUtilities.invokeLater(render);
+        }
+        ONE_CLICK_LOG_WRITER.execute(() -> {
+            try { appendPersistentOneClickLog(text); }
+            catch (RuntimeException ignored) { /* The UI log must stay responsive. */ }
         });
     }
 
