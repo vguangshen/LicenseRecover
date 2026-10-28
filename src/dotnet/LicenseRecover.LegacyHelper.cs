@@ -33,7 +33,7 @@ namespace LicenseRecoverNet
             }
             if (o.Product != "itmcIEC") return null;
             if (o.Command != "legacy-gencode" && o.Command != "legacy-doreg"
-                && o.Command != "legacy-verify") return null;
+                && o.Command != "legacy-verify" && o.Command != "legacy-local-probe") return null;
             if (o.Command == "legacy-doreg" &&
                 (String.IsNullOrEmpty(o.Sequence) || String.IsNullOrEmpty(o.Code)))
                 return null;
@@ -135,6 +135,47 @@ namespace LicenseRecoverNet
                 }
                 Console.WriteLine("RESULT: LEGACY_NATIVE_DOREG_ACCEPTED");
                 return 0;
+            }
+            if (options.Command == "legacy-local-probe")
+            {
+                // Isolated diagnostic only: call the vendor's native local
+                // verification path without changing its return value.
+                // A separate temporary site copy is required because the
+                // original CheckLocalReg can rewrite config.xml.
+                MethodInfo selected = null;
+                object[] inputs = null;
+                foreach (MethodInfo candidate in native.GetType().GetMethods(
+                    BindingFlags.Public | BindingFlags.NonPublic
+                    | BindingFlags.Instance | BindingFlags.Static))
+                {
+                    if (candidate.Name != "CheckLocalReg" ||
+                        candidate.ReturnType != typeof(bool)) continue;
+                    ParameterInfo[] p = candidate.GetParameters();
+                    object[] values = null;
+                    if (p.Length == 0) values = new object[0];
+                    else if (p.Length == 1 &&
+                        (p[0].ParameterType == regInfoType.MakeByRefType()
+                         || p[0].ParameterType == regInfoType))
+                        values = new object[] { Activator.CreateInstance(regInfoType) };
+                    if (values != null && selected == null)
+                    {
+                        selected = candidate;
+                        inputs = values;
+                    }
+                }
+                if (selected == null)
+                {
+                    Console.WriteLine("RESULT: LEGACY_LOCAL_SIGNATURE_UNSUPPORTED");
+                    return 8;
+                }
+                object localResult = selected.Invoke(selected.IsStatic ? null : native, inputs);
+                if (localResult is bool && (bool)localResult)
+                {
+                    Console.WriteLine("RESULT: LEGACY_NATIVE_LOCAL_CHECK_OK");
+                    return 0;
+                }
+                Console.WriteLine("RESULT: LEGACY_NATIVE_LOCAL_CHECK_REJECTED");
+                return 7;
             }
             if (options.Command == "legacy-verify")
             {
