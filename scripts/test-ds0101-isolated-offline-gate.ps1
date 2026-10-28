@@ -66,15 +66,19 @@ if (-not (Test-Path -LiteralPath $hostExe) -or -not (Test-Path -LiteralPath $jav
 }
 
 function RawVendorBool([string]$output, [string]$marker) {
-    $pattern = '(?im)^\\[' + [regex]::Escape($marker) + '\\] returned=(true|false)\\s*
-    # Only return a small set of sanitized status labels, never original values.
+    $pattern = '(?im)^\[' + [regex]::Escape($marker) + '\] returned=(true|false)\s*$'
+    $match = [regex]::Match($output, $pattern)
+    if (-not $match.Success) { return 'unknown' }
+    return $match.Groups[1].Value
+}
+
+function SafeLocalFlag([string]$output, [string]$field) {
     $pattern = '(?im)^\[LEGACY_LOCAL_STATE\] ' + [regex]::Escape($field) +
         '=(true|false|match|mismatch|empty|missing|unknown|future-or-today|expired)\s*$'
     $match = [regex]::Match($output, $pattern)
     if (-not $match.Success) { return 'not-reported' }
     return $match.Groups[1].Value
 }
-
 $beforeSource = Snapshot $site
 $temp = Join-Path ([IO.Path]::GetTempPath()) ('DS0101-native-gate-' + [guid]::NewGuid().ToString('N'))
 $copy = Join-Path $temp 'site'
