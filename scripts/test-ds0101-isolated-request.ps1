@@ -18,8 +18,17 @@ function RootFrom([string]$p) {
     return $full
 }
 function NativeStage([string]$exe,[string[]]$arguments) {
-    $output = & $exe @arguments 2>&1 | Out-String
-    return @{ ExitCode = $LASTEXITCODE; Text = [string]$output }
+    $previousPreference = $ErrorActionPreference
+    try {
+        # A nonzero exit and stderr can be expected for incompatible binaries.
+        # Capture that result instead of terminating before reporting it.
+        $ErrorActionPreference = 'Continue'
+        $output = & $exe @arguments 2>&1 | Out-String
+        $exitCode = $LASTEXITCODE
+        return @{ ExitCode = $exitCode; Text = [string]$output }
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
 }
 $root = RootFrom $SiteRoot
 $bin = Join-Path $root 'bin'
