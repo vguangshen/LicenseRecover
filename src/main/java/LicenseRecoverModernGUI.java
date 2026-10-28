@@ -683,8 +683,8 @@ public final class LicenseRecoverModernGUI {
                                     LicenseRecoverModernGUIAutoRecovery.detect(info.binDir);
                             String kind = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
                                     ? ".NET Modern" : ".NET Legacy";
-                            boolean ds0101Ready = LicenseRecoverModernGUIAutoRecovery.supportsDs0101NativeRecovery(d);
-                            String dotNetRegStr = ds0101Ready ? "DS0101"
+                            boolean ds0101Ready = LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(d);
+                            String dotNetRegStr = ds0101Ready ? d.versionId
                                     : (d.productName == null ? null
                                     : LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(d));
                             boolean dotNetIdentityReady = d.productName != null && !d.productName.trim().isEmpty();
@@ -999,8 +999,8 @@ public final class LicenseRecoverModernGUI {
         LicenseRecoverModernGUIAutoRecovery.Detection d =
                 LicenseRecoverModernGUIAutoRecovery.detect(target.binDir);
         if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
-                && !LicenseRecoverModernGUIAutoRecovery.supportsDs0101NativeRecovery(d))
-            return "DS01xx 旧版 .NET 不支持一键授权写回；仅阻断联网不代表授权成功";
+                && !LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(d))
+            return "DS01xx 旧版 .NET 尚未确认同族注册结构；仅阻断联网不代表授权成功";
         if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN) {
             if (d.productName == null || d.productName.trim().isEmpty())
                 return ".NET 授权产品号未确认";
@@ -1015,7 +1015,7 @@ public final class LicenseRecoverModernGUI {
         File selected = target.type == BatchTarget.Type.JAVA ? target.appRoot : target.binDir;
         LicenseRecoverModernGUIAutoRecovery.Detection d = LicenseRecoverModernGUIAutoRecovery.detect(selected);
         if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
-                && !LicenseRecoverModernGUIAutoRecovery.supportsDs0101NativeRecovery(d)) {
+                && !LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(d)) {
             return legacyBatchBlocked(d);
         }
         LicenseRecoverModernGUIAutoRecovery.Result result =
@@ -1043,10 +1043,10 @@ public final class LicenseRecoverModernGUI {
         }
         LicenseRecoverModernGUIAutoRecovery.Detection d = LicenseRecoverModernGUIAutoRecovery.detect(target.binDir);
         if (d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY) {
-            if (!LicenseRecoverModernGUIAutoRecovery.supportsDs0101NativeRecovery(d))
+            if (!LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(d))
                 return "兼容方式一: 不适用";
-            if (preview) return "DS0101: 仅预览";
-            return result.isSuccess() ? "DS0101 原生网站校验: OK" : "DS0101 原生网站校验: FAILED";
+            if (preview) return "DS01xx: 仅预览";
+            return result.isSuccess() ? "DS01xx 原生网站校验: OK" : "DS01xx 原生网站校验: FAILED";
         }
         if (preview) return "预览: 未执行写回校验";
         if (!result.isSuccess()) {
