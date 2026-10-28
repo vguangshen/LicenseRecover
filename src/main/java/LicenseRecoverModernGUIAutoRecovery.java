@@ -138,9 +138,11 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                 || !LegacyDotNetProtocol.isLegacyVersion(d.versionId)
                 || d.appRoot == null || d.runtimeDir == null) return false;
         if (!"itmcIEC".equals(d.productName)) return false;
+        // A site can use a compiled code-behind registration endpoint even
+        // when Regester.aspx is not present in an extracted test package.
+        // The native ABI probe, not a page filename, decides compatibility.
         if (!new File(d.runtimeDir, "ITMC.Regedit.dll").isFile()
-                || !new File(d.runtimeDir, "ITMC.Web.dll").isFile()
-                || !new File(d.appRoot, "Regester.aspx").isFile()) return false;
+                || !new File(d.runtimeDir, "ITMC.Web.dll").isFile()) return false;
         String actual = readVersion(d.appRoot, d.runtimeDir);
         return actual != null && actual.equalsIgnoreCase(d.versionId);
     }
