@@ -1435,7 +1435,11 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         Path legacyDotNetBin = legacyDotNetRoot.resolve("bin");
         Files.createDirectories(legacyDotNetBin);
         Files.write(legacyDotNetRoot.resolve("config.xml"), Arrays.asList(
-                "<ROOT><SystemSoft><SoftVersionID>DS0101</SoftVersionID></SystemSoft></ROOT>"), StandardCharsets.UTF_8);
+                "<ROOT><SystemSoft><SoftVersionID>DS0101</SoftVersionID></SystemSoft>"
+                + "<reg><regType>3</regType><regName>SECRET_DO_NOT_LOG</regName></reg></ROOT>"),
+                StandardCharsets.UTF_8);
+        Files.write(legacyDotNetRoot.resolve("Regester.aspx"), new byte[]{1});
+        Files.write(legacyDotNetRoot.resolve("Register.xml"), new byte[]{1});
         Files.write(legacyDotNetBin.resolve("ITMC.Web.dll"), new byte[]{1});
         Files.write(legacyDotNetBin.resolve("itmcRegedit.dll"), new byte[]{1});
         Files.write(legacyDotNetBin.resolve("ITMC.Regedit.dll"), new byte[]{1});
@@ -1449,6 +1453,18 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                 "DS01xx remains legacy even when an uppercase compatibility ITMC.Regedit.dll is present");
         check(legacyDotNetDetection.productName == null,
                 "legacy detector avoids slow modern DLL product inspection");
+        String legacyEvidence = LicenseRecoverModernGUIAutoRecovery.legacyChainReadOnlyEvidence(
+                legacyDotNetDetection);
+        check(legacyEvidence.contains("ITMC.Regedit.dll=有")
+                        && legacyEvidence.contains("itmcRegedit.dll=有")
+                        && legacyEvidence.contains("Regester.aspx=有")
+                        && legacyEvidence.contains("Register.xml=有")
+                        && legacyEvidence.contains("站点根目录regType=3"),
+                "DS0101 read-only preflight reports dual registration files and root regType");
+        check(!legacyEvidence.contains("SECRET_DO_NOT_LOG")
+                        && !LicenseRecoverModernGUIAutoRecovery.legacyWritebackUnavailable(
+                                legacyDotNetDetection).contains("SECRET_DO_NOT_LOG"),
+                "DS0101 preflight never reveals existing local authorization data");
         byte[] legacyConfigBefore = Files.readAllBytes(legacyDotNetRoot.resolve("config.xml"));
         int legacyBinFileCount = legacyDotNetBin.toFile().list().length;
         LicenseRecoverModernGUIAutoRecovery.Result unsupportedLegacy =
