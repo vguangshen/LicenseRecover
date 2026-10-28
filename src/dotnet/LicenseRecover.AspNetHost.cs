@@ -172,6 +172,12 @@ internal static class LicenseRecoverAspNetHost
             return 2;
         }
 
+        // Standalone metadata-only inspection: do not stage the ASP.NET bridge,
+        // choose a license helper, construct a hosted AppDomain, or execute
+        // any third-party application code for this command.
+        if (string.Equals(args[0], "legacy-probe", StringComparison.OrdinalIgnoreCase))
+            return LicenseRecoverLegacyMetadataProbe.Inspect(runtimeDir);
+
         string hostAssembly = Assembly.GetExecutingAssembly().Location;
         string toolDir = Path.GetDirectoryName(hostAssembly);
         string chain;
@@ -240,6 +246,120 @@ internal static class LicenseRecoverAspNetHost
 
             if (bridgeCreated)
                 DeleteBridgeWithRetry(targetBridge);
+        }
+    }
+}
+
+
+/// <summary>
+/// Offline, read-only ABI compatibility check for DS0101's native .NET assemblies.
+/// ReflectionOnlyLoadFrom reads CLR metadata without executing method bodies or
+/// type initializers. It does NOT prove the presence of a valid software license.
+/// </summary>
+internal static class LicenseRecoverLegacyMetadataProbe
+{
+    private const BindingFlags Any = BindingFlags.Public | BindingFlags.NonPublic
+        | BindingFlags.Static | BindingFlags.Instance;
+
+    private static bool MatchParameters(ParameterInfo[] parameters, string[] typeNames)
+    {
+        if (parameters.Length != typeNames.Length) return false;
+        for (int i = 0; i < parameters.Length; i++)
+        {
+            Type type = parameters[i].ParameterType;
+            if (!string.Equals(type.FullName, typeNames[i], StringComparison.Ordinal))
+                return false;
+        }
+        return true;
+    }
+
+    private static bool HasConstructor(Type type, params string[] parameterTypes)
+    {
+        foreach (ConstructorInfo method in type.GetConstructors(Any))
+        {
+            if (MatchParameters(method.GetParameters(), parameterTypes))
+                return true;
+        }
+        return false;
+    }
+
+    private static bool HasMethod(Type type, string name, string returnType, bool requireStatic,
+        params string[] parameterTypes)
+    {
+        foreach (MethodInfo method in type.GetMethods(Any))
+        {
+            if (!string.Equals(method.Name, name, StringComparison.Ordinal)
+                || method.IsStatic != requireStatic
+                || !string.Equals(method.ReturnType.FullName, returnType, StringComparison.Ordinal))
+                continue;
+            if (MatchParameters(method.GetParameters(), parameterTypes))
+                return true;
+        }
+        return false;
+    }
+
+    public static int Inspect(string runtimeDir)
+    {
+        string regPath = Path.Combine(runtimeDir, "ITMC.Regedit.dll");
+        string webPath = Path.Combine(runtimeDir, "ITMC.Web.dll");
+        if (!File.Exists(regPath) || !File.Exists(webPath))
+        {
+            Console.Error.WriteLine("[LEGACY_PROBE] Missing ITMC.Regedit.dll or ITMC.Web.dll.");
+            return 2;
+        }
+
+        ResolveEventHandler resolver = delegate(object sender, ResolveEventArgs args)
+        {
+            string simpleName = new AssemblyName(args.Name).Name;
+            // Only permit local .NET dependencies with normal single-segment
+            // assembly names; reject path-like names and traversal.
+            if (!string.IsNullOrEmpty(simpleName)
+                && string.Equals(Path.GetFileName(simpleName), simpleName, StringComparison.Ordinal)
+                && simpleName.IndexOfAny(new char[]{'/', '\\', ':'}) == -1)
+            {
+                string dependency = Path.Combine(runtimeDir, simpleName + ".dll");
+                if (File.Exists(dependency)) return Assembly.ReflectionOnlyLoadFrom(dependency);
+            }
+            // Framework types such as System.String are resolved from the
+            // installed runtime's trusted assembly load context, not the site.
+            return Assembly.ReflectionOnlyLoad(args.Name);
+        };
+
+        AppDomain.CurrentDomain.ReflectionOnlyAssemblyResolve += resolver;
+        try
+        {
+            Assembly registration = Assembly.ReflectionOnlyLoadFrom(regPath);
+            Assembly web = Assembly.ReflectionOnlyLoadFrom(webPath);
+            Type main = registration.GetType("ITMC.Regedit.RegeditMain", true);
+            Type info = registration.GetType("ITMC.Regedit.RegeditInfo", true);
+            Type funpublic = web.GetType("ITMC.Web.funpublic", true);
+            if (!HasConstructor(main, "System.String", "System.String")
+                || !HasMethod(main, "NewRegistry", "System.String", false)
+                || !HasMethod(main, "DoRegistry", "System.Boolean", false,
+                              "System.String", "System.String")
+                || !HasMethod(main, "CheckReInfo", "System.Boolean", false,
+                              info.FullName + "&")
+                || !HasMethod(funpublic, "CheckReg", "System.Boolean", true))
+            {
+                Console.Error.WriteLine("[LEGACY_PROBE] DS0101 native signatures do not match.");
+                return 3;
+            }
+
+            Console.WriteLine("[LEGACY_PROBE] Found DS0101 upper registration signature set.");
+            Console.WriteLine("[LEGACY_PROBE] Found static ITMC.Web.funpublic.CheckReg():bool.");
+            Console.WriteLine("[LEGACY_PROBE] No vendor method was executed; no site files staged.");
+            Console.WriteLine("RESULT: LEGACY_SIGNATURES_VERIFIED_ONLY");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("[LEGACY_PROBE] Metadata read failed: "
+                + ex.GetType().FullName + ": " + ex.Message);
+            return 4;
+        }
+        finally
+        {
+            AppDomain.CurrentDomain.ReflectionOnlyAssemblyResolve -= resolver;
         }
     }
 }
