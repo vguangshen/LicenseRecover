@@ -1555,6 +1555,20 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         Files.delete(legacySiteNotReg.toPath());
         check(LicenseRecoverModernGUIAutoRecovery.restoreDotNetRegistrationFiles(legacySnapshot, null),
                 "rollback succeeds after removing the synthetic blocker");
+        String guiLegacySource = new String(Files.readAllBytes(
+                Paths.get("src/main/java/LicenseRecoverModernGUIUiPatchLauncher.java")),
+                StandardCharsets.UTF_8);
+        check(guiLegacySource.contains("probeLegacySignatures(")
+                        && guiLegacySource.contains("旧协议：接口兼容，未执行授权写回")
+                        && guiLegacySource.contains("new SwingWorker<String, Void>()"),
+                "legacy one-click UI runs ABI inspection asynchronously without claiming license restoration");
+        if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")) {
+            String offlineStatus = LicenseRecoverModernGUIAutoRecovery.probeLegacySignatures(
+                    legacyDotNetDetection, null);
+            check(offlineStatus.startsWith("[LEGACY_PROBE]")
+                            && offlineStatus.contains("仅支持 Windows"),
+                    "legacy ABI diagnostic clearly reports unavailable platform without target mutation");
+        }
         byte[] legacyConfigBefore = Files.readAllBytes(legacyDotNetRoot.resolve("config.xml"));
         int legacyBinFileCount = legacyDotNetBin.toFile().list().length;
         LicenseRecoverModernGUIAutoRecovery.Result unsupportedLegacy =
