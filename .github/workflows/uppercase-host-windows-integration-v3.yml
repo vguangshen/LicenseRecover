@@ -23,6 +23,9 @@ jobs:
             throw ('PowerShell 5.1 parameter default initialization regressed: ' + $messages)
           }
           Write-Host 'PASS: Windows PowerShell 5.1 resolves script directory after parameter binding.'
+          # The expected child-process failure leaves LASTEXITCODE=1; ensure
+          # the runner's parent pwsh exits successfully after assertions pass.
+          $global:LASTEXITCODE = 0
 
       - name: DS0101 native hosted registration workflow (synthetic fixtures only)
         shell: pwsh
