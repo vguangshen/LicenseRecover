@@ -199,6 +199,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         boolean lower = new File(d.runtimeDir, "itmcRegedit.dll").isFile();
         boolean page = new File(d.appRoot, "Regester.aspx").isFile();
         boolean register = new File(d.appRoot, "Register.xml").isFile();
+        boolean notRegFile = new File(d.appRoot, "notRegFile.xml").isFile();
         String regType = "未确认";
         File rootConfig = new File(d.appRoot, "config.xml");
         try {
@@ -216,6 +217,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                 + "、itmcRegedit.dll=" + (lower ? "有" : "无")
                 + "、Regester.aspx=" + (page ? "有" : "无")
                 + "、Register.xml=" + (register ? "有" : "无")
+                + "、notRegFile.xml=" + (notRegFile ? "有" : "无")
                 + "、站点根目录regType=" + regType
                 + (modeEvidence == null ? "" : "；精确 SHA-256 匹配的 DS0101 注册 DLL 静态调用优先顺序："
                         + modeEvidence + "（提前返回分支，非三项必须全部通过）")
