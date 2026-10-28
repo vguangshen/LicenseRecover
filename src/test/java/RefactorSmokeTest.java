@@ -1455,6 +1455,7 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                 "successful rollback cleans its temporary journal");
 
         LicenseRecoverSharedLog.append(rollbackInstall.toFile(), "[test] synchronized log writer\n");
+        LicenseRecoverSharedLog.awaitPendingWrites(5000L);
         File commonLogDir = rollbackInstall.resolve("logs").toFile();
         File[] commonLogs = commonLogDir.listFiles((dir, name) -> name.startsWith("LicenseRecoverGUI-")
                 && name.endsWith(".log"));
