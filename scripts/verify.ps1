@@ -223,9 +223,9 @@ Invoke-External -Command $mcs.Source -ArgumentList @(
 if (-not (Test-Path -LiteralPath $aspNetHostHelper)) { throw 'ASP.NET host helper was not created.' }
 Write-Host 'Building DS0101 native offline authorization helper...'
 $legacyHelperSource = Join-Path $repoRoot 'src/dotnet/LicenseRecover.LegacyHelper.cs'
-$legacyHelper = Join-Path $buildRoot 'LicenseRecover.NET.Legacy.exe'
+$legacyHelper = Join-Path $buildRoot 'LicenseRecover.NET.Legacy.dll'
 Invoke-External -Command $mcs.Source -ArgumentList @(
-    '-nologo', '-target:exe', '-optimize+', '-r:System.Web.dll',
+    '-nologo', '-target:library', '-optimize+', '-r:System.Web.dll',
     ('-out:' + $legacyHelper), $legacyHelperSource
 )
 if (-not (Test-Path -LiteralPath $legacyHelper)) { throw 'DS0101 legacy helper build failed.' }
@@ -452,7 +452,7 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'LicenseRecover.NET') -Destination $
 $distNativeDir = Join-Path $distDir 'LicenseRecover.NET'
 Copy-Item -LiteralPath $modernNativeHelper -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.Modern.exe') -Force
 Copy-Item -LiteralPath $aspNetHostHelper -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.AspNetHost.exe') -Force
-Copy-Item -LiteralPath $legacyHelper -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.Legacy.exe') -Force
+Copy-Item -LiteralPath $legacyHelper -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.Legacy.dll') -Force
 Copy-Item -LiteralPath $aspNetBridgeHelper -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.AspNetBridge.dll') -Force
 $nativeConfig = Join-Path $repoRoot 'LicenseRecover.NET/LicenseRecover.NET.exe.config'
 if (Test-Path -LiteralPath $nativeConfig) {
