@@ -222,38 +222,48 @@ or unauthorized license bypass. DS01xx still fails closed before
 automatic registration; a genuine Windows/IIS execution and restored
 application verification are required before enabling it.
 
-## Hosted native method-contract probe (read-only)
+## Standalone, metadata-only DS0101 ABI probe
 
-The recovered source proves the DS0101 uppercase native registration
-surface (signatures below are based on real MethodDef signatures):
+The known DS0101 DLLs expose these signatures (read from the original
+protected CLR metadata):
 
 - `ITMC.Regedit.RegeditMain(string,string)` constructor
 - `NewRegistry(): string`
 - `DoRegistry(string,string): bool`
-- `CheckReInfo(ref RegeditInfo): bool`
+- `CheckReInfo(ref ITMC.Regedit.RegeditInfo): bool`
 - `ITMC.Web.funpublic.CheckReg(): bool` (static)
 
-The website's registration page calls this uppercase generation, and
-`funpublic.CheckReg` also references the lowercase generation.
-The second constructor parameter must not be assumed to be a
-literal/simple product name: the website builds it using its
-product-specific encrypted initialization path.
+The local registration page uses the uppercase DLL, while `CheckReg`
+references both registration generations. These are static facts, not
+proof that a license is valid or that native registration succeeds.
 
-For an isolated Windows/.NET Framework ASP.NET website folder, the
-compiled hosted bridge now offers a **method-signature-only** check:
+For a test website, run the packaged native host:
 
 ```bat
 LicenseRecover.NET\LicenseRecover.NET.AspNetHost.exe legacy-probe "C:\TestSites\DS0101\bin"
 ```
 
-This loads the site's assembly metadata within the hosted application
-domain and checks the required constructor/method signatures. It
-**does not call** `NewRegistry`, `DoRegistry`, `CheckReInfo`,
-or `CheckReg`, and prints
-`RESULT: LEGACY_SIGNATURES_VERIFIED_ONLY` on success. Success is
-not a valid registration, a Patch result, or an IIS startup test.
-Do not run against a live production site without first taking a
-full website snapshot; even assembly loading can interact with
-environment-specific module initializers.
+The `legacy-probe` command now dispatches **before** selecting a helper
+or staging `LicenseRecover.NET.AspNetBridge.dll` in the target site.
+It uses `Assembly.ReflectionOnlyLoadFrom` and reflection-only resolution
+to inspect assembly metadata, without invoking vendor methods or static
+constructors. It needs no registration helper and does not edit site files.
 
-The resulting work remains in a draft PR, not a stable release.
+On successful signature verification it reports:
+
+```text
+RESULT: LEGACY_SIGNATURES_VERIFIED_ONLY
+```
+
+The CI harness compiles synthetic native DLLs with deliberately
+throwing static constructors and checks: successful matching, refusal
+of incorrect signatures/missing assemblies, no tripwire execution,
+and byte-identical contents of the target site's files before/after.
+
+**Limitations:** this checks binary interfaces only. It is not a
+license generator, registration, Patch, authorization success result,
+or IIS application startup test. `DOTNET_LEGACY` writeback is still
+blocked until genuinely authorized registration can be tested with
+the target runtime and verified after site restart.
+
+The implementation remains on a draft PR, not a stable release.
