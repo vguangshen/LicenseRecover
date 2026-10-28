@@ -34,7 +34,7 @@ jobs:
           repository: vguangshen/LicenseRecover
           # Pin executed diagnostic source; do not follow a mutable branch
           # when running private proprietary binaries.
-          ref: 3871859bb8e20e14c34b4531bfb33c94d8efdebb
+          ref: defd1902fce7fb5b527e64b3d3b0a44bf6b47d45
           path: lrc-tools
           persist-credentials: false
       - name: Prepare Python (stdlib-only offline CIL restoration)
@@ -70,6 +70,10 @@ jobs:
             if (-not (Test-Path -LiteralPath $bin -PathType Container)) {
               throw 'DS0101/bin not found in the private test archive'
             }
+            # Keep the exact original protected DLLs for the Java coordinator
+            # test; the existing native diagnostic uses a separate CIL-restored copy.
+            $rawOriginal = Join-Path $scratch 'original-site'
+            Copy-Item -LiteralPath $site -Destination $rawOriginal -Recurse -Force
             if ($env:RESTORE_CIL -eq 'true') {
               $analysis = Join-Path $scratch 'analysis'
               & python (Join-Path $toolSrc 'scripts/ds0101_unpack_site.py') $archive $analysis |
@@ -111,6 +115,10 @@ jobs:
             # against a disposable sanitized site copy. Never print secrets.
             & (Join-Path $toolSrc 'scripts/test-ds0101-isolated-offline-gate.ps1') -SiteRoot $site -ToolRoot $scratch -SourceRoot $toolSrc
             if (-not $?) { throw 'Private Windows DS0101 offline gate diagnostic failed' }
+            # Exercise the packaged Java one-click coordinator on original
+            # protected assemblies, never against the source or live IIS.
+            & (Join-Path $toolSrc 'scripts/test-ds0101-private-oneclick.ps1') -SiteRoot $rawOriginal -ToolRoot $scratch -SourceRoot $toolSrc
+            if (-not $?) { throw 'Java one-click disposable integration failed' }
           }
           finally {
             Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
