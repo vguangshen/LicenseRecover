@@ -777,7 +777,8 @@ public final class LicenseRecoverModernGUI {
             protected void done() {
                 boolean cancelled = isCancelled();
                 batchScanButton.setEnabled(true);
-                batchRunButton.setEnabled(true);
+                // Never allow execution of an incomplete or cancelled scan.
+                batchRunButton.setEnabled(!cancelled && hasExecutableBatchTargets());
                 batchCancelButton.setEnabled(false);
 
                 int processed = batchTargets.size();
@@ -872,6 +873,14 @@ public final class LicenseRecoverModernGUI {
                         diagnostic = reason;
                     }
         return new BatchScanInspection(target, cells, detectedCount, skippedCount, errorCount, diagnostic);
+    }
+
+    private boolean hasExecutableBatchTargets() {
+        for (BatchTarget target : batchTargets) {
+            if (target != null && target.appInfo != null
+                    && target.appInfo.type != AppInfo.Type.UNKNOWN) return true;
+        }
+        return false;
     }
 
     private void runBatch() {
