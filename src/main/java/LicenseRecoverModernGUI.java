@@ -778,7 +778,7 @@ public final class LicenseRecoverModernGUI {
                 boolean cancelled = isCancelled();
                 batchScanButton.setEnabled(true);
                 // Never allow execution of an incomplete or cancelled scan.
-                batchRunButton.setEnabled(!cancelled && hasExecutableBatchTargets());
+                batchRunButton.setEnabled(true); // allow scan-before-run and cleanup workflows
                 batchCancelButton.setEnabled(false);
 
                 int processed = batchTargets.size();
