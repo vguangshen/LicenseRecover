@@ -248,6 +248,9 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         Consumer<String> log = logger == null ? x -> { } : logger;
         if (d == null || d.kind != Kind.DOTNET_LEGACY || d.runtimeDir == null)
             return "[LEGACY_PROBE] 未识别 DS01xx .NET 旧协议目录，未执行检查。";
+        if (!"DS0101".equalsIgnoreCase(d.versionId))
+            return "[LEGACY_PROBE] 当前仅核对 DS0101 的已确认原生接口；"
+                    + "其他 DS01xx 版本尚无完整 ABI 证据，未执行检查。";
         if (!isWindows())
             return "[LEGACY_PROBE] 仅支持 Windows .NET Framework；当前环境无法执行原生元数据探针。";
         File helper = findDotNetAspNetHostHelper();
