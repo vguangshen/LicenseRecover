@@ -419,11 +419,32 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         LicenseRecoverModernGUIAutoRecovery.Detection preflight =
                 LicenseRecoverModernGUIAutoRecovery.detect(selected);
         if (preflight.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY) {
-            String reason = LicenseRecoverModernGUIAutoRecovery.legacyWritebackUnavailable(preflight);
-            verifyValue.setText("旧协议：不支持一键授权写回（未修改文件）");
+            final String reason = LicenseRecoverModernGUIAutoRecovery.legacyWritebackUnavailable(preflight);
+            // A DS01xx click is diagnostic only. Keep Swing responsive and
+            // never invoke recoverDotNet or a target authorization method.
+            verifyValue.setText("旧协议：只读接口诊断中（不会执行授权写回）");
+            button.setEnabled(false);
             append(logArea, "[one-click] " + reason + "\n");
-            showOneClickFailureDialog(frame,
-                    LicenseRecoverModernGUIAutoRecovery.Result.fail(reason, preflight));
+            new SwingWorker<String, Void>() {
+                protected String doInBackground() {
+                    return LicenseRecoverModernGUIAutoRecovery.probeLegacySignatures(
+                            preflight, line -> append(logArea, line));
+                }
+                protected void done() {
+                    button.setEnabled(true);
+                    String abi = "[LEGACY_PROBE] 未完成";
+                    try { abi = get(); }
+                    catch (Exception ex) { abi = "[LEGACY_PROBE] 检查发生异常：" + ex.getMessage(); }
+                    boolean matched = abi.contains("[LEGACY_PROBE] PASS:");
+                    verifyValue.setText(matched
+                            ? "旧协议：接口兼容，未执行授权写回"
+                            : "旧协议：不能执行一键写回（查看诊断日志）");
+                    append(logArea, "[one-click] " + abi + "\n");
+                    showOneClickFailureDialog(frame,
+                            LicenseRecoverModernGUIAutoRecovery.Result.fail(
+                                    reason + "\n\n" + abi, preflight));
+                }
+            }.execute();
             return;
         }
 
