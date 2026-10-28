@@ -93,3 +93,49 @@ and missing-component sites.
 
 This backup fix does **not** enable the DS01xx one-click authorization
 path. The explicit `DOTNET_LEGACY` rejection remains unchanged.
+
+## Proven DS0101 hybrid registration calls (unpacked MethodDef IL)
+
+The original site's `Regester.aspx` declares an ASP.NET code-behind
+class `ITMC.Web.Regester`. The static CIL call-reference inspection of
+the recovered `ITMC.Web.dll` shows:
+
+| MethodDef | Code-behind entry | Referenced registration method |
+|---|---|---|
+| `0x06000C5D` | `Regester.Page_Load` | `ITMC.Regedit.RegeditMain.NewRegistry` |
+| `0x06000C5E` | `Regester.Button1_Click` | `ITMC.Regedit.RegeditMain.DoRegistry` |
+| `0x060006A0` | `funpublic.CheckReg` | `ITMC.Regedit.RegeditMain.CheckReInfo` **and** `itmcRegedit.RegeditMain.CheckReInfo` |
+
+Therefore DS0101's website is a **dual-component/hybrid** case:
+presence of an older offline code format does not prove the actual
+ASP.NET registration page calls the lowercase DLL. The real page uses
+the uppercase DLL, while `CheckReg` retains references to both
+generations. Presence of call instructions does **not** prove which
+branches execute at runtime, that a code is accepted, or that stored
+credentials are valid.
+
+The uploaded site's root config has `regType=3`; that value is a
+registration mode selector, **not** evidence of a successful local
+registration. Live `config.xml` authorization fields and
+`Register.xml` contents are intentionally omitted from reports.
+
+The command below captures the narrowly scoped, redacted static graph:
+
+```powershell
+python scripts/inspect_ds01xx_registration_chain.py DS0101-analysis/ITMC.Web.unpacked.dll --json DS0101-analysis/chain.json
+```
+
+From this branch onward, the ZIP/site batch analyzer includes the
+same call evidence in its `manifest.json`, and the Java GUI legacy
+preflight reports the actual file inventory and root `regType` without
+logging `regName`, user IDs, hardware identifiers or registration codes.
+
+### Safety gate retained
+
+The site contains two `CheckReInfo` implementations. One-click success
+cannot be enabled merely from a static call graph: the exact supplied
+registered runtime must be confirmed in Windows / IIS with the
+application's own legal registration path, then verified through
+`funpublic.CheckReg` and a post-restart check. Until then
+`DOTNET_LEGACY` remains fail-closed; no modified vendor DLL or
+authorization-bypass binary is published.
