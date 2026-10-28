@@ -95,3 +95,23 @@ Never report license activation success from `DoRegistry` alone.
 The private diagnostic harness additionally compares the website's own
 `funpublic.CheckReg()` before and after registration. Its independent result
 must be checked before deciding whether any production recovery workflow is safe.
+
+
+### Independent website front-door result
+
+A follow-up private Windows run directly called original
+`ITMC.Web.funpublic.CheckReg()` through the ASP.NET host on a separate copy.
+
+- Before `DoRegistry`: host exit 1, an exception rather than an ordinary
+  boolean `false`; do not classify this as a valid authorization rejection.
+- After `DoRegistry` accepted the offline candidate and the native
+  `CheckLocalReg` became true: the website front door **returned false**
+  (test helper exit **9**).
+- Native `CheckReInfo` also remains false (exit **5**).
+
+Thus the sanitized test fixture has **positive native local writeback, but no
+successful web authorization**. This may involve the website's hybrid
+uppercase/lowercase registration checks or an incomplete synthetic site;
+neither explanation has yet been proven. A code-format self-check, true
+`DoRegistry`, and true `CheckLocalReg` must not be reported as a successful
+single-app or batch Patch. The DS01xx production path remains disabled.
