@@ -167,6 +167,25 @@ namespace LicenseRecoverNet
             Console.WriteLine("[LEGACY_LOCAL_STATE] expiry=" + LocalExpiryFlag(info));
         }
 
+        // Check the original local registration record before interpreting
+        // the outer website error flags. The two APIs use different Boolean
+        // conventions: CheckLocalReg true means local state exists, whereas
+        // the site redirects to registration on CheckReg true.
+        private static bool HasMatchingLocalRecord(object native, Type infoType)
+        {
+            MethodInfo local = native.GetType().GetMethod("CheckLocalReg",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance,
+                null, new Type[] { infoType.MakeByRefType() }, null);
+            if (local == null || local.ReturnType != typeof(bool))
+                throw new MissingMethodException("CheckLocalReg(ref RegeditInfo)");
+            object[] args = new object[] { Activator.CreateInstance(infoType) };
+            if (!(bool)local.Invoke(native, args)) return false;
+            object info = args[0];
+            return LocalStateFlag(info, "ProName", "itmcIEC", false) == "match"
+                && LocalStateFlag(info, "RegStr", "DS0101", true) == "match"
+                && LocalExpiryFlag(info) == "future-or-today";
+        }
+
         public static int RunDirect(Options options)
         {
             if (options == null || options.Product != "itmcIEC")
@@ -256,19 +275,24 @@ namespace LicenseRecoverNet
             }
             if (options.Command == "legacy-verify")
             {
+                if (!HasMatchingLocalRecord(native, regInfoType))
+                {
+                    Console.Error.WriteLine("[LEGACY_VERIFY] Original local registration record is invalid.");
+                    return 5;
+                }
                 bool rawCheckReInfo = CheckTarget(native, regInfoType);
                 Console.WriteLine("[LEGACY_CHECKREINFO_RAW] returned=" + (rawCheckReInfo ? "true" : "false"));
-                if (!rawCheckReInfo)
+                if (rawCheckReInfo)
                 {
-                    Console.Error.WriteLine("[LEGACY_VERIFY] Native CheckReInfo returned false");
+                    Console.Error.WriteLine("[LEGACY_VERIFY] Native CheckReInfo requests registration.");
                     return 5;
                 }
                 // Cross-check the actual Web front door independently from
                 // the registration helper. A match in CheckReInfo alone
                 // is NOT sufficient to report the application activated.
-                if (!CheckWebFrontDoor(options.RuntimeDir))
+                if (CheckWebFrontDoor(options.RuntimeDir))
                 {
-                    Console.Error.WriteLine("[LEGACY_VERIFY] Target Web.CheckReg returned false");
+                    Console.Error.WriteLine("[LEGACY_VERIFY] Target Web.CheckReg requests registration.");
                     return 6;
                 }
                 Console.WriteLine("RESULT: LEGACY_NATIVE_CHECKREG_OK");
