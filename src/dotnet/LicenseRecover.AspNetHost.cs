@@ -40,8 +40,8 @@ internal static class LicenseRecoverAspNetHost
             || string.Equals(command, "legacy-web-probe", StringComparison.OrdinalIgnoreCase))
         {
             if (!File.Exists(Path.Combine(runtimeDir, "ITMC.Regedit.dll")))
-                throw new FileNotFoundException("DS0101 uppercase registration DLL is required");
-            chain = "DS0101-native-offline";
+                throw new FileNotFoundException("DS01xx uppercase registration DLL is required");
+            chain = "DS01xx-native-offline";
             string legacy = Path.Combine(toolDir, "LicenseRecover.NET.Legacy.dll");
             if (!File.Exists(legacy)) throw new FileNotFoundException("DS0101 legacy helper is missing", legacy);
             return legacy;
@@ -265,7 +265,7 @@ internal static class LicenseRecoverAspNetHost
 
 
 /// <summary>
-/// Offline, read-only ABI compatibility check for DS0101's native .NET assemblies.
+/// Offline, read-only ABI compatibility check for the DS01xx native .NET family.
 /// ReflectionOnlyLoadFrom reads CLR metadata without executing method bodies or
 /// type initializers. It does NOT prove the presence of a valid software license.
 /// </summary>
@@ -352,13 +352,18 @@ internal static class LicenseRecoverLegacyMetadataProbe
                               "System.String", "System.String")
                 || !HasMethod(main, "CheckReInfo", "System.Boolean", false,
                               info.FullName + "&")
-                || !HasMethod(funpublic, "CheckReg", "System.Boolean", true))
+                || !HasMethod(main, "CheckLocalReg", "System.Boolean", false,
+                              info.FullName + "&")
+                || !HasMethod(funpublic, "CheckReg", "System.Boolean", true)
+                || info.GetProperty("ProName", Any) == null
+                || info.GetProperty("RegStr", Any) == null
+                || info.GetProperty("EndDate", Any) == null)
             {
-                Console.Error.WriteLine("[LEGACY_PROBE] DS0101 native signatures do not match.");
+                Console.Error.WriteLine("[LEGACY_PROBE] DS01xx native signatures do not match.");
                 return 3;
             }
 
-            Console.WriteLine("[LEGACY_PROBE] Found DS0101 upper registration signature set.");
+            Console.WriteLine("[LEGACY_PROBE] Found DS01xx upper registration signature set.");
             Console.WriteLine("[LEGACY_PROBE] Found static ITMC.Web.funpublic.CheckReg():bool.");
             Console.WriteLine("[LEGACY_PROBE] No vendor method was executed; no site files staged.");
             Console.WriteLine("RESULT: LEGACY_SIGNATURES_VERIFIED_ONLY");
