@@ -20,6 +20,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '8'
+      - name: Verify DS01xx offline inspection tools (no vendor binaries)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/itmc_foap_unpack_stdlib.py scripts/ds0101_unpack_site.py scripts/inspect_ds01xx_registration_chain.py
+          python3 -m unittest discover -s scripts/tests -v
       - name: Prepare Windows native and .NET helper toolchains
         shell: bash
         run: |
