@@ -441,7 +441,7 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         LicenseRecoverModernGUIAutoRecovery.Detection preflight =
                 LicenseRecoverModernGUIAutoRecovery.detect(selected);
         if (preflight.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
-                && !LicenseRecoverModernGUIAutoRecovery.supportsDs0101NativeRecovery(preflight)) {
+                && !LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(preflight)) {
             final String reason = LicenseRecoverModernGUIAutoRecovery.legacyWritebackUnavailable(preflight);
             // A DS01xx click is diagnostic only. Keep Swing responsive and
             // never invoke recoverDotNet or a target authorization method.
