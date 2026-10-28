@@ -348,6 +348,7 @@ $classPrefixes = @(
     'AppDetector',
     'ExistingLocalRegStrProbe',
     'LegacyJavaRegistrationMetadata',
+    'LegacyDotNetProtocol',
     'AppInfo',
     'BatchTarget',
     'ConfigSafety',
@@ -417,6 +418,27 @@ if ($overlayEntries -notcontains 'LicenseRecoverModernGUIJavaPlan.class') {
 if ($overlayEntries -notcontains 'LicenseRecoverModernGUIAutoRecovery.class') {
     throw 'Overlay is missing LicenseRecoverModernGUIAutoRecovery.class.'
 }
+foreach ($required in @(
+    'LegacyDotNetProtocol.class',
+    'LegacyDotNetProtocol$CodeResult.class',
+    'LegacyDotNetProtocol$SequenceInfo.class',
+    'LegacyDotNetProtocol$AuthorizationInfo.class'
+)) {
+    if ($overlayEntries -notcontains $required) {
+        throw "Runtime overlay is missing legacy .NET protocol class: $required"
+    }
+}
+# The RC2 runtime shipped the new recovery coordinator without this protocol
+# class, causing java.lang.NoSuchMethodError only in the user installation.
+# Probe the launcher's EXACT runtime-JAR-first classpath, not build/verify.
+$protocolRuntimeClasspath = $runtimeJar + $classpathSeparator + $guiRuntimeJar
+$probeSource = Join-Path $testSourceDir 'LegacyProtocolDistributionSmokeTest.java'
+Invoke-External -Command 'javac' -ArgumentList @(
+    '-encoding', 'UTF-8', '-cp', $protocolRuntimeClasspath, '-d', $testDir, $probeSource)
+Invoke-External -Command 'java' -ArgumentList @(
+    '-cp', ($protocolRuntimeClasspath + $classpathSeparator + $testDir),
+    'LegacyProtocolDistributionSmokeTest', $runtimeJar)
+
 if ($overlayEntries -notcontains 'LicenseRecoverJavaHost.class') {
     throw 'Overlay is missing LicenseRecoverJavaHost.class; Java target-native recovery cannot run.'
 }
