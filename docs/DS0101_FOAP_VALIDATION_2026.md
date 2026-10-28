@@ -139,3 +139,35 @@ application's own legal registration path, then verified through
 `funpublic.CheckReg` and a post-restart check. Until then
 `DOTNET_LEGACY` remains fail-closed; no modified vendor DLL or
 authorization-bypass binary is published.
+
+## regType controls native check priority, not a single verification mechanism
+
+Additional branch-level inspection of *both* recovered
+`RegeditMain.CheckReInfo` MethodDefs confirms the order of three
+registration checks in each case (read-only disassembly; no execution):
+
+| Site-root `regType` | Uppercase `ITMC.Regedit.dll` | Lowercase `itmcRegedit.dll` |
+|---|---|---|
+| `1` | `CheckLocalReg` → `CheckNet` → `CheckHASPDog` | `CheckLocalReg` → `CheckDog` → `CheckNet` |
+| `2` | `CheckHASPDog` → `CheckLocalReg` → `CheckNet` | `CheckDog` → `CheckLocalReg` → `CheckNet` |
+| `3` | `CheckNet` → `CheckLocalReg` → `CheckHASPDog` | `CheckNet` → `CheckLocalReg` → `CheckDog` |
+
+The method bodies have short-circuit branches: an earlier check can
+terminate evaluation before subsequent methods are called. Therefore
+`regType=3` in the submitted `config.xml` is **not** proof that an
+online service is required for every execution, nor does it certify
+offline license validity. The two DLLs even differ in their order for
+`regType=1`. The runtime semantics, which check is called by the
+website, and the eventual application login outcome require a real,
+licensed Windows/IIS test.
+
+The mode order can be reproduced from the recovered assemblies:
+
+```powershell
+python scripts/inspect_ds01xx_registration_modes.py DS0101-analysis/ITMC.Regedit.unpacked.dll DS0101-analysis/itmcRegedit.unpacked.dll --json DS0101-analysis/mode-priority.json
+```
+
+The batch archive analyzer includes this non-sensitive evidence in
+`manifest.json` when it can be proven from the selected binaries.
+Do not apply the order to unverified builds merely because their folder
+name begins with `DS01`.
