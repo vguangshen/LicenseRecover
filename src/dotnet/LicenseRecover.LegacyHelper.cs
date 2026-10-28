@@ -14,7 +14,7 @@ namespace LicenseRecoverNet
     {
         public sealed class Options
         {
-            public string Command, RuntimeDir, Product, Sequence, Code;
+            public string Command, RuntimeDir, Product, Version, Sequence, Code;
         }
 
         private static Options ParseArgs(string[] args)
@@ -24,14 +24,19 @@ namespace LicenseRecoverNet
             o.Command = args[0];
             o.RuntimeDir = Path.GetFullPath(args[1]);
             o.Product = null;
+            o.Version = "DS0101"; // compatibility for existing DS0101 test calls
             for (int i = 2; i + 1 < args.Length; i += 2)
             {
                 if (args[i] == "--product") o.Product = args[i + 1];
+                else if (args[i] == "--version") o.Version = args[i + 1];
                 else if (args[i] == "--seq") o.Sequence = args[i + 1];
                 else if (args[i] == "--code") o.Code = args[i + 1];
                 else return null;
             }
             if (o.Product != "itmcIEC") return null;
+            if (String.IsNullOrEmpty(o.Version) || o.Version.Length != 6 ||
+                !o.Version.StartsWith("DS01", StringComparison.OrdinalIgnoreCase) ||
+                !Char.IsDigit(o.Version[4]) || !Char.IsDigit(o.Version[5])) return null;
             if (o.Command != "legacy-gencode" && o.Command != "legacy-doreg"
                 && o.Command != "legacy-verify" && o.Command != "legacy-local-probe"
                 && o.Command != "legacy-web-probe") return null;
@@ -156,14 +161,17 @@ namespace LicenseRecoverNet
             catch { return "unknown"; }
         }
 
-        private static void PrintSanitizedLocalState(object info)
+        private static void PrintSanitizedLocalState(object info, string version, string product)
         {
             // These are classification flags, not the actual license fields.
             Console.WriteLine("[LEGACY_LOCAL_STATE] hasRegInfo=" + (info != null ? "true" : "false"));
-            Console.WriteLine("[LEGACY_LOCAL_STATE] regStrContainsDS0101="
-                + LocalStateFlag(info, "RegStr", "DS0101", true));
+            Console.WriteLine("[LEGACY_LOCAL_STATE] regStrContainsSelectedVersion="
+                + LocalStateFlag(info, "RegStr", version, true));
+            if (String.Equals(version, "DS0101", StringComparison.OrdinalIgnoreCase))
+                Console.WriteLine("[LEGACY_LOCAL_STATE] regStrContainsDS0101="
+                    + LocalStateFlag(info, "RegStr", "DS0101", true));
             Console.WriteLine("[LEGACY_LOCAL_STATE] proNameMatches="
-                + LocalStateFlag(info, "ProName", "itmcIEC", false));
+                + LocalStateFlag(info, "ProName", product, false));
             Console.WriteLine("[LEGACY_LOCAL_STATE] expiry=" + LocalExpiryFlag(info));
         }
 
@@ -171,7 +179,7 @@ namespace LicenseRecoverNet
         // the outer website error flags. The two APIs use different Boolean
         // conventions: CheckLocalReg true means local state exists, whereas
         // the site redirects to registration on CheckReg true.
-        private static bool HasMatchingLocalRecord(object native, Type infoType)
+        private static bool HasMatchingLocalRecord(object native, Type infoType, string version, string product)
         {
             MethodInfo local = native.GetType().GetMethod("CheckLocalReg",
                 BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance,
@@ -181,8 +189,8 @@ namespace LicenseRecoverNet
             object[] args = new object[] { Activator.CreateInstance(infoType) };
             if (!(bool)local.Invoke(native, args)) return false;
             object info = args[0];
-            return LocalStateFlag(info, "ProName", "itmcIEC", false) == "match"
-                && LocalStateFlag(info, "RegStr", "DS0101", true) == "match"
+            return LocalStateFlag(info, "ProName", product, false) == "match"
+                && LocalStateFlag(info, "RegStr", version, true) == "match"
                 && LocalExpiryFlag(info) == "future-or-today";
         }
 
@@ -250,7 +258,8 @@ namespace LicenseRecoverNet
                     return 8;
                 }
                 object localResult = selected.Invoke(selected.IsStatic ? null : native, inputs);
-                PrintSanitizedLocalState(inputs != null && inputs.Length > 0 ? inputs[0] : null);
+                PrintSanitizedLocalState(inputs != null && inputs.Length > 0 ? inputs[0] : null,
+                    options.Version, options.Product);
                 if (localResult is bool && (bool)localResult)
                 {
                     Console.WriteLine("RESULT: LEGACY_NATIVE_LOCAL_CHECK_OK");
@@ -275,7 +284,7 @@ namespace LicenseRecoverNet
             }
             if (options.Command == "legacy-verify")
             {
-                if (!HasMatchingLocalRecord(native, regInfoType))
+                if (!HasMatchingLocalRecord(native, regInfoType, options.Version, options.Product))
                 {
                     Console.Error.WriteLine("[LEGACY_VERIFY] Original local registration record is invalid.");
                     return 5;
