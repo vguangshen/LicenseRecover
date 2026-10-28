@@ -90,6 +90,8 @@ v1.2.3 修复了批量扫描在第一个 Java 项目处因 GUI classpath 耦合�
 
 **DS01xx (DS0101 / DS0107) 旧协议目前不支持一键授权写回。** 单应用会以 `[DOTNET_LEGACY]` 明确提示；批量推荐操作也会阻止误将“仅阻断联网”当作恢复成功。请通过原有注册界面提交合法授权，并以目标原生校验为准。方式一（显式选择时）仍是网络配置操作，不能替代有效授权。
 
+**DS0101 只读兼容检测（PR #46，尚未合并/发布）**：在 Windows GUI 选择旧版 DS01xx 目录后点击“一键恢复”，会异步运行只读元数据检查并显示 `[LEGACY_PROBE]` 结果；不会执行注册写回，也不会把接口匹配显示为授权成功。也可在测试环境单独运行 `LicenseRecover.NET\LicenseRecover.NET.AspNetHost.exe legacy-probe "C:\TestSites\DS0101\bin"`。此命令使用 .NET `ReflectionOnlyLoadFrom`，不需要授权辅助程序、也不向网站 `bin` 写入桥接 DLL。模拟 DLL 的 CI 测试验证了正确/错误签名和文件哈希不变。真实 DS0101 授权状态仍须由原站点验证；详情见 `docs/DS0101_FOAP_VALIDATION_2026.md`。
+
 
 支持包含 `ITMC.Web.dll` 与 `ITMC.Regedit.dll` / `itmcRegedit.dll` 等组件的 ASP.NET / .NET 应用。DS01xx、YX0301/YX0302/YX0303 等已验证家族会按检测结果自动选择兼容路径。v1.2.37 起，小写 `itmcRegedit.dll` 链不再依赖人工 `AppDomain + SimpleWorkerRequest` 模拟，而由 .NET Framework `ApplicationManager` 建立真实 ASP.NET `HostingEnvironment`，确保 `~/Register.xml` / `~/config.xml`、目标 `web.config`、目标 `bin` 和 `HttpRuntime` 使用同一个站点应用域。 v1.2.38 起，仅存在大写 `ITMC.Regedit.dll` 时也进入同一真实 Hosted AppDomain，但继续使用独立 `LicenseRecover.NET.Modern.exe` 适配大写 API；这样 `AppDomain.BaseDirectory` 保持网站根目录，避免大写组件误从 `bin` 读取 `config.xml` / `Register.xml`。 v1.2.39 起，.NET `RegStr` 将目标站点 `config.xml` 的当前 `SoftVersionID` 作为首个主模式，再合并有效本地授权和目标 `ITMC.Web.dll` 证明的同族兼容模式；GUI 一键恢复与 CLI `gencode` 共用同一解析器，避免本地授权写入成功但当前系统代号未进入 `RegStr`，最终出现“系统不支持任何模式”。 v1.2.40 起，双注册组件部署改为大写 `ITMC.Regedit.dll` 现代链优先，并在现代链成功后验证站点根 `config.xml` 中实际持久化的 `RegStr` 包含当前 `SoftVersionID`。 v1.2.6 根据 GM00401 实际样本新增 GM004 家族：config.xml 为 GM00401，且 ITMC.Web.dll 同时包含 GM00401 与 GM004 时确认 ProName=GM004，并提取 RegStr=GM00401；样本 Web.config 中遗留的 productName=YX0301 不参与授权产品识别。
 
