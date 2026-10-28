@@ -662,7 +662,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
 
             List<String> generate = new ArrayList<String>();
             generate.add(helper.getAbsolutePath());
-            generate.add(legacyDs0101 ? "legacy-gencode" : "gencode");
+            if (legacyDs0101) generate.add("legacy-gencode"); else generate.add("gencode");
             generate.add(d.runtimeDir.getAbsolutePath());
             generate.add("--product"); generate.add(registrationProduct);
             if (!legacyDs0101) { generate.add("--regstr"); generate.add(regStr); }
@@ -700,7 +700,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
 
             List<String> apply = new ArrayList<String>();
             apply.add(helper.getAbsolutePath());
-            apply.add(legacyDs0101 ? "legacy-doreg" : "doreg");
+            if (legacyDs0101) apply.add("legacy-doreg"); else apply.add("doreg");
             apply.add(d.runtimeDir.getAbsolutePath());
             apply.add("--seq"); apply.add(request);
             apply.add("--code"); apply.add(auth);
@@ -719,7 +719,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
 
             List<String> verify = new ArrayList<String>();
             verify.add(helper.getAbsolutePath());
-            verify.add(legacyDs0101 ? "legacy-verify" : "verify");
+            if (legacyDs0101) verify.add("legacy-verify"); else verify.add("verify");
             verify.add(d.runtimeDir.getAbsolutePath());
             verify.add("--product"); verify.add(registrationProduct);
             log.accept("[dotnet-stage] VERIFY: start\n");
