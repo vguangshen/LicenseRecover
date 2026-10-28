@@ -1483,6 +1483,44 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                         && !LicenseRecoverModernGUIAutoRecovery.legacyWritebackUnavailable(
                                 legacyDotNetDetection).contains("SECRET_DO_NOT_LOG"),
                 "DS0101 preflight never reveals existing local authorization data");
+        // Regression: a native DS0101 CheckServerID may create notRegFile.xml,
+        // and CheckLocalReg may mutate config.xml even during verification.
+        File legacySiteNotReg = legacyDotNetRoot.resolve("notRegFile.xml").toFile();
+        File legacyBinNotReg = legacyDotNetBin.resolve("notRegFile.xml").toFile();
+        File legacyBinConfig = legacyDotNetBin.resolve("config.xml").toFile();
+        File legacyBinRegister = legacyDotNetBin.resolve("Register.xml").toFile();
+        check(!legacySiteNotReg.exists() && !legacyBinNotReg.exists()
+                        && !legacyBinConfig.exists() && !legacyBinRegister.exists(),
+                "DS0101 synthetic preflight starts without native-generated registration files");
+        java.util.LinkedHashMap<File, byte[]> legacySnapshot =
+                LicenseRecoverModernGUIAutoRecovery.snapshotDotNetRegistrationFiles(legacyDotNetDetection);
+        check(legacySnapshot.containsKey(legacySiteNotReg) && legacySnapshot.get(legacySiteNotReg) == null
+                        && legacySnapshot.containsKey(legacyBinNotReg) && legacySnapshot.get(legacyBinNotReg) == null
+                        && legacySnapshot.containsKey(legacyBinConfig) && legacySnapshot.get(legacyBinConfig) == null
+                        && legacySnapshot.containsKey(legacyBinRegister) && legacySnapshot.get(legacyBinRegister) == null,
+                "missing DS0101 registration files are captured as rollback deletion tombstones");
+        byte[] originalSiteConfig = Files.readAllBytes(legacyDotNetRoot.resolve("config.xml"));
+        byte[] originalSiteRegister = Files.readAllBytes(legacyDotNetRoot.resolve("Register.xml"));
+        Files.write(legacyDotNetRoot.resolve("config.xml"),
+                "changed-by-CheckLocalReg".getBytes(StandardCharsets.UTF_8));
+        Files.write(legacyDotNetRoot.resolve("Register.xml"),
+                "changed-by-DoRegistry".getBytes(StandardCharsets.UTF_8));
+        Files.write(legacySiteNotReg.toPath(), "created-by-CheckServerID".getBytes(StandardCharsets.UTF_8));
+        Files.write(legacyBinNotReg.toPath(), "created-in-bin".getBytes(StandardCharsets.UTF_8));
+        Files.write(legacyBinConfig.toPath(), "created-config-in-bin".getBytes(StandardCharsets.UTF_8));
+        Files.write(legacyBinRegister.toPath(), "created-register-in-bin".getBytes(StandardCharsets.UTF_8));
+        LicenseRecoverModernGUIAutoRecovery.restoreDotNetRegistrationFiles(legacySnapshot, null);
+        check(Arrays.equals(originalSiteConfig, Files.readAllBytes(legacyDotNetRoot.resolve("config.xml")))
+                        && Arrays.equals(originalSiteRegister, Files.readAllBytes(legacyDotNetRoot.resolve("Register.xml"))),
+                "DS0101 rollback restores modified original site registration files byte-for-byte");
+        check(!legacySiteNotReg.exists() && !legacyBinNotReg.exists()
+                        && !legacyBinConfig.exists() && !legacyBinRegister.exists(),
+                "DS0101 rollback deletes all native-generated registration files that were initially absent");
+        // Idempotent rollback should preserve a stable, already-restored site.
+        LicenseRecoverModernGUIAutoRecovery.restoreDotNetRegistrationFiles(legacySnapshot, null);
+        check(Arrays.equals(originalSiteConfig, Files.readAllBytes(legacyDotNetRoot.resolve("config.xml")))
+                        && !legacySiteNotReg.exists(),
+                "repeated DS0101 rollback is safe and idempotent");
         byte[] legacyConfigBefore = Files.readAllBytes(legacyDotNetRoot.resolve("config.xml"));
         int legacyBinFileCount = legacyDotNetBin.toFile().list().length;
         LicenseRecoverModernGUIAutoRecovery.Result unsupportedLegacy =
