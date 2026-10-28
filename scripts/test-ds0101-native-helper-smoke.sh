@@ -48,6 +48,9 @@ namespace ITMC.Regedit {
     public bool CheckReInfo(ref RegeditInfo info) {
       return File.Exists(Environment.GetEnvironmentVariable("DS0101_MOCK_STATE"));
     }
+    public bool CheckLocalReg(ref RegeditInfo info) {
+      return File.Exists(Environment.GetEnvironmentVariable("DS0101_MOCK_STATE"));
+    }
   }
 }
 CS
@@ -102,6 +105,13 @@ if mono "$tmp/Driver.exe" "$tmp/LicenseRecover.NET.Legacy.dll" \
   exit 1
 fi
 
+# Direct local check must refuse before any registration.
+if mono "$tmp/Driver.exe" "$tmp/LicenseRecover.NET.Legacy.dll" \
+  legacy-local-probe "$tmp/site/bin" --product itmcIEC > "$tmp/local-before.log" 2>&1; then
+  echo "FAIL: local probe accepted an unregistered synthetic site" >&2
+  exit 1
+fi
+
 # Native registration rejects an incorrect code, preserving original state.
 if mono "$tmp/Driver.exe" "$tmp/LicenseRecover.NET.Legacy.dll" \
   legacy-doreg "$tmp/site/bin" --product itmcIEC \
@@ -119,6 +129,11 @@ mono "$tmp/Driver.exe" "$tmp/LicenseRecover.NET.Legacy.dll" \
   --code SYNTHETIC_TEST_CODE > "$tmp/registered.log"
 grep -q "RESULT: LEGACY_NATIVE_DOREG_ACCEPTED" "$tmp/registered.log"
 test -e "$DS0101_MOCK_STATE"
+
+# Direct native local check should now accept the registered synthetic site.
+mono "$tmp/Driver.exe" "$tmp/LicenseRecover.NET.Legacy.dll" \
+  legacy-local-probe "$tmp/site/bin" --product itmcIEC > "$tmp/local-after.log"
+grep -q "RESULT: LEGACY_NATIVE_LOCAL_CHECK_OK" "$tmp/local-after.log"
 
 # A fresh process must verify BOTH CheckReInfo and Web.CheckReg.
 DS0101_MOCK_WEB_OK=no \
