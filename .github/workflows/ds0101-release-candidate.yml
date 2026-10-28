@@ -1,0 +1,104 @@
+name: Publish DS0101 release candidate
+
+# One-time test release, separate from stable main/rolling-latest.
+# Runs only when this release-candidate workflow itself is committed.
+on:
+  push:
+    branches: ["fix/ds0101-foap-analysis-20261028"]
+    paths: [".github/workflows/ds0101-release-candidate.yml"]
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: ds0101-release-candidate
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Wait for full test suite of the exact release commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for n in $(seq 1 75); do
+            runs="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${GITHUB_SHA}&per_page=100")"
+            result="$(echo "$runs" | jq -r --arg sha "$GITHUB_SHA" '
+              [.workflow_runs[] | select(.head_sha==$sha and (
+                .name=="Verify source" or
+                .name=="Uppercase ITMC.Regedit Windows integration v2" or
+                .name=="Dual registration DLL Windows integration v3"
+              ))] as $all |
+              ["Verify source","Uppercase ITMC.Regedit Windows integration v2",
+               "Dual registration DLL Windows integration v3"] as $required |
+              if all($required[]; . as $name |
+                any($all[]; .name==$name and .status=="completed" and .conclusion=="success"))
+              then ([ $all[] | select(.name=="Verify source" and .conclusion=="success") | .id ][0] // "")
+              else "" end
+            ')"
+            if [ -n "$result" ]; then
+              echo "$result" > "$RUNNER_TEMP/verify-run-id"
+              echo "All three CI checks passed on ${GITHUB_SHA} (Verify source run $result)."
+              exit 0
+            fi
+            if echo "$runs" | jq -e --arg sha "$GITHUB_SHA" '
+              [.workflow_runs[] | select(.head_sha==$sha and (
+                .name=="Verify source" or
+                .name=="Uppercase ITMC.Regedit Windows integration v2" or
+                .name=="Dual registration DLL Windows integration v3"
+              ))] | any(.status=="completed" and .conclusion=="failure")' >/dev/null; then
+              echo "A required release-candidate CI workflow failed; refusing to publish." >&2
+              exit 1
+            fi
+            sleep 12
+          done
+          echo 'Timed out waiting for exact-commit CI; no prerelease published.' >&2
+          exit 1
+      - name: Download verified distribution, confirm checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id="$(cat "$RUNNER_TEMP/verify-run-id")"
+          mkdir -p build
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name LicenseRecover-latest --dir build
+          test -s build/LicenseRecover-latest.zip
+          test -s build/LicenseRecover-update.zip
+          test -s build/SHA256SUMS.txt
+          (cd build && sha256sum -c SHA256SUMS.txt)
+      - name: Publish isolated DS0101 v1.2.59 RC1 prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(tr -d '\r\n[:space:]' < VERSION.txt)" = "1.2.59"
+          test -s release-notes/v1.2.59.md
+          tag="v1.2.59-rc1"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Existing $tag prerelease left unchanged."
+            exit 0
+          fi
+          if git ls-remote --exit-code --tags "https://github.com/${GITHUB_REPOSITORY}.git" "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "Tag $tag exists but has no release; refusing to overwrite." >&2
+            exit 1
+          fi
+          gh release create "$tag" \
+            build/LicenseRecover-latest.zip \
+            build/LicenseRecover-update.zip \
+            build/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "LicenseRecover v1.2.59 RC1 — DS0101 offline recovery local test" \
+            --notes-file release-notes/v1.2.59.md \
+            --prerelease
+          echo "Published release candidate $tag from $GITHUB_SHA; stable version remains unchanged."
