@@ -1562,7 +1562,7 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                         && guiLegacySource.contains("旧协议：接口兼容，未执行授权写回")
                         && guiLegacySource.contains("new SwingWorker<String, Void>()"),
                 "legacy one-click UI runs ABI inspection asynchronously without claiming license restoration");
-        if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")) {
+        if (!System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("win")) {
             String offlineStatus = LicenseRecoverModernGUIAutoRecovery.probeLegacySignatures(
                     legacyDotNetDetection, null);
             check(offlineStatus.startsWith("[LEGACY_PROBE]")
