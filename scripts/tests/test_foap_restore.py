@@ -3,6 +3,7 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 from pathlib import Path
 
@@ -131,6 +132,30 @@ class SiteArchiveTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'new or empty'):
                 recover_site(zpath, out)
             self.assertEqual((out / 'original.txt').read_text(), 'do not overwrite')
+
+    def test_failure_during_second_dll_leaves_no_partial_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            zpath = self.make_zip(base)
+            output = base / 'analysis'
+            attempts = []
+
+            def fake_restore(source, target, report):
+                attempts.append(source.name)
+                if len(attempts) == 2:
+                    raise ValueError('synthetic invalid second assembly')
+                target.write_bytes(b'partial IL output')
+                report.write_text('{}')
+                return {'restored_method_count': 1}
+
+            with patch('ds0101_unpack_site.restore', side_effect=fake_restore):
+                with self.assertRaisesRegex(ValueError, 'invalid second assembly'):
+                    recover_site(zpath, output)
+            self.assertEqual(len(attempts), 2)
+            self.assertFalse(output.exists(),
+                             'an incomplete analysis bundle must never be published')
+            self.assertFalse(any(p.name.startswith('.ds01xx-stage-') for p in base.iterdir()),
+                             'temporary partial results must be cleaned up')
 
     def test_refuse_output_inside_site(self):
         with tempfile.TemporaryDirectory() as tmp:
