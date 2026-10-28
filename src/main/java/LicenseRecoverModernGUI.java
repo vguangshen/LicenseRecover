@@ -798,6 +798,11 @@ public final class LicenseRecoverModernGUI {
                             + "，未识别 " + skippedCount + "，异常 " + errorCount + "。\n");
                 }
 
+                if (cancelled) {
+                    // Discard partial results, including rows queued by SwingWorker.process().
+                    batchTargets.clear();
+                    batchModel.setRowCount(0);
+                }
                 batchWorker = null;
                 if (!cancelled && runAfterScan && hasExecutableBatchTargets()) {
                     SwingUtilities.invokeLater(() -> runBatch());
