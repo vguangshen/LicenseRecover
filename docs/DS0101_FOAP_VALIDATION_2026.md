@@ -221,3 +221,39 @@ file whose rollback must return failure.
 or unauthorized license bypass. DS01xx still fails closed before
 automatic registration; a genuine Windows/IIS execution and restored
 application verification are required before enabling it.
+
+## Hosted native method-contract probe (read-only)
+
+The recovered source proves the DS0101 uppercase native registration
+surface (signatures below are based on real MethodDef signatures):
+
+- `ITMC.Regedit.RegeditMain(string,string)` constructor
+- `NewRegistry(): string`
+- `DoRegistry(string,string): bool`
+- `CheckReInfo(ref RegeditInfo): bool`
+- `ITMC.Web.funpublic.CheckReg(): bool` (static)
+
+The website's registration page calls this uppercase generation, and
+`funpublic.CheckReg` also references the lowercase generation.
+The second constructor parameter must not be assumed to be a
+literal/simple product name: the website builds it using its
+product-specific encrypted initialization path.
+
+For an isolated Windows/.NET Framework ASP.NET website folder, the
+compiled hosted bridge now offers a **method-signature-only** check:
+
+```bat
+LicenseRecover.NET\LicenseRecover.NET.AspNetHost.exe legacy-probe "C:\TestSites\DS0101\bin"
+```
+
+This loads the site's assembly metadata within the hosted application
+domain and checks the required constructor/method signatures. It
+**does not call** `NewRegistry`, `DoRegistry`, `CheckReInfo`,
+or `CheckReg`, and prints
+`RESULT: LEGACY_SIGNATURES_VERIFIED_ONLY` on success. Success is
+not a valid registration, a Patch result, or an IIS startup test.
+Do not run against a live production site without first taking a
+full website snapshot; even assembly loading can interact with
+environment-specific module initializers.
+
+The resulting work remains in a draft PR, not a stable release.
