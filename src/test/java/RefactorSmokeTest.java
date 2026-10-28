@@ -1459,6 +1459,7 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                         && legacyEvidence.contains("itmcRegedit.dll=有")
                         && legacyEvidence.contains("Regester.aspx=有")
                         && legacyEvidence.contains("Register.xml=有")
+                        && legacyEvidence.contains("notRegFile.xml=无")
                         && legacyEvidence.contains("站点根目录regType=3"),
                 "DS0101 read-only preflight reports dual registration files and root regType");
         check(!LicenseRecoverModernGUIAutoRecovery.isKnownDs0101RegistrationPair(legacyDotNetBin.toFile()),
