@@ -154,7 +154,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         try {
             if (rootConfig.isFile() && Files.size(rootConfig.toPath()) <= 1024 * 1024) {
                 String xml = new String(Files.readAllBytes(rootConfig.toPath()), StandardCharsets.UTF_8);
-                Matcher m = Pattern.compile("(?is)<regType\\\\b[^>]*>\\\\s*([123])\\\\s*</regType\\\\s*>").matcher(xml);
+                Matcher m = Pattern.compile("(?is)<regType\\b[^>]*>\\s*([123])\\s*</regType\\s*>").matcher(xml);
                 if (m.find()) regType = m.group(1);
             }
         } catch (Exception ignore) { /* unreadable config must never imply valid registration */ }
