@@ -87,7 +87,11 @@ namespace ITMC.Regedit {
     public bool CheckLocalReg(ref RegeditInfo info) {
       EnsureHosted("CheckLocalReg");
       bool registered = File.Exists(Path.Combine(Root, "mock-authorized.marker"));
-      if (registered) { info.ProName = "itmcIEC"; info.RegStr = "DS0101"; info.EndDate = new DateTime(2099,12,31); }
+      if (registered) {
+        info.ProName = "itmcIEC";
+        info.RegStr = Environment.GetEnvironmentVariable("DS0101_MOCK_VERSION") ?? "DS0101";
+        info.EndDate = new DateTime(2099,12,31);
+      }
       return registered;
     }
     public bool CheckReInfo(ref RegeditInfo info) {
@@ -180,6 +184,20 @@ $env:DS0101_MOCK_WEB_OK = 'yes'
 $verified = Invoke-HostTest @('legacy-verify',$bin,'--product','itmcIEC')
 if ($verified.ExitCode -ne 0) { throw "Fresh-host CheckReg failed: $($verified.Output)" }
 Assert-Contains $verified.Output 'RESULT: LEGACY_NATIVE_CHECKREG_OK'
+
+# Same native methods must support another DS01xx version without changing
+# the DLL fingerprint or accepting a mismatched version token.
+$env:DS0101_MOCK_VERSION = 'DS0107'
+$wrongVersion = Invoke-HostTest @('legacy-verify',$bin,'--product','itmcIEC','--version','DS0101')
+if ($wrongVersion.ExitCode -eq 0) {
+    throw 'Legacy verifier accepted a registration for a different DS01xx version'
+}
+$versionMatched = Invoke-HostTest @('legacy-verify',$bin,'--product','itmcIEC','--version','DS0107')
+if ($versionMatched.ExitCode -ne 0) {
+    throw "Shared DS0107 protocol version was rejected: $($versionMatched.Output)"
+}
+Assert-Contains $versionMatched.Output 'RESULT: LEGACY_NATIVE_CHECKREG_OK'
+Remove-Item Env:DS0101_MOCK_VERSION -ErrorAction SilentlyContinue
 
 if (Test-Path -LiteralPath $bridgeInSite) {
     throw 'ASP.NET host left its temporary bridge in the synthetic website'
