@@ -1763,8 +1763,9 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         String uiPatch230 = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIUiPatchLauncher.java")), StandardCharsets.UTF_8);
         check(uiPatch230.contains("appendPersistentOneClickLog"), "one-click overlay writes persistent diagnostics");
         String legacyGuiBranch = "preflight.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY";
-        String nativeVerifyBusy = "verifyValue.setText(preview ? \"预览执行中...\" : \"执行并校验中...\")";
+        String nativeVerifyBusy = "final String[] activeStage = {preview ? \"预览检测中\" : \"准备执行本地授权检查\"}";
         check(uiPatch230.contains(legacyGuiBranch)
+                        && uiPatch230.contains("!LicenseRecoverModernGUIAutoRecovery.supportsDs0101NativeRecovery(preflight)")
                         && uiPatch230.contains("旧协议：只读接口诊断中（不会执行授权写回）")
                         && uiPatch230.contains("旧协议：接口兼容，未执行授权写回")
                         && uiPatch230.contains("probeLegacySignatures(")
