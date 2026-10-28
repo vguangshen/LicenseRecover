@@ -65,11 +65,16 @@ if (-not (Test-Path -LiteralPath $hostExe) -or -not (Test-Path -LiteralPath $jav
     throw 'Pinned host or production offline protocol source unavailable'
 }
 
-function SafeLocalFlag([string]$output,[string]$field) {
-    # Never return arbitrary stdout: only a tightly bounded status token
-    # emitted by the isolated native diagnostic helper.
-    $pattern = '(?im)^\\[LEGACY_LOCAL_STATE\\] ' + [regex]::Escape($field) +
-               '=(true|false|match|mismatch|empty|missing|unknown|future-or-today|expired)\\s*
+function SafeLocalFlag([string]$output, [string]$field) {
+    # Only return a small set of sanitized status labels, never original values.
+    $pattern = '(?im)^\[LEGACY_LOCAL_STATE\] ' + [regex]::Escape($field) +
+        '=(true|false|match|mismatch|empty|missing|unknown|future-or-today|expired)\s*$'
+    $match = [regex]::Match($output, $pattern)
+    if (-not $match.Success) { return 'not-reported' }
+    return $match.Groups[1].Value
+}
+
+$beforeSource = Snapshot $site
 $temp = Join-Path ([IO.Path]::GetTempPath()) ('DS0101-native-gate-' + [guid]::NewGuid().ToString('N'))
 $copy = Join-Path $temp 'site'
 $javaDir = Join-Path $temp 'java'
