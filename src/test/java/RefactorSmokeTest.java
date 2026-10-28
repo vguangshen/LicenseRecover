@@ -1746,9 +1746,14 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                 "modern GUI uses shared diagnostic writer");
         String uiPatch230 = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIUiPatchLauncher.java")), StandardCharsets.UTF_8);
         check(uiPatch230.contains("appendPersistentOneClickLog"), "one-click overlay writes persistent diagnostics");
-        check(uiPatch230.contains("preflight.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY")
-                        && uiPatch230.contains("旧协议：不支持一键授权写回（未修改文件）"),
-                "DS01xx fails before entering the misleading verification busy state");
+        String legacyGuiBranch = "preflight.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY";
+        String nativeVerifyBusy = "verifyValue.setText(preview ? \"预览执行中...\" : \"执行并校验中...\")";
+        check(uiPatch230.contains(legacyGuiBranch)
+                        && uiPatch230.contains("旧协议：只读接口诊断中（不会执行授权写回）")
+                        && uiPatch230.contains("旧协议：接口兼容，未执行授权写回")
+                        && uiPatch230.contains("probeLegacySignatures(")
+                        && uiPatch230.indexOf(legacyGuiBranch) < uiPatch230.indexOf(nativeVerifyBusy),
+                "DS01xx enters read-only ABI diagnostic instead of claiming to execute authorization writeback");
         check(uiPatch230.contains("findNamed(frame.getContentPane(), \"LicenseRecoverRecommendedCard\")")
                         && uiPatch230.contains("LicenseRecoverSharedLog.append"),
                 "one-click overlay uses stable component ID and shared persistent logging");
