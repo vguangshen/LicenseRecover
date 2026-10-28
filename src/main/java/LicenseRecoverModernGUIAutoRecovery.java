@@ -120,6 +120,14 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         return configured != null ? configured : assembly;
     }
 
+    // Enable the DS0101 adapter only for the exact two original DLL hashes
+    // validated from the user's test site. Other legacy versions remain blocked.
+    static boolean supportsDs0101NativeRecovery(Detection d) {
+        return d != null && d.kind == Kind.DOTNET_LEGACY
+                && "DS0101".equalsIgnoreCase(d.versionId)
+                && isKnownDs0101RegistrationPair(d.runtimeDir);
+    }
+
     public static Result recover(File selected, boolean backup, boolean blockNet, boolean dryRun, Consumer<String> logger) {
         Consumer<String> log = logger == null ? x -> { } : logger;
         Detection d = detect(selected);
@@ -129,6 +137,8 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             if (d.kind == Kind.JAVA) return recoverJava(d,backup,blockNet,dryRun,log);
             if (d.kind == Kind.DOTNET_MODERN) return recoverDotNet(d,backup,blockNet,dryRun,log);
             if (d.kind == Kind.DOTNET_LEGACY) {
+                if (supportsDs0101NativeRecovery(d))
+                    return recoverDotNet(d,backup,blockNet,dryRun,log);
                 log.accept("[one-click] " + legacyChainReadOnlyEvidence(d) + "\n");
                 return Result.fail(legacyWritebackUnavailable(d), d);
             }
