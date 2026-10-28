@@ -408,6 +408,7 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
     // put machine IDs, raw native stdout or authorization strings in the label.
     static String oneClickStageFromLog(String line) {
         if (line == null) return null;
+        if (line.contains("[dotnet-stage] SNAPSHOT:")) return "保存注册文件快照";
         if (line.contains("[dotnet-stage] PRE_BLOCK:")) return "Windows 防火墙隔离";
         if (line.contains("[dotnet-stage] GENCODE:")) return "生成本机申请号";
         if (line.contains("[dotnet-stage] GENCODE_PARSE:")) return "校验申请号格式";
