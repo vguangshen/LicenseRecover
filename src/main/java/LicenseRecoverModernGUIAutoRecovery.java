@@ -652,7 +652,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             log.accept("[dotnet-stage] PRE_BLOCK: OK (" + helper.getName() + ")\n");
 
             if (!dryRun) {
-                if (backup) backupDotNetRegistrationFiles(originals, log);
+                if (backup || legacyDs0101) backupDotNetRegistrationFiles(originals, log);
                 blockPrimaryDotNetConfigs(d, log);
                 blockSidecars(d, false, false, log);
                 log.accept("[pre-block] authorization network isolation is active before gencode / DoRegistry / CheckReInfo.\n");
@@ -685,7 +685,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             String machine = null;
             try {
                 String plain = desDecryptHex(request, "itmcsoft");
-                if (plain != null && plain.length() >= 20) machine = plain.substring(4, 20);
+                if (!legacyDs0101 && plain != null && plain.length() >= 20) machine = plain.substring(4, 20);
             } catch (Throwable ignore) { }
 
             log.accept("[one-click] .NET native registration flow: PRE-BLOCK -> gencode -> DoRegistry -> CheckReInfo\n");
@@ -695,7 +695,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             if (dryRun) {
                 log.accept("[dry-run] native request/auth codes generated under outbound isolation; registered files will be restored to the initial snapshot before exit.\n");
                 return new Result(true, "Preview completed under temporary outbound isolation; no file was changed.",
-                        d, machine, request, auth);
+                        d, machine, legacyDs0101 ? null : request, legacyDs0101 ? null : auth);
             }
 
             List<String> apply = new ArrayList<String>();
@@ -747,10 +747,18 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             } else {
                 restoreDotNetAuthorizationNetworkSettings(originals, d, log);
             }
-            log.accept("[verify] selected target registration chain DoRegistry + CheckReInfo passed while outbound traffic was isolated.\n");
+            if (legacyDs0101) {
+                NativeProcessResult finalCheck = runNativeCapture(Arrays.asList(
+                        helper.getAbsolutePath(), "legacy-verify", d.runtimeDir.getAbsolutePath(),
+                        "--product", registrationProduct), d.appRoot, null);
+                if (finalCheck.exitCode != 0 || !finalCheck.output.contains("LEGACY_NATIVE_CHECKREG_OK"))
+                    throw new IOException("[VERIFY] DS0101 final configuration did not pass the native website check.");
+            }
+            log.accept("[verify] selected native registration and website validation passed while outbound traffic was isolated.\n");
             return new Result(true,
-                    ".NET local authorization was applied and verified through the target-preferred registration chain while outbound traffic was isolated. Restart the IIS app pool/site.",
-                    d, machine, request, auth);
+                    legacyDs0101 ? "DS0101 registration files accepted by the original native and website checks. Restart IIS to confirm persistence."
+                    : ".NET local authorization was applied and verified through the target-preferred registration chain while outbound traffic was isolated. Restart the IIS app pool/site.",
+                    d, machine, legacyDs0101 ? null : request, legacyDs0101 ? null : auth);
         } catch (Throwable ex) {
             boolean rollbackOk = originals == null || restoreDotNetRegistrationFiles(originals, log);
             if (!rollbackOk)
