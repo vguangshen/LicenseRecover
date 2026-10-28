@@ -1078,17 +1078,11 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         }
     }
 
+    // netsh and other OS commands must never wait forever. The native
+    // registration helper already has a bounded runner; reuse it for firewall
+    // setup/cleanup so a stalled Windows service cannot freeze one-click UI.
     static NativeProcessResult runSystemCommand(List<String> cmd) throws Exception {
-        Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        InputStream in = p.getInputStream();
-        byte[] buf = new byte[4096];
-        int n;
-        while ((n = in.read(buf)) >= 0) out.write(buf, 0, n);
-        int rc = p.waitFor();
-        Charset cs;
-        try { cs = Charset.forName("GBK"); } catch (Throwable ignore) { cs = StandardCharsets.UTF_8; }
-        return new NativeProcessResult(rc, new String(out.toByteArray(), cs));
+        return runNativeCapture(cmd, null, null, 20L);
     }
 
     private static void restoreDotNetAuthorizationNetworkSettings(LinkedHashMap<File, byte[]> originals,
