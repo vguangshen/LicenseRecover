@@ -104,33 +104,42 @@ def recover_site(source: Path, output: Path):
         # Validate ALL inputs before creating any output.
         if version and not re.fullmatch(r'DS01\d{2}', version, re.I):
             raise ValueError('Not a DS01xx site: ' + version)
-        output.mkdir(parents=True, exist_ok=True)
-        summaries = []
-        for name in ASSEMBLIES:
-            target = output / (name[:-4] + '.unpacked.dll')
-            report = output / (name[:-4] + '.report.json')
-            summaries.append(restore(scratch / name, target, report))
-        try:
-            chain = inspect_web_assembly(output / 'ITMC.Web.unpacked.dll')
-        except ValueError as ex:
-            # Other DS01xx builds may not expose the identical names or metadata.
-            # In that case, preserve the recovered DLLs and explicitly mark
-            # the hybrid registration chain as unverified, not absent.
-            chain = {'static_dual_registration_chain_evidenced': False,
-                     'inspection_error': str(ex)[:240],
-                     'runtime_licensing_tested': False}
-        manifest = {
-            'source': source.name,
-            'registration_chain': chain,
-            'soft_version_id': version,
-            'restored_methods_total': sum(x['restored_method_count'] for x in summaries),
-            'assemblies': summaries,
-            'registration_changed': False,
-            'runtime_tested': False,
-            'note': 'For offline source inspection only; not a license patch or IIS deployment bundle.',
-        }
-        (output / 'manifest.json').write_text(
-            json.dumps(manifest, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+        # Stage all results outside the destination. A corrupt third DLL or
+        # metadata parser error must not leave an apparently complete output.
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='.ds01xx-stage-', dir=str(output.parent)) as stage_dir:
+            stage = Path(stage_dir)
+            summaries = []
+            for name in ASSEMBLIES:
+                target = stage / (name[:-4] + '.unpacked.dll')
+                report = stage / (name[:-4] + '.report.json')
+                summaries.append(restore(scratch / name, target, report))
+            try:
+                chain = inspect_web_assembly(stage / 'ITMC.Web.unpacked.dll')
+            except ValueError as ex:
+                # Other DS01xx versions may differ; unknown is not absent.
+                chain = {'static_dual_registration_chain_evidenced': False,
+                         'inspection_error': str(ex)[:240],
+                         'runtime_licensing_tested': False}
+            manifest = {
+                'source': source.name,
+                'registration_chain': chain,
+                'soft_version_id': version,
+                'restored_methods_total': sum(x['restored_method_count'] for x in summaries),
+                'assemblies': summaries,
+                'registration_changed': False,
+                'runtime_tested': False,
+                'note': 'For offline source inspection only; not a license patch or IIS deployment bundle.',
+            }
+            (stage / 'manifest.json').write_text(
+                json.dumps(manifest, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+            if output.exists():
+                # We checked the directory at entry. Check again before deleting
+                # an empty one, in case another process wrote into it.
+                if any(output.iterdir()):
+                    raise ValueError('Output directory became nonempty while processing')
+                output.rmdir()
+            stage.rename(output)
         return manifest
 
 
