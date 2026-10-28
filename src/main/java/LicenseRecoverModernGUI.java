@@ -883,6 +883,10 @@ public final class LicenseRecoverModernGUI {
     }
 
     private void runBatch() {
+        if (!hasExecutableBatchTargets() || batchScanWorker != null && !batchScanWorker.isDone()) {
+            setStatus("请先完成扫描并确认存在可处理的应用", false);
+            return;
+        }
         if (batchWorker != null && !batchWorker.isDone()) {
             setStatus("请等待当前批量任务完成，或先取消当前任务", false);
             return;
