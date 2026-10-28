@@ -1509,7 +1509,8 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         Files.write(legacyBinNotReg.toPath(), "created-in-bin".getBytes(StandardCharsets.UTF_8));
         Files.write(legacyBinConfig.toPath(), "created-config-in-bin".getBytes(StandardCharsets.UTF_8));
         Files.write(legacyBinRegister.toPath(), "created-register-in-bin".getBytes(StandardCharsets.UTF_8));
-        LicenseRecoverModernGUIAutoRecovery.restoreDotNetRegistrationFiles(legacySnapshot, null);
+        check(LicenseRecoverModernGUIAutoRecovery.restoreDotNetRegistrationFiles(legacySnapshot, null),
+                "DS0101 restoration reports success when all snapshot entries were restored");
         check(Arrays.equals(originalSiteConfig, Files.readAllBytes(legacyDotNetRoot.resolve("config.xml")))
                         && Arrays.equals(originalSiteRegister, Files.readAllBytes(legacyDotNetRoot.resolve("Register.xml"))),
                 "DS0101 rollback restores modified original site registration files byte-for-byte");
@@ -1517,10 +1518,22 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                         && !legacyBinConfig.exists() && !legacyBinRegister.exists(),
                 "DS0101 rollback deletes all native-generated registration files that were initially absent");
         // Idempotent rollback should preserve a stable, already-restored site.
-        LicenseRecoverModernGUIAutoRecovery.restoreDotNetRegistrationFiles(legacySnapshot, null);
+        check(LicenseRecoverModernGUIAutoRecovery.restoreDotNetRegistrationFiles(legacySnapshot, null),
+                "repeated DS0101 rollback reports success");
         check(Arrays.equals(originalSiteConfig, Files.readAllBytes(legacyDotNetRoot.resolve("config.xml")))
                         && !legacySiteNotReg.exists(),
                 "repeated DS0101 rollback is safe and idempotent");
+
+        // An unremovable nonempty directory at a native registration output
+        // must be reported as a rollback failure, not silently treated as OK.
+        Files.createDirectory(legacySiteNotReg.toPath());
+        Files.write(legacySiteNotReg.toPath().resolve("blocker.txt"), new byte[]{1});
+        check(!LicenseRecoverModernGUIAutoRecovery.restoreDotNetRegistrationFiles(legacySnapshot, null),
+                "unrestorable native output causes explicit failed-rollback status");
+        Files.delete(legacySiteNotReg.toPath().resolve("blocker.txt"));
+        Files.delete(legacySiteNotReg.toPath());
+        check(LicenseRecoverModernGUIAutoRecovery.restoreDotNetRegistrationFiles(legacySnapshot, null),
+                "rollback succeeds after removing the synthetic blocker");
         byte[] legacyConfigBefore = Files.readAllBytes(legacyDotNetRoot.resolve("config.xml"));
         int legacyBinFileCount = legacyDotNetBin.toFile().list().length;
         LicenseRecoverModernGUIAutoRecovery.Result unsupportedLegacy =
