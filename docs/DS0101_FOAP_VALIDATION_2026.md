@@ -59,3 +59,37 @@ version-specific native verification and rollback, and test on an
 isolated Windows/.NET Framework/IIS environment. A successful IL
 restore alone is not an authorization restore. No deployment binaries
 or credential material are committed to the repository.
+
+## One-command site/archive analysis
+
+To recover the three protected assemblies from an existing site folder
+(or its original ZIP) into a separate directory without executing vendor
+code, run:
+
+```powershell
+python scripts/ds0101_unpack_site.py DS0101.zip DS0101-analysis
+python -m unittest discover -s scripts/tests -v
+```
+
+The first command produces three `*.unpacked.dll` inspection copies,
+three per-assembly `*.report.json` files and a `manifest.json` summary.
+A sample ZIP containing the original DS0101 site was verified locally to
+restore exactly 7,127 methods. All three output DLL SHA-256 hashes were
+identical to the independent single-assembly recovery run. The test
+suite includes RC4/IL body verification and ZIP path/duplicate/output
+safety guards. No live IIS or native license checks were executed.
+
+## Explicit destructive-patch backup fix
+
+Previously, `PatchSafety.prepareDotNetPatch()` only backed up
+`itmcRegedit.dll`, even when a site contained an uppercase
+`ITMC.Regedit.dll`, and it could refuse uppercase-only deployments.
+The new safety preflight backs up every existing core candidate:
+`ITMC.Web.dll`, `ITMC.Regedit.dll`, `itmcRegedit.dll`. Each copy is
+size- and SHA-256-checked before a destructive operation can continue,
+and its timestamp includes a unique suffix to avoid same-second
+collisions. Added Java smoke cases for uppercase-only, dual-component,
+and missing-component sites.
+
+This backup fix does **not** enable the DS01xx one-click authorization
+path. The explicit `DOTNET_LEGACY` rejection remains unchanged.
