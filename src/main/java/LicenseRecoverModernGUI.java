@@ -1292,6 +1292,14 @@ final class LicenseRecoverSharedLog {
         WRITER.execute(() -> appendToDisk(appDir, message));
     }
 
+    /** Only for tests or non-EDT shutdown checks; never call this on the GUI thread. */
+    static void awaitPendingWrites(long timeoutMillis) throws Exception {
+        if (SwingUtilities.isEventDispatchThread()) {
+            throw new IllegalStateException("Never wait for disk logs on the Swing event thread");
+        }
+        WRITER.submit(() -> { }).get(timeoutMillis, TimeUnit.MILLISECONDS);
+    }
+
     private static void appendToDisk(File appDir, String message) {
         try {
             synchronized (LOCK) {
