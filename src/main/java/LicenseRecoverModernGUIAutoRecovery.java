@@ -699,14 +699,22 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                     ".NET local authorization was applied and verified through the target-preferred registration chain while outbound traffic was isolated. Restart the IIS app pool/site.",
                     d, machine, request, auth);
         } catch (Throwable ex) {
-            if (originals != null) restoreDotNetRegistrationFiles(originals, log);
+            boolean rollbackOk = originals == null || restoreDotNetRegistrationFiles(originals, log);
+            if (!rollbackOk)
+                throw new IOException("[ROLLBACK] Original .NET files could not all be restored; "
+                        + "use the saved preoneclick backups before restarting IIS.", ex);
             if (ex instanceof Exception) throw (Exception) ex;
             throw new Exception(ex);
         } finally {
-            // A successful preview also needs to remove files created by
-            // native request generation and restore any changed config values.
-            if (dryRun && originals != null) restoreDotNetRegistrationFiles(originals, log);
-            removeTemporaryDotNetNetworkGuard(firewallRule, log);
+            try {
+                // A successful preview also needs to remove files created by
+                // native request generation and restore changed config values.
+                if (dryRun && originals != null
+                        && !restoreDotNetRegistrationFiles(originals, log))
+                    throw new IOException("[PREVIEW_ROLLBACK] Preview did not restore all original files.");
+            } finally {
+                removeTemporaryDotNetNetworkGuard(firewallRule, log);
+            }
         }
     }
 
@@ -927,8 +935,9 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         }
     }
 
-    static void restoreDotNetRegistrationFiles(LinkedHashMap<File, byte[]> originals, Consumer<String> log) {
-        if (originals == null) return;
+    static boolean restoreDotNetRegistrationFiles(LinkedHashMap<File, byte[]> originals, Consumer<String> log) {
+        if (originals == null) return false;
+        boolean restoredAll = true;
         for (Map.Entry<File, byte[]> e : originals.entrySet()) {
             try {
                 File f = e.getKey();
@@ -942,9 +951,11 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                 }
                 // If the contents match, do not unnecessarily rewrite files.
             } catch (Throwable r) {
+                restoredAll = false;
                 if (log != null) log.accept("[rollback-warning] " + e.getKey().getAbsolutePath() + ": " + safe(r) + "\n");
             }
         }
+        return restoredAll;
     }
 
     private static void blockPrimaryDotNetConfigs(Detection d, Consumer<String> log) throws Exception {
