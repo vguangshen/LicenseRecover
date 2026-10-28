@@ -266,8 +266,8 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                 ? "DS01xx" : detection.versionId.trim();
         return "[DOTNET_LEGACY] " + version
                 + " 尚未实现经目标站点原生校验的一键授权写回。"
-                + " DS0101 样本的注册页实际调用大写 ITMC.Regedit 的 NewRegistry/DoRegistry，"
-                + "而 Web.CheckReg 还会调用大小写两套 CheckReInfo；不能把这两套校验当成单一路径。"
+                + " 目标目录未满足 DS01xx 同族候选条件（网站版本/ProName/注册页或原生 DLL）。"
+                + " 即使候选结构存在，也必须先通过只读 ABI 检查和原生网站最终校验。"
                 + " " + legacyChainReadOnlyEvidence(detection)
                 + " 本次未生成注册码、未执行写回、未修改任何目标文件。"
                 + " 仅阻断授权服务器不代表授权成功；请通过目标程序原有的注册流程提交合法授权并验证。";
@@ -631,13 +631,13 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (legacyDs01xx) {
             // Reflection-only metadata preflight: no target method execution,
             // no file/config mutation and no need to assume DS0101's DLL hash.
-            log.accept("[dotnet-stage] LEGACY_ABI: read-only native compatibility check\\n".replace("\\n", "\n"));
+            log.accept("[dotnet-stage] LEGACY_ABI: read-only native compatibility check\n");
             NativeProcessResult abi = runNativeCapture(Arrays.asList(
                     helper.getAbsolutePath(), "legacy-probe", d.runtimeDir.getAbsolutePath()),
                     d.appRoot, null, 30L);
             if (abi.exitCode != 0 || !abi.output.contains("LEGACY_SIGNATURES_VERIFIED_ONLY"))
                 return Result.fail("[LEGACY_ABI] DS01xx native signature mismatch; no write attempted.", d);
-            log.accept("[dotnet-stage] LEGACY_ABI: OK\\n".replace("\\n", "\n"));
+            log.accept("[dotnet-stage] LEGACY_ABI: OK\n");
         }
 
         String appProduct = d.productName;
