@@ -11,6 +11,8 @@ mcs -nologo -target:library -optimize+ \
 cat > "$tmp/Regedit.cs" <<'CS'
 using System;
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 namespace ITMC.Regedit {
   public sealed class RegeditInfo {}
   public sealed class RegeditMain {
@@ -19,8 +21,23 @@ namespace ITMC.Regedit {
     public RegeditMain(string product, string init) {
       if (product != "itmcIEC" || String.IsNullOrEmpty(init))
         throw new InvalidOperationException("wrong native initializer");
+      byte[] md5 = MD5.Create().ComputeHash(Encoding.UTF8.GetBytes("itmcIECRegeditNew"));
+      string hash = BitConverter.ToString(md5).Replace("-", "");
+      byte[] key = Encoding.ASCII.GetBytes(hash.Substring(0, 8));
+      byte[] encrypted = new byte[init.Length / 2];
+      for (int i = 0; i < encrypted.Length; i++)
+        encrypted[i] = Convert.ToByte(init.Substring(i * 2, 2), 16);
+      using (DES des = DES.Create()) {
+        des.Key = key; des.IV = key;
+        des.Mode = CipherMode.CBC; des.Padding = PaddingMode.PKCS7;
+        byte[] plain = des.CreateDecryptor().TransformFinalBlock(encrypted, 0, encrypted.Length);
+        if (Encoding.UTF8.GetString(plain) != "itmcsoft")
+          throw new InvalidOperationException("invalid native constructor DES initializer");
+      }
     }
     public string NewRegistry() {
+      if (ProName != "itmcIEC" || UserID != "itmc")
+        throw new InvalidOperationException("missing original Regester.aspx property setup");
       return "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF";
     }
     public bool DoRegistry(string seq, string code) {
