@@ -1,0 +1,104 @@
+"""Pure stdlib unit tests for offline FOAP/VBPD restoration input guards."""
+import struct
+import sys
+import tempfile
+import unittest
+import zipfile
+from pathlib import Path
+
+SCRIPTS = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SCRIPTS))
+from itmc_foap_unpack_stdlib import rc4, method_length, restore
+from ds0101_unpack_site import _target_members, recover_site
+
+
+class ProtectedILTests(unittest.TestCase):
+    def test_rc4_known_vector(self):
+        plaintext = b'Plaintext'
+        ciphertext = bytes.fromhex('BBF316E8D940AF0AD3')
+        self.assertEqual(rc4(plaintext, b'Key'), ciphertext)
+        self.assertEqual(rc4(ciphertext, b'Key'), plaintext)
+
+    def test_tiny_method(self):
+        self.assertEqual(method_length(b'\x06\x2a'), 2)
+        with self.assertRaises(ValueError):
+            method_length(b'\x0a\x2a')
+
+    def test_fat_method_with_small_exception_section(self):
+        header = struct.pack('<HHII', 0x300B, 8, 1, 0)
+        body = header + b'\x2a\0\0\0' + b'\x01\x10\0\0' + b'\0' * 12
+        self.assertEqual(method_length(body), len(body))
+        with self.assertRaises(ValueError):
+            method_length(body[:-1])
+
+    def test_truncated_or_invalid_method(self):
+        for body in [b'', b'\xff', b'\x03', b'\x0b']:
+            with self.subTest(body=body), self.assertRaises(ValueError):
+                method_length(body)
+
+    def test_restore_does_not_overwrite_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / 'sample.dll'
+            p.write_bytes(b'MZ' + b'\0' * 128)
+            with self.assertRaises(ValueError):
+                restore(p, p, None)
+            self.assertEqual(p.read_bytes(), b'MZ' + b'\0' * 128)
+
+
+class SiteArchiveTests(unittest.TestCase):
+    def make_zip(self, base, version='DS0101', duplicated=False):
+        path = base / 'input.zip'
+        with zipfile.ZipFile(path, 'w') as z:
+            z.writestr('DS0101/config.xml',
+                       '<ROOT><SystemSoft><SoftVersionID>%s</SoftVersionID></SystemSoft></ROOT>' % version)
+            for name in ('ITMC.Web.dll', 'ITMC.Regedit.dll', 'itmcRegedit.dll'):
+                z.writestr('DS0101/bin/' + name, b'MZ' + b'\0' * 128)
+            if duplicated:
+                z.writestr('copy/bin/ITMC.Web.dll', b'MZ')
+            z.writestr('DS0101/.svn/pristine/x/bin/ITMC.Web.dll', b'MZ')
+            z.writestr('DS0101/bin/../../outside.dll', b'OTHER')
+        return path
+
+    def test_archive_members_ignore_svn_and_unrelated_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            zpath = self.make_zip(Path(tmp))
+            with zipfile.ZipFile(zpath) as z:
+                found = _target_members(z)
+            self.assertEqual(set(found), {'ITMC.Web.dll', 'ITMC.Regedit.dll', 'itmcRegedit.dll'})
+
+    def test_reject_duplicate_assembly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            zpath = self.make_zip(Path(tmp), duplicated=True)
+            with zipfile.ZipFile(zpath) as z, self.assertRaises(ValueError):
+                _target_members(z)
+
+    def test_reject_wrong_product_before_writing_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            zpath = self.make_zip(base, version='YX030201')
+            out = base / 'out'
+            with self.assertRaisesRegex(ValueError, 'Not a DS01xx site'):
+                recover_site(zpath, out)
+            self.assertFalse(out.exists())
+
+    def test_refuse_nonempty_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            zpath = self.make_zip(base)
+            out = base / 'out'
+            out.mkdir()
+            (out / 'original.txt').write_text('do not overwrite')
+            with self.assertRaisesRegex(ValueError, 'new or empty'):
+                recover_site(zpath, out)
+            self.assertEqual((out / 'original.txt').read_text(), 'do not overwrite')
+
+    def test_refuse_output_inside_site(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp) / 'DS0101'
+            base.mkdir()
+            with self.assertRaisesRegex(ValueError, 'must not be inside'):
+                recover_site(base, base / 'diagnostics')
+
+
+if __name__ == '__main__':
+    unittest.main()
