@@ -128,6 +128,33 @@ public final class DS0101OfflineProbe {
         'legacy-verify', $copyBin, '--product', 'itmcIEC') 45
     $valid = $verified.ExitCode -eq 0 -and $verified.Out.Contains('LEGACY_NATIVE_CHECKREG_OK')
 
+    # Determine whether the registered target's current regType prioritizes an
+    # unreachable network path. Never reuse a mutated copy between mode checks.
+    $modeResults = [ordered]@{}
+    $registeredConfig = Get-Content -LiteralPath (Join-Path $copy 'config.xml') -Raw
+    $modePattern = '(?i)(<regType>\s*)[123](\s*</regType>)'
+    $regTypeMatch = [regex]::Match($registeredConfig, '(?i)<regType>\s*([123])\s*</regType>')
+    $registeredRegType = if ($regTypeMatch.Success) { $regTypeMatch.Groups[1].Value } else { 'unknown' }
+    for ($mode = 1; $mode -le 3; $mode++) {
+        $modeSite = Join-Path $temp ('mode-' + $mode)
+        Copy-Item -LiteralPath $copy -Destination $modeSite -Recurse -Force
+        $modeConfigPath = Join-Path $modeSite 'config.xml'
+        $newConfig = [regex]::Replace($registeredConfig, $modePattern, ('$1' + $mode + '$2'))
+        if ($newConfig -eq $registeredConfig -and $registeredRegType -ne [string]$mode) {
+            $modeResults['regType' + $mode] = @{ testable = $false; accepted = $false; exitCode = -1 }
+            continue
+        }
+        [IO.File]::WriteAllText($modeConfigPath, $newConfig, (New-Object System.Text.UTF8Encoding($false)))
+        $modeVerified = Invoke-Native $hostExe @(
+            'legacy-verify', (Join-Path $modeSite 'bin'), '--product', 'itmcIEC') 45
+        $modeResults['regType' + $mode] = @{
+            testable = $true
+            accepted = ($modeVerified.ExitCode -eq 0 -and
+                $modeVerified.Out.Contains('LEGACY_NATIVE_CHECKREG_OK'))
+            exitCode = $modeVerified.ExitCode
+            timedOut = $modeVerified.Timeout
+        }
+    }
     $after = Snapshot $copy
     $changed = @((@($before.Keys) + @($after.Keys)) | Sort-Object -Unique | Where-Object {
         $before[$_] -ne $after[$_]
@@ -147,6 +174,8 @@ public final class DS0101OfflineProbe {
         nativeRequestGenerated = $true
         offlineCodeSelfCheckPassed = $codeOK
         nativeDoRegistryAccepted = $accepted
+        registeredRegType = $registeredRegType
+        verificationByRegType = $modeResults
         nativeCheckReInfoAndWebCheckRegPassed = $valid
         nativeDoRegistryExitCode = $submitted.ExitCode
         nativeVerifyExitCode = $verified.ExitCode
