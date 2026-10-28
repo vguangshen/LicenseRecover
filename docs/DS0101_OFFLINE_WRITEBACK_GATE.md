@@ -58,3 +58,40 @@ This preflight does **not** call `DoRegistry`, `CheckReInfo` or
 `funpublic.CheckReg`, and never modifies the selected source site.
 It therefore cannot prove successful activation. A separate, explicitly
 authorized Windows/IIS integration test is still necessary.
+
+
+## Private Windows native offline-registration findings (2026-10-28)
+
+A separate **private** GitHub Windows runner exercised an explicitly sanitized
+DS0101 fixture (original managed assemblies, synthetic non-sensitive XML).
+The original site archive was not committed to this public repository, and no
+machine-bound request, generated authorization code, raw registration XML, or
+vendor exception was published in the run summaries.
+
+Observed, with protected CIL restored into test-only copies:
+
+- The native ASP.NET host and reflection-only ABI probe succeed.
+- Target `NewRegistry()` returns a valid request in the isolated Windows AppDomain.
+- The production Java `LegacyDotNetProtocol` produces an internally matching
+  DS0101 offline code for that request.
+- Target `DoRegistry(sequence, code)` **returns true** (exit 0), modifies
+  the copied `config.xml` and `Register.xml`, and writes `regType=1`.
+- Target native `CheckLocalReg` returns **false before** registration and
+  **true afterward**. This is meaningful native local-writeback evidence,
+  not merely a syntactically valid generated code.
+- Target `CheckReInfo` still returns **false** (the composite
+  `legacy-verify` exits 5). Invoking `CheckLocalReg` first does not make
+  the composite check succeed in a subsequent fresh hosted process.
+- Independent mode-switch experiments all failed to verify; their nonzero
+  host exit codes do **not** establish a supported production mode switch.
+- No actual IIS restart, commercial login, or licensed production site
+  acceptance has been verified.
+
+**Consequences:** There is evidence that native offline registration is
+accepted and locally persisted, but not that the complete original website
+accepts it. The default DS01xx one-click and batch paths remain fail-closed.
+Never report license activation success from `DoRegistry` alone.
+
+The private diagnostic harness additionally compares the website's own
+`funpublic.CheckReg()` before and after registration. Its independent result
+must be checked before deciding whether any production recovery workflow is safe.
