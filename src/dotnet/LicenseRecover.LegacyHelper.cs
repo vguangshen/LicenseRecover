@@ -118,6 +118,55 @@ namespace LicenseRecoverNet
             return (bool)check.Invoke(null, null);
         }
 
+        // Sanitized diagnostic flags only. Never print original RegStr,
+        // machine IDs, register codes, dates, exception messages or JSON.
+        private static string LocalStateFlag(object info, string property, string expected,
+                                             bool contains)
+        {
+            if (info == null) return "missing";
+            try
+            {
+                PropertyInfo p = info.GetType().GetProperty(property,
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (p == null || !p.CanRead) return "unknown";
+                object value = p.GetValue(info, null);
+                if (!(value is string)) return "unknown";
+                string raw = (string)value;
+                if (string.IsNullOrEmpty(raw)) return "empty";
+                bool matches = contains
+                    ? raw.IndexOf(expected, StringComparison.OrdinalIgnoreCase) >= 0
+                    : string.Equals(raw, expected, StringComparison.OrdinalIgnoreCase);
+                return matches ? "match" : "mismatch";
+            }
+            catch { return "unknown"; }
+        }
+
+        private static string LocalExpiryFlag(object info)
+        {
+            if (info == null) return "missing";
+            try
+            {
+                PropertyInfo p = info.GetType().GetProperty("EndDate",
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (p == null || !p.CanRead) return "unknown";
+                object value = p.GetValue(info, null);
+                if (!(value is DateTime)) return "unknown";
+                return ((DateTime)value).Date >= DateTime.Today ? "future-or-today" : "expired";
+            }
+            catch { return "unknown"; }
+        }
+
+        private static void PrintSanitizedLocalState(object info)
+        {
+            // These are classification flags, not the actual license fields.
+            Console.WriteLine("[LEGACY_LOCAL_STATE] hasRegInfo=" + (info != null ? "true" : "false"));
+            Console.WriteLine("[LEGACY_LOCAL_STATE] regStrContainsDS0101="
+                + LocalStateFlag(info, "RegStr", "DS0101", true));
+            Console.WriteLine("[LEGACY_LOCAL_STATE] proNameMatches="
+                + LocalStateFlag(info, "ProName", "itmcIEC", false));
+            Console.WriteLine("[LEGACY_LOCAL_STATE] expiry=" + LocalExpiryFlag(info));
+        }
+
         public static int RunDirect(Options options)
         {
             if (options == null || options.Product != "itmcIEC")
@@ -182,6 +231,7 @@ namespace LicenseRecoverNet
                     return 8;
                 }
                 object localResult = selected.Invoke(selected.IsStatic ? null : native, inputs);
+                PrintSanitizedLocalState(inputs != null && inputs.Length > 0 ? inputs[0] : null);
                 if (localResult is bool && (bool)localResult)
                 {
                     Console.WriteLine("RESULT: LEGACY_NATIVE_LOCAL_CHECK_OK");
