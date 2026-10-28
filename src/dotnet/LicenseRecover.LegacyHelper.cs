@@ -33,7 +33,8 @@ namespace LicenseRecoverNet
             }
             if (o.Product != "itmcIEC") return null;
             if (o.Command != "legacy-gencode" && o.Command != "legacy-doreg"
-                && o.Command != "legacy-verify" && o.Command != "legacy-local-probe") return null;
+                && o.Command != "legacy-verify" && o.Command != "legacy-local-probe"
+                && o.Command != "legacy-web-probe") return null;
             if (o.Command == "legacy-doreg" &&
                 (String.IsNullOrEmpty(o.Sequence) || String.IsNullOrEmpty(o.Code)))
                 return null;
@@ -103,6 +104,18 @@ namespace LicenseRecoverNet
             object value = Invoke(native, "CheckReInfo", args,
                 new Type[] { infoType.MakeByRefType() });
             return value is bool && (bool)value;
+        }
+
+        private static bool CheckWebFrontDoor(string runtimeDir)
+        {
+            Assembly web = Assembly.LoadFrom(Path.Combine(runtimeDir, "ITMC.Web.dll"));
+            Type funpublic = web.GetType("ITMC.Web.funpublic", true);
+            MethodInfo check = funpublic.GetMethod("CheckReg",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static,
+                null, Type.EmptyTypes, null);
+            if (check == null || check.ReturnType != typeof(bool))
+                throw new MissingMethodException("ITMC.Web.funpublic.CheckReg():bool");
+            return (bool)check.Invoke(null, null);
         }
 
         public static int RunDirect(Options options)
@@ -177,6 +190,18 @@ namespace LicenseRecoverNet
                 Console.WriteLine("RESULT: LEGACY_NATIVE_LOCAL_CHECK_REJECTED");
                 return 7;
             }
+            if (options.Command == "legacy-web-probe")
+            {
+                // Separate website front-door result, only from an isolated copy.
+                // This may run vendor code and should never be used on live IIS.
+                if (!CheckWebFrontDoor(options.RuntimeDir))
+                {
+                    Console.WriteLine("RESULT: LEGACY_WEB_CHECK_REJECTED");
+                    return 9;
+                }
+                Console.WriteLine("RESULT: LEGACY_WEB_CHECK_ACCEPTED");
+                return 0;
+            }
             if (options.Command == "legacy-verify")
             {
                 if (!CheckTarget(native, regInfoType))
@@ -187,14 +212,7 @@ namespace LicenseRecoverNet
                 // Cross-check the actual Web front door independently from
                 // the registration helper. A match in CheckReInfo alone
                 // is NOT sufficient to report the application activated.
-                Assembly web = Assembly.LoadFrom(Path.Combine(options.RuntimeDir, "ITMC.Web.dll"));
-                Type funpublic = web.GetType("ITMC.Web.funpublic", true);
-                MethodInfo check = funpublic.GetMethod("CheckReg",
-                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static,
-                    null, Type.EmptyTypes, null);
-                if (check == null || check.ReturnType != typeof(bool))
-                    throw new MissingMethodException("ITMC.Web.funpublic.CheckReg():bool");
-                if (!(bool)check.Invoke(null, null))
+                if (!CheckWebFrontDoor(options.RuntimeDir))
                 {
                     Console.Error.WriteLine("[LEGACY_VERIFY] Target Web.CheckReg returned false");
                     return 6;
