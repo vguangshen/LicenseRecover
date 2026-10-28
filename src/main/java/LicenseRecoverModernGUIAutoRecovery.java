@@ -128,7 +128,10 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         try {
             if (d.kind == Kind.JAVA) return recoverJava(d,backup,blockNet,dryRun,log);
             if (d.kind == Kind.DOTNET_MODERN) return recoverDotNet(d,backup,blockNet,dryRun,log);
-            if (d.kind == Kind.DOTNET_LEGACY) return Result.fail(legacyWritebackUnavailable(d), d);
+            if (d.kind == Kind.DOTNET_LEGACY) {
+                log.accept("[one-click] " + legacyChainReadOnlyEvidence(d) + "\n");
+                return Result.fail(legacyWritebackUnavailable(d), d);
+            }
             return Result.fail("[DETECTION] Unsupported authorization profile; no target files were changed.", d);
         } catch (Throwable ex) {
             log.accept("[error] " + safe(ex) + "\n");
