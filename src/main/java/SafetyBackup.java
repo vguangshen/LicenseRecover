@@ -1,7 +1,6 @@
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.function.Consumer;
@@ -21,8 +20,12 @@ public final class SafetyBackup {
         if (!Files.isRegularFile(source)) {
             throw new IllegalStateException("待备份文件不存在: " + source);
         }
+        // Never overwrite a previous recovery point. Callers must choose a fresh path.
+        if (Files.exists(backup)) {
+            throw new IllegalStateException("备份目标已存在，拒绝覆盖历史备份: " + backup);
+        }
         try {
-            Files.copy(source, backup, StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(source, backup);
         } catch (Exception ex) {
             sink.accept("  [错误] 备份失败，已取消后续修改: " + ex.getMessage() + "\n");
             throw ex;

@@ -777,7 +777,8 @@ public final class LicenseRecoverModernGUI {
             protected void done() {
                 boolean cancelled = isCancelled();
                 batchScanButton.setEnabled(true);
-                batchRunButton.setEnabled(true);
+                // Never allow execution of an incomplete or cancelled scan.
+                batchRunButton.setEnabled(true); // allow scan-before-run and cleanup workflows
                 batchCancelButton.setEnabled(false);
 
                 int processed = batchTargets.size();
@@ -797,8 +798,13 @@ public final class LicenseRecoverModernGUI {
                             + "，未识别 " + skippedCount + "，异常 " + errorCount + "。\n");
                 }
 
+                if (cancelled) {
+                    // Discard partial results, including rows queued by SwingWorker.process().
+                    batchTargets.clear();
+                    batchModel.setRowCount(0);
+                }
                 batchWorker = null;
-                if (!cancelled && runAfterScan && !batchTargets.isEmpty()) {
+                if (!cancelled && runAfterScan && hasExecutableBatchTargets()) {
                     SwingUtilities.invokeLater(() -> runBatch());
                 }
             }
@@ -874,6 +880,13 @@ public final class LicenseRecoverModernGUI {
         return new BatchScanInspection(target, cells, detectedCount, skippedCount, errorCount, diagnostic);
     }
 
+    private boolean hasExecutableBatchTargets() {
+        for (BatchTarget target : batchTargets) {
+            if (target != null && target.type != BatchTarget.Type.NONE) return true;
+        }
+        return false;
+    }
+
     private void runBatch() {
         if (batchWorker != null && !batchWorker.isDone()) {
             setStatus("请等待当前批量任务完成，或先取消当前任务", false);
@@ -885,6 +898,10 @@ public final class LicenseRecoverModernGUI {
         }
         if (batchTargets.isEmpty()) {
             scanBatch(true);
+            return;
+        }
+        if (!hasExecutableBatchTargets()) {
+            setStatus("扫描结果没有可处理的应用，请重新扫描", false);
             return;
         }
         final boolean usePatch = batchWay3.isSelected();
