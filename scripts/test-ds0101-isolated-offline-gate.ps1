@@ -127,6 +127,13 @@ public final class DS0101OfflineProbe {
         '--product', 'itmcIEC') 45
     $unregisteredLocalAccepted = $beforeLocal.ExitCode -eq 0 -and
         $beforeLocal.Out.Contains('LEGACY_NATIVE_LOCAL_CHECK_OK')
+    $unregisteredWebSite = Join-Path $temp 'web-before-registration'
+    Copy-Item -LiteralPath $copy -Destination $unregisteredWebSite -Recurse -Force
+    $webBefore = Invoke-Native $hostExe @(
+        'legacy-web-probe', (Join-Path $unregisteredWebSite 'bin'),
+        '--product', 'itmcIEC') 45
+    $webBeforeAccepted = $webBefore.ExitCode -eq 0 -and
+        $webBefore.Out.Contains('LEGACY_WEB_CHECK_ACCEPTED')
     $submitted = Invoke-Native $hostExe @(
         'legacy-doreg', $copyBin, '--product', 'itmcIEC',
         '--seq', $request, '--code', $candidate) 45
@@ -146,6 +153,13 @@ public final class DS0101OfflineProbe {
         'legacy-verify', (Join-Path $localSite 'bin'), '--product', 'itmcIEC') 45
     $verifiedAfterLocal = $afterLocalVerify.ExitCode -eq 0 -and
         $afterLocalVerify.Out.Contains('LEGACY_NATIVE_CHECKREG_OK')
+    $registeredWebSite = Join-Path $temp 'web-after-registration'
+    Copy-Item -LiteralPath $copy -Destination $registeredWebSite -Recurse -Force
+    $webAfter = Invoke-Native $hostExe @(
+        'legacy-web-probe', (Join-Path $registeredWebSite 'bin'),
+        '--product', 'itmcIEC') 45
+    $webAfterAccepted = $webAfter.ExitCode -eq 0 -and
+        $webAfter.Out.Contains('LEGACY_WEB_CHECK_ACCEPTED')
     $verified = Invoke-Native $hostExe @(
         'legacy-verify', $copyBin, '--product', 'itmcIEC') 45
     $valid = $verified.ExitCode -eq 0 -and $verified.Out.Contains('LEGACY_NATIVE_CHECKREG_OK')
@@ -201,6 +215,10 @@ public final class DS0101OfflineProbe {
         nativeCheckReInfoAndWebCheckRegPassed = $valid
         nativeLocalCheckSignatureSupported = $localSignatureSupported
         nativeCheckLocalRegPassed = $nativeLocalAccepted
+        nativeWebCheckBeforeRegistrationPassed = $webBeforeAccepted
+        nativeWebCheckAfterRegistrationPassed = $webAfterAccepted
+        nativeWebCheckBeforeExitCode = $webBefore.ExitCode
+        nativeWebCheckAfterExitCode = $webAfter.ExitCode
         nativeLocalCheckBeforeRegistrationPassed = $unregisteredLocalAccepted
         nativeVerifyAfterLocalCheckPassed = $verifiedAfterLocal
         nativeVerifyAfterLocalCheckExitCode = $afterLocalVerify.ExitCode
