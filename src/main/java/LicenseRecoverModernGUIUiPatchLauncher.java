@@ -196,11 +196,16 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
             generation.setText(detection.kind.toString());
             family.setText(value(detection.productName));
             runtime.setText(value(detection.productName));
-            regStr.setText(".NET 由对应适配器自动识别");
+            boolean legacyCandidate = detection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
+                    && LicenseRecoverModernGUIAutoRecovery.supportsLegacyFamilyRecovery(detection);
+            regStr.setText(legacyCandidate ? value(detection.versionId) : ".NET 由对应适配器自动识别");
             targets.setText("config.xml / 授权 sidecar（按检测结果）");
-            jar.setText("不适用");
+            jar.setText(legacyCandidate ? "原生 ITMC.Regedit（执行前检查 ABI）" : "不适用");
             verify.setText(detection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
-                    ? "待执行: 写回解密校验" : "不支持一键写回：DS01xx 旧版协议（未修改文件）");
+                    ? "待执行: 写回解密校验"
+                    : (legacyCandidate
+                        ? "DS01xx 同族候选：待原生接口与注册校验"
+                        : "旧协议证据不足：仅支持只读诊断"));
         } else {
             generation.setText("未识别"); family.setText("—"); runtime.setText("—"); regStr.setText("—"); targets.setText("—");
             jar.setText("—"); verify.setText("未识别到支持的授权结构");
@@ -262,6 +267,8 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
             summary = "生成结果解析失败：辅助程序已返回，但没有读取到完整的申请号或授权码。";
         } else if ("DOREG".equals(stage)) {
             summary = "本地注册提交失败，目标 DoRegistry() 没有接受本次授权数据。";
+        } else if ("LEGACY_ABI".equals(stage)) {
+            summary = "目标 DS01xx 注册接口签名与共享协议不兼容；未进行注册写入。";
         } else if ("VERIFY".equals(stage)) {
             summary = "写入后的原生校验失败，目标 CheckReInfo() 没有确认授权状态。";
         } else if ("PRE_BLOCK".equals(stage)) {
