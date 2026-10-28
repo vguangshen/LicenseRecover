@@ -13,6 +13,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.concurrent.TimeoutException;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -73,6 +74,33 @@ public final class RefactorSmokeTest {
 
     public static void main(String[] args) throws Exception {
         Path base = Files.createTempDirectory("licenserecover-smoke");
+
+        check("ok".equals(LicenseRecoverModernGUI.runBoundedBatchInspection(
+                        () -> "ok", 2000L)),
+                "batch scan completes ordinary metadata checks within its timeout");
+        long batchStart = System.nanoTime();
+        boolean batchTimeout = false;
+        try {
+            LicenseRecoverModernGUI.runBoundedBatchInspection(() -> {
+                Thread.sleep(15000L);
+                return "unexpected";
+            }, 80L);
+        } catch (TimeoutException expected) {
+            batchTimeout = true;
+        }
+        check(batchTimeout && java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                        System.nanoTime() - batchStart) < 3000L,
+                "batch scan times out slow directories without blocking the remaining scan");
+        check("next".equals(LicenseRecoverModernGUI.runBoundedBatchInspection(
+                        () -> "next", 2000L)),
+                "batch scan continues after a timed-out directory");
+
+        Path invalidLogs = base.resolve("not-a-directory");
+        Files.write(invalidLogs, new byte[]{1});
+        long logStart = System.nanoTime();
+        LicenseRecoverSharedLog.append(invalidLogs.toFile(), "asynchronous log probe");
+        check(java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - logStart) < 2000L,
+                "GUI file logging returns promptly even when log storage is invalid");
 
         check("fwq".equals(LicenseRecover.LOCAL_AUTH_USER_ID),
                 "local authorization UserID fixed to fwq");
