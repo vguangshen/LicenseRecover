@@ -710,6 +710,8 @@ public final class LicenseRecoverModernGUI {
         setStatusInfo("正在扫描子目录：0 / " + total);
         appendLog("[批量扫描] 开始扫描 " + total + " 个子目录。\n");
 
+        batchTargets.clear();
+        batchRunButton.setEnabled(false);
         batchWorker = new SwingWorker<Void, BatchScanRow>() {
             private int detectedCount;
             private int skippedCount;
