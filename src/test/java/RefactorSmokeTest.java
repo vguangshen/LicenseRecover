@@ -1493,7 +1493,7 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         String nativeBridgeSource = new String(Files.readAllBytes(
                 Paths.get("src/dotnet/LicenseRecover.AspNetBridge.cs")), StandardCharsets.UTF_8);
         int probeDispatch = nativeHostSource.indexOf("return LicenseRecoverLegacyMetadataProbe.Inspect(runtimeDir)");
-        int helperSelect = nativeHostSource.indexOf("helper = SelectHelper(toolDir, runtimeDir, out chain)");
+        int helperSelect = nativeHostSource.indexOf("helper = SelectHelper(toolDir, runtimeDir, args[0], out chain)");
         int probeBodyStart = nativeHostSource.indexOf("internal static class LicenseRecoverLegacyMetadataProbe");
         String offlineProbeSource = probeBodyStart < 0 ? "" : nativeHostSource.substring(probeBodyStart);
         check(probeDispatch >= 0 && helperSelect > probeDispatch,
