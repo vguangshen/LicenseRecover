@@ -404,6 +404,21 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         dialog.setVisible(true);
     }
 
+    // Progress is deliberately derived only from fixed stage markers. Never
+    // put machine IDs, raw native stdout or authorization strings in the label.
+    static String oneClickStageFromLog(String line) {
+        if (line == null) return null;
+        if (line.contains("[dotnet-stage] PRE_BLOCK:")) return "Windows 防火墙隔离";
+        if (line.contains("[dotnet-stage] GENCODE:")) return "生成本机申请号";
+        if (line.contains("[dotnet-stage] GENCODE_PARSE:")) return "校验申请号格式";
+        if (line.contains("[dotnet-stage] DOREG:")) return "写入原生注册记录";
+        if (line.contains("[dotnet-stage] VERIFY:")) return "原生注册与网站校验";
+        if (line.contains("[rollback-dotnet]")) return "恢复原始注册文件";
+        if (line.contains("[NATIVE_TIMEOUT]")) return "原生进程超时";
+        if (line.contains("[one-click] detect:")) return "检查软件授权结构";
+        return null;
+    }
+
     private static void runOneClick(final JFrame frame, final JButton button,
                                     final JLabel generationValue, final JLabel familyValue, final JLabel runtimeValue,
                                     final JTextArea regStrValue, final JTextArea targetValue,
@@ -459,16 +474,31 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         final boolean doBlock = blockNet == null || blockNet.isSelected();
         final boolean preview = dryRun != null && dryRun.isSelected();
         refreshPlan(frame, generationValue, familyValue, runtimeValue, regStrValue, targetValue, jarValue, verifyValue);
-        verifyValue.setText(preview ? "预览执行中..." : "执行并校验中...");
+        final String[] activeStage = {preview ? "预览检测中" : "准备执行本地授权检查"};
+        final long startNanos = System.nanoTime();
+        verifyValue.setText(activeStage[0]);
         button.setEnabled(false);
         append(logArea, "\n===== 一键恢复授权 =====\n");
+        final javax.swing.Timer elapsedTimer = new javax.swing.Timer(1000, event -> {
+            long seconds = java.util.concurrent.TimeUnit.NANOSECONDS.toSeconds(
+                    System.nanoTime() - startNanos);
+            verifyValue.setText(activeStage[0] + "（已用时 " + seconds + " 秒）");
+        });
+        elapsedTimer.start();
 
         new SwingWorker<LicenseRecoverModernGUIAutoRecovery.Result, Void>() {
             protected LicenseRecoverModernGUIAutoRecovery.Result doInBackground() {
                 return LicenseRecoverModernGUIAutoRecovery.recover(
-                        selected, doBackup, doBlock, preview, s -> append(logArea, s));
+                        selected, doBackup, doBlock, preview, line -> {
+                            append(logArea, line);
+                            String stage = oneClickStageFromLog(line);
+                            if (stage != null) SwingUtilities.invokeLater(() -> {
+                                activeStage[0] = stage;
+                            });
+                        });
             }
             protected void done() {
+                elapsedTimer.stop();
                 button.setEnabled(true);
                 try {
                     LicenseRecoverModernGUIAutoRecovery.Result result = get();
