@@ -16,7 +16,11 @@ cat > "$tmp/Regedit.cs" <<'CS'
 using System;
 using System.IO;
 namespace ITMC.Regedit {
-  public sealed class RegeditInfo {}
+  public sealed class RegeditInfo {
+    public string ProName { get; set; }
+    public string RegStr { get; set; }
+    public DateTime EndDate { get; set; }
+  }
   public sealed class RegeditMain {
     static RegeditMain() {
       File.WriteAllText(Environment.GetEnvironmentVariable("DS0101_PROBE_TRIPWIRE"), "executed");
@@ -26,6 +30,7 @@ namespace ITMC.Regedit {
     public string NewRegistry() { throw new InvalidOperationException(); }
     public bool DoRegistry(string request, string code) { throw new InvalidOperationException(); }
     public bool CheckReInfo(ref RegeditInfo info) { throw new InvalidOperationException(); }
+    public bool CheckLocalReg(ref RegeditInfo info) { throw new InvalidOperationException(); }
   }
 }
 CS
@@ -86,7 +91,7 @@ if mono "$tmp/host/LicenseRecover.NET.AspNetHost.exe" legacy-probe \
   echo "Invalid registration signature was incorrectly accepted" >&2
   exit 1
 fi
-grep -q 'DS0101 native signatures do not match' "$tmp/invalid.out"
+grep -q 'DS01xx native signatures do not match' "$tmp/invalid.out"
 test ! -e "$DS0101_PROBE_TRIPWIRE"
 
 if mono "$tmp/host/LicenseRecover.NET.AspNetHost.exe" legacy-probe \
