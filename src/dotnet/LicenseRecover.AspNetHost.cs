@@ -35,7 +35,8 @@ internal static class LicenseRecoverAspNetHost
     {
         if (string.Equals(command, "legacy-gencode", StringComparison.OrdinalIgnoreCase)
             || string.Equals(command, "legacy-doreg", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(command, "legacy-verify", StringComparison.OrdinalIgnoreCase))
+            || string.Equals(command, "legacy-verify", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(command, "legacy-local-probe", StringComparison.OrdinalIgnoreCase))
         {
             if (!File.Exists(Path.Combine(runtimeDir, "ITMC.Regedit.dll")))
                 throw new FileNotFoundException("DS0101 uppercase registration DLL is required");
