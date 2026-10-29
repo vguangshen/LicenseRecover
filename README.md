@@ -2,7 +2,7 @@
 
 ITMC 云实训平台离线授权恢复工具，支持 Java 与 .NET 应用。项目面向原授权服务不可用后的本地恢复场景，保留 Java 8 / Windows 7 / Windows Server 2008 兼容边界。
 
-当前稳定版本：**v1.2.65**（批量执行勾选与授权状态区分）。
+当前稳定版本：**v1.2.67**（修复批量扫描时缺失 `LicenseRecoverReadOnlyPatchScanner$Runtime` 的运行时打包问题；真实授权检测证据仍需审核）。
 
 ## 下载
 

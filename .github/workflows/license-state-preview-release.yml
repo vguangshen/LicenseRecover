@@ -1,0 +1,98 @@
+name: Publish license-state scan preview (verified PR build)
+
+# One-off, branch-scoped preview publisher. Merely pushing future source
+# commits does NOT publish a release. Only edits to this explicit workflow can
+# trigger it; the release consumes a pinned, already successful CI artifact.
+on:
+  push:
+    branches:
+      - feat/license-state-evidence-20261029
+    paths:
+      - .github/workflows/license-state-preview-release.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  verified-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: 24ff9c6bbb3641de63fd6b5364e2b3c9ad021a3a
+      VERIFIED_RUN: "40910830083"
+      PREVIEW_TAG: license-state-preview-20261029-24ff9c6
+    steps:
+      - name: Require verified PR build and both Windows integration checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "vguangshen/LicenseRecover"
+          test "$GITHUB_REF" = "refs/heads/feat/license-state-evidence-20261029"
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$VERIFIED_RUN")"
+          jq -e --arg sha "$SOURCE_SHA" '
+            .status == "completed" and .conclusion == "success" and
+            .head_sha == $sha and .name == "Verify source"
+          ' <<<"$run_json"
+          all="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SOURCE_SHA&per_page=100")"
+          for name in "Verify source" "Uppercase ITMC.Regedit Windows integration v2" "Dual registration DLL Windows integration v3"; do
+            jq -e --arg sha "$SOURCE_SHA" --arg name "$name" '
+              any(.workflow_runs[]; .head_sha == $sha and .name == $name and
+                  .status == "completed" and .conclusion == "success")
+            ' <<<"$all"
+          done
+          if gh release view "$PREVIEW_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Preview Release already exists: $PREVIEW_TAG; refusing to modify it" >&2
+            exit 1
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$PREVIEW_TAG" >/dev/null 2>&1; then
+            echo "Preview tag already exists without a release: $PREVIEW_TAG; refusing to overwrite" >&2
+            exit 1
+          fi
+      - name: Download CI-tested portable and update ZIPs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p preview
+          gh run download "$VERIFIED_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name LicenseRecover-latest --dir preview
+          test -s preview/LicenseRecover-latest.zip
+          test -s preview/LicenseRecover-update.zip
+          test -s preview/SHA256SUMS.txt
+          (cd preview && sha256sum --check SHA256SUMS.txt)
+          unzip -Z1 preview/LicenseRecover-latest.zip | grep -Eq '(^|/)LicenseRecoverGUI\.exe$'
+          unzip -Z1 preview/LicenseRecover-latest.zip | grep -Eq '(^|/)LicenseRecoverRuntime\.jar$'
+          unzip -Z1 preview/LicenseRecover-latest.zip | grep -Eq '(^|/)jre/bin/javaw\.exe$'
+          unzip -Z1 preview/LicenseRecover-update.zip | grep -Eq '(^|/)LicenseRecoverRuntime\.jar$'
+      - name: Publish single immutable preview pre-release
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > preview/RELEASE_NOTES.md <<EOF
+          ## LicenseRecover 授权状态只读扫描测试版（非正式版）
+
+          此版本专供 Windows 本地测试。**不会**替换 v1.2.65 正式版，不会通过应用内自动更新分发。
+
+          - 已通过 Verify source 和两项 Windows integration CI。
+          - 支持批量扫描状态五色逻辑：深绿=已独立验证原生有效；浅绿=可信原版/Patch 双指纹确认修改；白色=原生校验确认无效；灰色=未验证；红色=检测错误。
+          - 已加入可信指纹集合的路径/版本校验、多文件一致性、硬链接防重复以及两遍 SHA-256 复核。
+          - **重要限制**：正式可信原版/Patch 指纹注册表仍为空；当前 Java/.NET 原生校验器尚未通过独立无副作用审计，因此真实软件多数会显示灰色“未验证”。本版本不能声称真实软件已激活、授权无效或确认 Patch。
+          - 不要将看到配置、备份、RegStr、历史 Patch 记录或方法签名当成有效授权证据。
+          - 建议先复制应用目录，在隔离的测试环境中扫描；不要执行一键恢复/方式三写入操作来测试本功能。
+
+          **来源提交**：\`$SOURCE_SHA\`  
+          **已通过的 GitHub Actions**：https://github.com/$GITHUB_REPOSITORY/actions/runs/$VERIFIED_RUN  
+          **开发 PR**：https://github.com/$GITHUB_REPOSITORY/pull/54
+
+          下载 \`LicenseRecover-latest.zip\`（完整便携包，含内置 Windows JRE），解压后运行 \`LicenseRecoverGUI.exe\`；更新包 \`LicenseRecover-update.zip\` 供已有测试环境手工升级使用。请用 \`SHA256SUMS.txt\` 校验哈希。
+          EOF
+          gh release create "$PREVIEW_TAG" \
+            preview/LicenseRecover-latest.zip \
+            preview/LicenseRecover-update.zip \
+            preview/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title "LicenseRecover read-only license-state preview ($SOURCE_SHA)" \
+            --notes-file preview/RELEASE_NOTES.md \
+            --prerelease

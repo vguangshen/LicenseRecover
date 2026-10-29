@@ -180,6 +180,14 @@ $runtimeClasspath = $verifyDir + $classpathSeparator + $testDir + $classpathSepa
 $runTestArgs = @('-cp', $runtimeClasspath, 'RefactorSmokeTest')
 Invoke-External -Command 'java' -ArgumentList $runTestArgs
 
+$licenseStateTest = Join-Path $repoRoot 'src/test/java/LicenseRecoverLicenseStateTest.java'
+Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $licenseStateTest)
+Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverLicenseStateTest')
+
+$netRemoverScanTest = Join-Path $repoRoot 'src/test/java/NetRemoverReadOnlyScanTest.java'
+Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $netRemoverScanTest)
+Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'NetRemoverReadOnlyScanTest')
+
 Write-Host 'Verifying LicenseRecover.NET helper command surface...'
 $nativeHelper = Join-Path $repoRoot 'LicenseRecover.NET/LicenseRecover.NET.exe'
 if (-not (Test-Path -LiteralPath $nativeHelper)) { throw 'Missing LicenseRecover.NET.exe.' }
@@ -299,6 +307,30 @@ if (-not $autoSource.Contains('[dotnet-mode-verify] persisted root RegStr=')) { 
 if (-not $autoSource.Contains('registrationProduct')) { throw '.NET app product and lowercase registration crypto family are not separated.' }
 if (-not $autoSource.Contains('hasDotNetAuthorizationConfigStructure')) { throw 'Modern .NET pre-block cannot distinguish unrelated config.xml files.' }
 if ($autoSource.Contains('String updated = putElement(original, "Service", BLOCK_ENDPOINT);\n            validateXml(updated);') -and -not $autoSource.Contains('[pre-block-skip]')) { throw 'Modern .NET pre-block still aborts on unrelated config.xml files.' }
+# Native verification currently has unreviewed write/network side effects.
+# Keep batch inspection strictly on metadata and read-only SHA-256 evidence
+# until target-native verifier entrypoints have separate safety approval.
+$batchInspectStart = $modernGuiSource.IndexOf('private BatchScanInspection inspectBatchDirectory(')
+$batchInspectEnd = $modernGuiSource.IndexOf('private boolean hasExecutableBatchTargets()', $batchInspectStart)
+if ($batchInspectStart -lt 0 -or $batchInspectEnd -le $batchInspectStart) {
+    throw 'Cannot isolate the batch inspection method for read-only safety validation.'
+}
+$batchInspectSource = $modernGuiSource.Substring($batchInspectStart, $batchInspectEnd - $batchInspectStart)
+if (([regex]::Matches($batchInspectSource, 'LicenseRecoverReadOnlyPatchScanner\.scan\s*\(')).Count -ne 2) {
+    throw 'Java and .NET batch inspection must use the reviewed read-only fingerprint scanner.'
+}
+foreach ($unsafeCall in @(
+    'runJavaHost(', 'runNativeCapture(', 'new ProcessBuilder(',
+    'Runtime.getRuntime().exec(', 'nativeVerification(',
+    'LicenseRecoverJavaHost.', 'LicenseRecoverModernGUIAutoRecovery.recoverDotNet(',
+    'LicenseRecoverModernGUIAutoRecovery.recoverJava('
+)) {
+    if ($batchInspectSource.Contains($unsafeCall)) {
+        throw "Batch inspection calls unapproved native execution/verification: $unsafeCall"
+    }
+}
+Write-Host 'Batch inspection native-execution exclusion: PASS (source-level guard only)'
+
 if (-not $modernGuiSource.Contains('appendPersistentLog')) { throw 'Modern GUI persistent diagnostics are missing.' }
 if (-not $uiPatchSource.Contains('appendPersistentOneClickLog')) { throw 'One-click overlay persistent diagnostics are missing.' }
 if (-not $uiPatchSource.Contains('showOneClickFailureDialog')) { throw 'Structured one-click failure dialog is missing.' }
@@ -353,6 +385,9 @@ $classPrefixes = @(
     'BatchTarget',
     'ConfigSafety',
     'LicenseRecoverModernGUI',
+    'LicenseRecoverLicenseState',
+    'LicenseRecoverReadOnlyFingerprint',
+    'LicenseRecoverReadOnlyPatchScanner',
     'LicenseRecoverSharedLog',
     'LicenseRecoverJavaHost',
     'JavaRegistrationRuntimeProfile',
@@ -394,6 +429,22 @@ $listOverlayArgs = @('tf', $overlayJar)
 $overlayEntries = @(Invoke-External -Command 'jar' -ArgumentList $listOverlayArgs)
 if ($overlayEntries -notcontains 'LicenseRecoverSharedLog.class') {
     throw 'Overlay is missing LicenseRecoverSharedLog.class; batch scan would fail with NoClassDefFoundError.'
+}
+# Fail the CI build if any of the scanner's link-time dependencies are missing
+# from the RUNTIME jar. Source-only tests cannot catch shipped ClassNotFound errors.
+foreach ($required in @(
+    'LicenseRecoverReadOnlyFingerprint.class',
+    'LicenseRecoverReadOnlyPatchScanner.class',
+    'LicenseRecoverReadOnlyPatchScanner$Runtime.class',
+    'LicenseRecoverReadOnlyPatchScanner$Reviewed.class',
+    'LicenseRecoverLicenseState.class',
+    'LicenseRecoverLicenseState$Authorization.class',
+    'LicenseRecoverLicenseState$CodeIntegrity.class',
+    'LicenseRecoverLicenseState$VisualStatus.class'
+)) {
+    if ($overlayEntries -notcontains $required) {
+        throw "Shipped runtime is missing read-only scan dependency: $required"
+    }
 }
 if ($overlayEntries -notcontains 'LicenseRecoverModernGUI.class') {
     throw 'Overlay is missing LicenseRecoverModernGUI.class.'
@@ -442,6 +493,17 @@ Invoke-External -Command 'javac' -ArgumentList @(
 Invoke-External -Command 'java' -ArgumentList @(
     '-cp', ($protocolRuntimeClasspath + $classpathSeparator + $testDir),
     'LegacyProtocolDistributionSmokeTest', $runtimeJar)
+
+# Exercise the actual shipped JAR-first classpath; never build/verify. The
+# scanner's nested Runtime enum was absent from v1.2.66 release ZIP, causing
+# NoClassDefFoundError for every scanned application despite passing source CI.
+$scanDistributionTest = Join-Path $testSourceDir 'LicenseRecoverDistributionReadOnlySmokeTest.java'
+Invoke-External -Command 'javac' -ArgumentList @(
+    '-encoding', 'UTF-8', '-cp', $protocolRuntimeClasspath,
+    '-d', $testDir, $scanDistributionTest)
+Invoke-External -Command 'java' -ArgumentList @(
+    '-cp', ($protocolRuntimeClasspath + $classpathSeparator + $testDir),
+    'LicenseRecoverDistributionReadOnlySmokeTest', $runtimeJar)
 
 if ($overlayEntries -notcontains 'LicenseRecoverJavaHost.class') {
     throw 'Overlay is missing LicenseRecoverJavaHost.class; Java target-native recovery cannot run.'

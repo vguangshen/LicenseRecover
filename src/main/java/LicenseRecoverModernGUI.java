@@ -1,6 +1,8 @@
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.TableCellRenderer;
 import java.awt.*;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
@@ -64,6 +66,7 @@ public final class LicenseRecoverModernGUI {
 
     private final JTextField batchRootField = new JTextField();
     private static final int BATCH_COL_SELECTED = 0;
+    private static final int BATCH_COL_LICENSE_STATE = 8;
     private static final int BATCH_COL_VERIFY = 9;
     private static final int BATCH_COL_STATUS = 10;
     private final DefaultTableModel batchModel = new DefaultTableModel(
@@ -71,7 +74,25 @@ public final class LicenseRecoverModernGUI {
         public boolean isCellEditable(int row, int column) { return column == BATCH_COL_SELECTED && (batchWorker == null || batchWorker.isDone()); }
         public Class<?> getColumnClass(int column) { return column == BATCH_COL_SELECTED ? Boolean.class : String.class; }
     };
-    private final JTable batchTable = new JTable(batchModel);
+    private final JTable batchTable = new JTable(batchModel) {
+        @Override public String getToolTipText(java.awt.event.MouseEvent event) {
+            int viewRow = rowAtPoint(event.getPoint());
+            if (viewRow < 0) return null;
+            int modelRow = convertRowIndexToModel(viewRow);
+            String state = String.valueOf(getModel().getValueAt(modelRow, BATCH_COL_LICENSE_STATE));
+            LicenseRecoverLicenseState.VisualStatus visual =
+                    LicenseRecoverLicenseState.visualStatus(state);
+            if (visual == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED)
+                return "确认代码已 Patch，按约定显示浅绿色；原生授权结果以状态文字为准，Patch 本身不等于原生校验成功";
+            if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_VALID)
+                return "目标软件原生只读校验确认授权有效，按约定显示深绿色";
+            if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID)
+                return "目标软件原生校验明确返回授权无效";
+            if (visual == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR)
+                return "扫描异常或超时；不能判断当前授权是否有效";
+            return "当前没有足够的原生校验或代码比对证据；不代表未激活";
+        }
+    };
     private final List<BatchTarget> batchTargets = new ArrayList<BatchTarget>();
     private final JRadioButton batchWay1 = new JRadioButton("一键恢复授权（推荐）", true);
     private final JRadioButton batchWay3 = new JRadioButton("方式三：移除联网授权代码");
@@ -128,7 +149,7 @@ public final class LicenseRecoverModernGUI {
         static BatchScanInspection failed(File child, String reason) {
             return new BatchScanInspection(BatchTarget.skipped(child.getName()),
                     new Object[]{child.getName(), "检测未完成", "—", "—", "—", "—", "—",
-                            "—", reason, child.getAbsolutePath()}, 0, 0, 1, reason);
+                            "检测失败", "—", reason, child.getAbsolutePath()}, 0, 0, 1, reason);
         }
     }
 
@@ -441,12 +462,73 @@ public final class LicenseRecoverModernGUI {
         batchTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
         int[] widths = new int[]{52, 120, 170, 105, 95, 115, 180, 200, 110, 140, 85, 320};
         for (int i = 0; i < widths.length; i++) batchTable.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
-        root.add(new JScrollPane(batchTable), BorderLayout.CENTER);
+        // Color is driven by current evidence, never by historical tool operations.
+        batchTable.setDefaultRenderer(String.class, new DefaultTableCellRenderer() {
+            @Override public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean selected, boolean focused, int viewRow, int viewColumn) {
+                Component component = super.getTableCellRendererComponent(table, value,
+                        selected, focused, viewRow, viewColumn);
+                applyBatchEvidenceColors(table, component, selected, viewRow);
+                return component;
+            }
+        });
+        final TableCellRenderer checkboxRenderer = batchTable.getDefaultRenderer(Boolean.class);
+        batchTable.setDefaultRenderer(Boolean.class, (table, value, selected, focused, viewRow, viewColumn) -> {
+            Component component = checkboxRenderer.getTableCellRendererComponent(
+                    table, value, selected, focused, viewRow, viewColumn);
+            applyBatchEvidenceColors(table, component, selected, viewRow);
+            return component;
+        });
+        JPanel results = new JPanel(new BorderLayout(0, 5));
+        results.add(new JScrollPane(batchTable), BorderLayout.CENTER);
+        JLabel legend = new JLabel("状态颜色：深绿=原生激活   浅绿=确认 Patch   白色=原生校验无效   灰色=未验证   红色=检测失败");
+        legend.setFont(legend.getFont().deriveFont(11f));
+        legend.setBorder(new EmptyBorder(3, 7, 3, 7));
+        results.add(legend, BorderLayout.SOUTH);
+        root.add(results, BorderLayout.CENTER);
 
         batchProgress.setStringPainted(true);
         batchProgress.setString("未开始");
         root.add(batchProgress, BorderLayout.SOUTH);
         return root;
+    }
+
+    /** Selection is based on current scan evidence, not prior tool execution history. */
+    private static void applyBatchEvidenceColors(JTable table, Component component,
+                                                  boolean selected, int viewRow) {
+        int modelRow = table.convertRowIndexToModel(viewRow);
+        Object raw = table.getModel().getValueAt(modelRow, BATCH_COL_LICENSE_STATE);
+        String state = raw == null ? "" : raw.toString();
+        Color background;
+        Color foreground;
+        LicenseRecoverLicenseState.VisualStatus visual = LicenseRecoverLicenseState.visualStatus(state);
+        if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_VALID) {
+            background = new Color(22, 94, 58);
+            foreground = Color.WHITE;
+        } else if (visual == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED) {
+            background = new Color(205, 239, 210);
+            foreground = new Color(20, 75, 37);
+        } else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID) {
+            background = Color.WHITE;
+            foreground = Color.BLACK;
+        } else if (visual == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR) {
+            background = new Color(165, 45, 45);
+            foreground = Color.WHITE;
+        } else {
+            // UNVERIFIED: a neutral light gray, distinct from the white
+            // background reserved for a verified invalid native license.
+            background = new Color(241, 243, 246);
+            foreground = new Color(55, 65, 81);
+        }
+        // Keep evidence colors visible even when selecting rows.
+        component.setBackground(background);
+        component.setForeground(foreground);
+        if (component instanceof JComponent) ((JComponent) component).setOpaque(true);
+        if (component instanceof JCheckBox) {
+            JCheckBox checkbox = (JCheckBox) component;
+            checkbox.setHorizontalAlignment(SwingConstants.CENTER);
+            checkbox.setBorderPainted(false);
+        }
     }
 
     private void updateBatchOperationUi() {
@@ -801,7 +883,8 @@ public final class LicenseRecoverModernGUI {
                 for (BatchScanRow row : chunks) {
                     batchTargets.add(row.target);
                     Object[] selectableCells = new Object[row.cells.length + 1];
-                    selectableCells[0] = Boolean.valueOf(row.target != null && row.target.type != BatchTarget.Type.NONE);
+                    selectableCells[0] = Boolean.valueOf(row.target != null && row.target.type != BatchTarget.Type.NONE
+                            && LicenseRecoverLicenseState.selectedByDefault(String.valueOf(row.cells[7])));
                     System.arraycopy(row.cells, 0, selectableCells, 1, row.cells.length);
                     batchModel.addRow(selectableCells);
                     batchProgress.setMaximum(Math.max(1, row.total));
@@ -905,16 +988,29 @@ public final class LicenseRecoverModernGUI {
                             target = BatchTarget.javaTarget(child.getName(), info.appRoot, info.libDir);
                             LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(info.appRoot);
                             String verifyText = !plan.detected ? "待识别"
-                                    : (plan.automaticRecoveryReady ? "待执行: RegisterMain"
+                                    : (plan.automaticRecoveryReady ? "未执行: RegisterMain 原生校验"
                                     : "未执行: " + plan.recoveryReadiness);
                             String statusText = !plan.detected ? "待识别"
                                     : (plan.automaticRecoveryReady ? "待处理" : "待确认");
+                            LicenseRecoverLicenseState licenseState =
+                                    LicenseRecoverReadOnlyPatchScanner.scan(info.libDir,
+                                            LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, plan.softVersionId);
+                            if (licenseState.isScanError()) {
+                                // Keep the red row and the aggregate error count consistent.
+                                // A failed read-only inspection is not a verified invalid license.
+                                errorCount = 1;
+                                statusText = "检测失败";
+                                diagnostic = "只读指纹检测失败: " + licenseState.evidence;
+                                verifyText += "；" + diagnostic;
+                            } else if (licenseState.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED
+                                    || licenseState.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL)
+                                verifyText += "；只读代码比对：" + licenseState.evidence;
                             cells = new Object[]{child.getName(),
                                     plan.detected ? "Java / " + plan.generation : "Java",
                                     valueOrDash(plan.softVersionId), valueOrDash(plan.authorizationFamily),
                                     valueOrDash(plan.runtimeProductId), plan.regStrSummary(), plan.configTargets,
-                                    "未验证", verifyText, statusText, info.appRoot.getAbsolutePath()};
-                            detectedCount = 1;
+                                    licenseState.display(), verifyText, statusText, info.appRoot.getAbsolutePath()};
+                            detectedCount = errorCount == 0 ? 1 : 0;
                         } else if (info.type == AppInfo.Type.DOTNET) {
                             target = BatchTarget.dotNetTarget(child.getName(), info.binDir);
                             LicenseRecoverModernGUIAutoRecovery.Detection d =
@@ -927,20 +1023,35 @@ public final class LicenseRecoverModernGUI {
                                     : LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(d));
                             boolean dotNetIdentityReady = d.productName != null && !d.productName.trim().isEmpty();
                             boolean dotNetRegReady = dotNetRegStr != null && !dotNetRegStr.trim().isEmpty();
+                            boolean knownDs0101DllPair = "DS0101".equalsIgnoreCase(d.versionId)
+                                    && LicenseRecoverModernGUIAutoRecovery.isKnownDs0101RegistrationPair(d.runtimeDir);
                             String verify = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
                                     ? (dotNetIdentityReady && dotNetRegReady
-                                            ? "待执行: DoRegistry + CheckReInfo"
+                                            ? "未执行: DoRegistry + CheckReInfo"
                                             : "未执行: DLL注册证据不足")
-                                    : (ds0101Ready ? "待执行: 原生离线注册 + 网站校验"
+                                    : (ds0101Ready ? "未执行: 原生离线注册 + 网站校验"
                                             : "禁止自动写回：旧版 .NET 协议");
                             String dotNetStatus = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
                                     ? (ds0101Ready ? "待原生校验" : "不支持自动写回")
                                     : ((!dotNetIdentityReady || !dotNetRegReady) ? "待确认" : "待处理");
+                            if (knownDs0101DllPair)
+                                verify = "已识别 DS0101 双 DLL 精确 SHA-256（授权未验证）";
+                            LicenseRecoverLicenseState licenseState =
+                                    LicenseRecoverReadOnlyPatchScanner.scan(info.binDir,
+                                            LicenseRecoverReadOnlyPatchScanner.Runtime.DOTNET, d.versionId);
+                            if (licenseState.isScanError()) {
+                                errorCount = 1;
+                                dotNetStatus = "检测失败";
+                                diagnostic = "只读指纹检测失败: " + licenseState.evidence;
+                                verify += "；" + diagnostic;
+                            } else if (licenseState.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED
+                                    || licenseState.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL)
+                                verify += "；只读代码比对：" + licenseState.evidence;
                             cells = new Object[]{child.getName(), kind,
                                     valueOrDash(d.versionId), valueOrDash(d.productName), valueOrDash(d.productName),
-                                    valueOrDash(dotNetRegStr), "config.xml", "未验证", verify, dotNetStatus,
+                                    valueOrDash(dotNetRegStr), "config.xml", licenseState.display(), verify, dotNetStatus,
                                     info.binDir.getAbsolutePath()};
-                            detectedCount = 1;
+                            detectedCount = errorCount == 0 ? 1 : 0;
                         } else {
                             target = BatchTarget.skipped(child.getName());
                             cells = new Object[]{child.getName(), "—", "—", "—", "—", "—", "—", "未知", "—",

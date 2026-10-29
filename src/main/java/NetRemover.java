@@ -171,10 +171,13 @@ public class NetRemover {
                 for (String m : PATCH_METHODS) if (hasMarker(b, m)) pm.append(m).append(" ");
                 if (pm.length() > 0) {
                     log.accept("    可补丁移除的联网授权方法: " + pm.toString().trim());
-                    boolean already = isRmPatched(b, loadKeystream());
-                    log.accept(already
-                        ? "    ★ 该 RegisterMain 已补丁（联网授权代码已移除），无需重复修补。"
-                        : "    ★ 无论是否已脱壳，只要含以上方法即可用「移除联网授权并回写」清理");
+                    // Missing strings are only a heuristic: an original build may
+                    // never have contained these markers. No original-version
+                    // fingerprint or reviewed patch signature is checked here.
+                    // In particular, do not advertise "already patched" from
+                    // isRmPatched(), which is used by the legacy write path.
+                    log.accept("    ★ 只读扫描：发现可识别的注册方法，但不能确认已 Patch。");
+                    log.accept("      需要匹配已审核的原版指纹与补丁字节码特征；联网标记缺失不等于 Patch 成功。");
                 } else {
                     log.accept("    未发现可补丁的联网授权方法（可能已清理过或非授权版本）");
                 }
