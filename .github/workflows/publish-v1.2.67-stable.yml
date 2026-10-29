@@ -77,7 +77,7 @@ jobs:
           (cd stable && sha256sum --check SHA256SUMS.txt)
           for package in LicenseRecover-latest.zip LicenseRecover-update.zip; do
             got="$(unzip -p "stable/$package" VERSION.txt | tr -d '\r\n[:space:]')"
-            test "$got" = "1.2.66" || {
+            test "$got" = "1.2.67" || {
               echo "$package has wrong internal VERSION.txt: $got" >&2
               exit 1
             }
