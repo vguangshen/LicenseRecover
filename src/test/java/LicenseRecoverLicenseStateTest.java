@@ -33,6 +33,17 @@ public final class LicenseRecoverLicenseStateTest {
         check(LicenseRecoverLicenseState.visualStatus("已确认 Patch（授权未验证）")
                 == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED,
                 "patch color must not imply native license validity");
+        LicenseRecoverLicenseState invalidAndPatched =
+                LicenseRecoverLicenseState.combine(
+                        LicenseRecoverLicenseState.nativeVerification(false, "native check returned invalid"),
+                        LicenseRecoverLicenseState.codeComparison(true, "known-version bytecode diff"));
+        check(invalidAndPatched.display().contains("未激活（代码已 Patch）"),
+                "a patch must never hide a failed native license check");
+        check(invalidAndPatched.visualStatus()
+                == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID,
+                "native invalid takes precedence over patch color");
+        check(LicenseRecoverLicenseState.visualStatus(invalidAndPatched.display())
+                == invalidAndPatched.visualStatus(), "typed and table status must agree");
         boolean rejected = false;
         try { LicenseRecoverLicenseState.nativeVerification(true, ""); }
         catch (IllegalArgumentException expected) { rejected = true; }
