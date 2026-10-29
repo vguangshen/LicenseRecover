@@ -180,6 +180,10 @@ $runtimeClasspath = $verifyDir + $classpathSeparator + $testDir + $classpathSepa
 $runTestArgs = @('-cp', $runtimeClasspath, 'RefactorSmokeTest')
 Invoke-External -Command 'java' -ArgumentList $runTestArgs
 
+$licenseStateTest = Join-Path $repoRoot 'src/test/java/LicenseRecoverLicenseStateTest.java'
+Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $licenseStateTest)
+Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverLicenseStateTest')
+
 Write-Host 'Verifying LicenseRecover.NET helper command surface...'
 $nativeHelper = Join-Path $repoRoot 'LicenseRecover.NET/LicenseRecover.NET.exe'
 if (-not (Test-Path -LiteralPath $nativeHelper)) { throw 'Missing LicenseRecover.NET.exe.' }
