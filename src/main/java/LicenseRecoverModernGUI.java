@@ -730,8 +730,10 @@ public final class LicenseRecoverModernGUI {
                     listingError = "无法读取批量父目录，请检查目录权限或磁盘状态";
                     return null;
                 }
-                Arrays.sort(children);
                 total = children.length;
+                appendLog("[批量扫描] 已枚举 " + total + " 个子目录，开始排序。\n");
+                Arrays.sort(children);
+                appendLog("[批量扫描] 子目录排序完成。\n");
                 if (total == 0) {
                     emptyDirectory = true;
                     return null;
