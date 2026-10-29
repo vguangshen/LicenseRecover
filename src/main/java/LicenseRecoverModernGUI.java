@@ -436,6 +436,7 @@ public final class LicenseRecoverModernGUI {
         batchTable.setRowHeight(Math.max(batchTable.getRowHeight(), 27));
         batchTable.getTableHeader().setReorderingAllowed(false);
         batchTable.setAutoCreateRowSorter(true);
+        batchTable.getColumnModel().getColumn(BATCH_COL_SELECTED).setMaxWidth(65);
         batchTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         batchTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
         int[] widths = new int[]{52, 120, 170, 105, 95, 115, 180, 200, 140, 85, 320};
@@ -960,9 +961,9 @@ public final class LicenseRecoverModernGUI {
     }
 
     private boolean hasExecutableBatchTargets() {
-        for (BatchTarget target : batchTargets) {
-            int row = batchTargets.indexOf(target);
-            if (target != null && target.type != BatchTarget.Type.NONE && row >= 0
+        for (int row = 0; row < batchTargets.size(); row++) {
+            BatchTarget target = batchTargets.get(row);
+            if (target != null && target.type != BatchTarget.Type.NONE
                     && Boolean.TRUE.equals(batchModel.getValueAt(row, BATCH_COL_SELECTED))) return true;
         }
         return false;
@@ -1021,7 +1022,7 @@ public final class LicenseRecoverModernGUI {
                     BatchTarget target = batchTargets.get(row);
                     final int currentRow = row;
                     if (!selectedRows[row] || target.type == BatchTarget.Type.NONE) {
-                        if (!selectedRows[row]) appendLog("[batch] 用户取消勾选，跳过：" + target.name + "\\n");
+                        if (!selectedRows[row]) appendLog("[batch] 用户取消勾选，跳过：" + target.name + "\n");
                         done++;
                         updateBatchProgress(done, "跳过 " + target.name);
                         continue;
