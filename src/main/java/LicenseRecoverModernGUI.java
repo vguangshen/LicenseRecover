@@ -431,8 +431,12 @@ public final class LicenseRecoverModernGUI {
         root.add(top, BorderLayout.NORTH);
 
         batchTable.setFillsViewportHeight(true);
+        batchTable.setRowHeight(Math.max(batchTable.getRowHeight(), 27));
+        batchTable.getTableHeader().setReorderingAllowed(false);
+        batchTable.setAutoCreateRowSorter(true);
+        batchTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         batchTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-        int[] widths = new int[]{120, 190, 120, 100, 120, 220, 230, 160, 90, 420};
+        int[] widths = new int[]{120, 170, 105, 95, 115, 180, 200, 140, 85, 320};
         for (int i = 0; i < widths.length; i++) batchTable.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
         root.add(new JScrollPane(batchTable), BorderLayout.CENTER);
 
@@ -459,9 +463,23 @@ public final class LicenseRecoverModernGUI {
         JPanel panel = new JPanel(new BorderLayout(6, 4));
         panel.setBorder(BorderFactory.createTitledBorder("运行日志"));
         logArea.setEditable(false);
-        logArea.setRows(9);
+        logArea.setRows(7);
         logArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-        panel.add(new JScrollPane(logArea), BorderLayout.CENTER);
+        final JScrollPane logScroll = new JScrollPane(logArea);
+        final JToggleButton logToggle = new JToggleButton("展开运行日志");
+        logToggle.setToolTipText("按需查看完整执行日志，不影响日志记录");
+        logScroll.setVisible(false);
+        logToggle.addActionListener(e -> {
+            boolean expanded = logToggle.isSelected();
+            logScroll.setVisible(expanded);
+            logToggle.setText(expanded ? "收起运行日志" : "展开运行日志");
+            panel.revalidate();
+            panel.repaint();
+        });
+        JPanel logHeader = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+        logHeader.add(logToggle);
+        panel.add(logHeader, BorderLayout.NORTH);
+        panel.add(logScroll, BorderLayout.CENTER);
         statusLabel.setBorder(new EmptyBorder(2, 2, 0, 2));
         panel.add(statusLabel, BorderLayout.SOUTH);
         return panel;
