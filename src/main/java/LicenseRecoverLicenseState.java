@@ -67,7 +67,17 @@ public final class LicenseRecoverLicenseState {
         NATIVE_VALID, PATCHED_UNVERIFIED, NATIVE_INVALID, SCAN_ERROR, UNVERIFIED
     }
 
-    /** Centralized display classification; unknown strings never become proof. */
+    /** A typed state is authoritative; the label is only for display. */
+    public VisualStatus visualStatus() {
+        if (authorization == Authorization.ERROR || codeIntegrity == CodeIntegrity.ERROR)
+            return VisualStatus.SCAN_ERROR;
+        if (authorization == Authorization.VERIFIED_VALID) return VisualStatus.NATIVE_VALID;
+        if (authorization == Authorization.VERIFIED_INVALID) return VisualStatus.NATIVE_INVALID;
+        if (codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED) return VisualStatus.PATCHED_UNVERIFIED;
+        return VisualStatus.UNVERIFIED;
+    }
+
+    /** Compatibility for the existing table; unrecognized labels stay unverified. */
     public static VisualStatus visualStatus(String label) {
         if (label == null) return VisualStatus.UNVERIFIED;
         if (label.startsWith("检测失败")) return VisualStatus.SCAN_ERROR;
@@ -96,6 +106,8 @@ public final class LicenseRecoverLicenseState {
         if (authorization == Authorization.VERIFIED_VALID && codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED)
             return "已验证激活（代码已 Patch）";
         if (authorization == Authorization.VERIFIED_VALID) return "已验证激活";
+        if (authorization == Authorization.VERIFIED_INVALID && codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED)
+            return "已验证未激活（代码已 Patch）";
         if (authorization == Authorization.VERIFIED_INVALID) return "已验证未激活";
         if (codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED) return "已确认 Patch（授权未验证）";
         if (codeIntegrity == CodeIntegrity.CONFIRMED_ORIGINAL) return "原始代码（授权未验证）";
