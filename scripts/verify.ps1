@@ -307,6 +307,30 @@ if (-not $autoSource.Contains('[dotnet-mode-verify] persisted root RegStr=')) { 
 if (-not $autoSource.Contains('registrationProduct')) { throw '.NET app product and lowercase registration crypto family are not separated.' }
 if (-not $autoSource.Contains('hasDotNetAuthorizationConfigStructure')) { throw 'Modern .NET pre-block cannot distinguish unrelated config.xml files.' }
 if ($autoSource.Contains('String updated = putElement(original, "Service", BLOCK_ENDPOINT);\n            validateXml(updated);') -and -not $autoSource.Contains('[pre-block-skip]')) { throw 'Modern .NET pre-block still aborts on unrelated config.xml files.' }
+# Native verification currently has unreviewed write/network side effects.
+# Keep batch inspection strictly on metadata and read-only SHA-256 evidence
+# until target-native verifier entrypoints have separate safety approval.
+$batchInspectStart = $modernGuiSource.IndexOf('private BatchScanInspection inspectBatchDirectory(')
+$batchInspectEnd = $modernGuiSource.IndexOf('private boolean hasExecutableBatchTargets()', $batchInspectStart)
+if ($batchInspectStart -lt 0 -or $batchInspectEnd -le $batchInspectStart) {
+    throw 'Cannot isolate the batch inspection method for read-only safety validation.'
+}
+$batchInspectSource = $modernGuiSource.Substring($batchInspectStart, $batchInspectEnd - $batchInspectStart)
+if (([regex]::Matches($batchInspectSource, 'LicenseRecoverReadOnlyPatchScanner\.scan\s*\(')).Count -ne 2) {
+    throw 'Java and .NET batch inspection must use the reviewed read-only fingerprint scanner.'
+}
+foreach ($unsafeCall in @(
+    'runJavaHost(', 'runNativeCapture(', 'new ProcessBuilder(',
+    'Runtime.getRuntime().exec(', 'nativeVerification(',
+    'LicenseRecoverJavaHost.', 'LicenseRecoverModernGUIAutoRecovery.recoverDotNet(',
+    'LicenseRecoverModernGUIAutoRecovery.recoverJava('
+)) {
+    if ($batchInspectSource.Contains($unsafeCall)) {
+        throw "Batch inspection calls unapproved native execution/verification: $unsafeCall"
+    }
+}
+Write-Host 'Batch inspection native-execution exclusion: PASS (source-level guard only)'
+
 if (-not $modernGuiSource.Contains('appendPersistentLog')) { throw 'Modern GUI persistent diagnostics are missing.' }
 if (-not $uiPatchSource.Contains('appendPersistentOneClickLog')) { throw 'One-click overlay persistent diagnostics are missing.' }
 if (-not $uiPatchSource.Contains('showOneClickFailureDialog')) { throw 'Structured one-click failure dialog is missing.' }
