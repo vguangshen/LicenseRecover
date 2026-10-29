@@ -246,6 +246,10 @@ public final class LicenseRecoverLicenseStateTest {
                 } finally {
                     java.nio.file.Files.deleteIfExists(hardlink);
                 }
+                // Put the first reviewed file in the exact patched state:
+                // skipping an invalid version key would otherwise turn the
+                // entire mixed/incomplete evidence set light green.
+                java.nio.file.Files.write(artifact, "reviewed-patch".getBytes("UTF-8"));
                 // A corrupt reviewed registry must never silently drop a
                 // required entry and confirm a partial artifact set.
                 for (LicenseRecoverReadOnlyPatchScanner.Reviewed malformedEntry :
