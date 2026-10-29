@@ -64,8 +64,17 @@ public final class LicenseRecoverReadOnlyPatchScanner {
             if (candidate == null || candidate.runtime != runtime || candidate.version == null
                     || !detectedVersion.equalsIgnoreCase(candidate.version)) continue;
             matched++;
-            String relative = candidate.relativeArtifact == null ? ""
-                    : candidate.relativeArtifact.replace('\\', '/').toLowerCase(java.util.Locale.ROOT);
+            // Normalize aliases before counting independent reviewed artifacts.
+            // Otherwise "bin/./X.dll" and "bin/X.dll" can count as two files.
+            String relative;
+            try {
+                relative = Paths.get(candidate.relativeArtifact == null ? ""
+                        : candidate.relativeArtifact.replace('\\', '/'))
+                        .normalize().toString().replace('\\', '/')
+                        .toLowerCase(java.util.Locale.ROOT);
+            } catch (InvalidPathException ex) {
+                return LicenseRecoverLicenseState.scanError("审核指纹包含非法相对路径");
+            }
             if (!seenPaths.add(relative)) {
                 incomplete = true; // Conflicting or duplicate baselines are not independent evidence.
                 continue;
