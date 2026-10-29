@@ -479,7 +479,7 @@ public final class LicenseRecoverModernGUI {
         });
         JPanel results = new JPanel(new BorderLayout(0, 5));
         results.add(new JScrollPane(batchTable), BorderLayout.CENTER);
-        JLabel legend = new JLabel("状态颜色：深绿=原生校验有效   浅绿=确认 Patch（授权未验证）   淡红=原生校验无效   灰色=未验证   红色=检测失败");
+        JLabel legend = new JLabel("状态颜色：深绿=原生激活   浅绿=确认 Patch   淡红=原生校验无效   灰色=未验证   红色=检测失败");
         legend.setFont(legend.getFont().deriveFont(11f));
         legend.setBorder(new EmptyBorder(3, 7, 3, 7));
         results.add(legend, BorderLayout.SOUTH);
@@ -520,6 +520,11 @@ public final class LicenseRecoverModernGUI {
         component.setBackground(background);
         component.setForeground(foreground);
         if (component instanceof JComponent) ((JComponent) component).setOpaque(true);
+        if (component instanceof JCheckBox) {
+            JCheckBox checkbox = (JCheckBox) component;
+            checkbox.setHorizontalAlignment(SwingConstants.CENTER);
+            checkbox.setBorderPainted(false);
+        }
     }
 
     private void updateBatchOperationUi() {
