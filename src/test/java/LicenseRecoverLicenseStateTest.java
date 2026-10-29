@@ -213,6 +213,32 @@ public final class LicenseRecoverLicenseStateTest {
                             "malformed reviewed registry entry must fail closed");
                 }
                 java.nio.file.Files.write(artifact, "reviewed-patch".getBytes("UTF-8"));
+                // A malformed *matching* trusted baseline must report a
+                // scan error (red), not silently become a gray unknown. None
+                // of these records can establish original or Patch status.
+                for (LicenseRecoverReadOnlyPatchScanner.Reviewed malformedFingerprint :
+                        new LicenseRecoverReadOnlyPatchScanner.Reviewed[]{
+                                new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                        LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                                        null, originalHash, patchedHash),
+                                new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                        LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                                        " ", originalHash, patchedHash),
+                                new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                        LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                                        "bin/Companion.bin", "invalid-hash", patchedHash),
+                                new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                        LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                                        "bin/Companion.bin", originalHash, "invalid-hash"),
+                                new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                        LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                                        "bin/Companion.bin", originalHash, originalHash)}) {
+                    check(LicenseRecoverReadOnlyPatchScanner.scanReviewed(
+                            root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                            new LicenseRecoverReadOnlyPatchScanner.Reviewed[]{fixture, malformedFingerprint})
+                            .visualStatus() == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR,
+                            "malformed reviewed fingerprint must be a scan error");
+                }
                 // Different spellings of the same file are not two independent
                 // audited artifacts. An alias must never turn the row light green.
                 for (String alias : new String[]{"./bin/RegisterMain.bin",
