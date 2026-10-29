@@ -128,9 +128,15 @@ public final class LicenseRecoverReadOnlyPatchScanner {
             Path artifact = root.resolve(relative).normalize();
             if (!artifact.startsWith(root))
                 return LicenseRecoverLicenseState.scanError("审核指纹路径越过应用目录");
-            // Reject symlinks at every traversed component, not just the file.
-            if (Files.isSymbolicLink(root))
-                return LicenseRecoverLicenseState.scanError("运行目录为符号链接");
+            // A nested runtime root may be inside a symlinked parent.
+            // Checking only root and relative components misses that escape.
+            Path rootCursor = root.getRoot();
+            for (Path part : root) {
+                rootCursor = rootCursor == null ? part : rootCursor.resolve(part);
+                if (Files.isSymbolicLink(rootCursor))
+                    return LicenseRecoverLicenseState.scanError("运行目录或上级目录含符号链接");
+            }
+            // Reject symlinks at every relative component, not just the file.
             Path cursor = root;
             for (Path part : relative) {
                 cursor = cursor.resolve(part);
