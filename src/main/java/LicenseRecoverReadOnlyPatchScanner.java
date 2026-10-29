@@ -39,6 +39,10 @@ public final class LicenseRecoverReadOnlyPatchScanner {
 
     private LicenseRecoverReadOnlyPatchScanner() { }
 
+    private static boolean isSha256(String value) {
+        return value != null && value.matches("(?i)[0-9a-f]{64}");
+    }
+
     public static LicenseRecoverLicenseState scan(File runtimeRoot, Runtime runtime,
                                                    String detectedVersion) {
         return scanReviewed(runtimeRoot, runtime, detectedVersion, REVIEWED);
@@ -70,6 +74,14 @@ public final class LicenseRecoverReadOnlyPatchScanner {
             if (candidate.runtime != runtime || !detectedVersion.equalsIgnoreCase(candidate.version))
                 continue;
             matched++;
+            // An incomplete or contradictory trusted baseline is a registry
+            // error, not an ordinary unknown target. Never silently downgrade
+            // corrupt reviewed evidence to an unverified artifact.
+            if (candidate.relativeArtifact == null || candidate.relativeArtifact.trim().isEmpty()
+                    || !isSha256(candidate.originalSha256)
+                    || !isSha256(candidate.patchedSha256)
+                    || candidate.originalSha256.equalsIgnoreCase(candidate.patchedSha256))
+                return LicenseRecoverLicenseState.scanError("审核指纹记录缺少目标路径或有效的原版/Patch 双指纹");
             // Normalize aliases before counting independent reviewed artifacts.
             // Otherwise "bin/./X.dll" and "bin/X.dll" can count as two files.
             String relative;
