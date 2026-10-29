@@ -184,6 +184,10 @@ $licenseStateTest = Join-Path $repoRoot 'src/test/java/LicenseRecoverLicenseStat
 Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $licenseStateTest)
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverLicenseStateTest')
 
+$netRemoverScanTest = Join-Path $repoRoot 'src/test/java/NetRemoverReadOnlyScanTest.java'
+Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $netRemoverScanTest)
+Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'NetRemoverReadOnlyScanTest')
+
 Write-Host 'Verifying LicenseRecover.NET helper command surface...'
 $nativeHelper = Join-Path $repoRoot 'LicenseRecover.NET/LicenseRecover.NET.exe'
 if (-not (Test-Path -LiteralPath $nativeHelper)) { throw 'Missing LicenseRecover.NET.exe.' }
