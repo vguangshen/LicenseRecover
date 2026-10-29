@@ -193,6 +193,25 @@ public final class LicenseRecoverLicenseStateTest {
                         new LicenseRecoverReadOnlyPatchScanner.Reviewed[]{fixture, fixture})
                         .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
                         "duplicate audited paths must not count as independent evidence");
+                // A corrupt reviewed registry must never silently drop a
+                // required entry and confirm a partial artifact set.
+                for (LicenseRecoverReadOnlyPatchScanner.Reviewed invalid :
+                        new LicenseRecoverReadOnlyPatchScanner.Reviewed[]{
+                                null,
+                                new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                        LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, null,
+                                        "bin/Companion.bin", originalHash, patchedHash),
+                                new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                        null, "DS0101", "bin/Companion.bin", originalHash, patchedHash),
+                                new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                        LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, " ",
+                                        "bin/Companion.bin", originalHash, patchedHash)}) {
+                    check(LicenseRecoverReadOnlyPatchScanner.scanReviewed(
+                            root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                            new LicenseRecoverReadOnlyPatchScanner.Reviewed[]{fixture, invalid})
+                            .visualStatus() == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR,
+                            "malformed reviewed registry entry must fail closed");
+                }
                 java.nio.file.Files.write(artifact, "reviewed-patch".getBytes("UTF-8"));
                 // Different spellings of the same file are not two independent
                 // audited artifacts. An alias must never turn the row light green.
