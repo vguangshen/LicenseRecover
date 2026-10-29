@@ -1,0 +1,115 @@
+name: Publish verified LicenseRecover v1.2.66 stable update
+
+# Isolated publication branch. This does NOT merge PR #54 or push main.
+# Run exactly once when this new workflow is introduced on the release branch.
+on:
+  push:
+    branches:
+      - release/v1.2.66-ci-publish-20261029
+    paths:
+      - .github/workflows/publish-v1.2.66-stable.yml
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish-stable:
+    name: Validate CI artifacts and publish stable v1.2.66
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: 8041642b524bab1a674533b947e7f125ae061629
+      VERIFIED_RUN: "40943229012"
+      TAG: v1.2.66
+    steps:
+      - name: Wait for validated source and both Windows integration workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "vguangshen/LicenseRecover"
+          test "$GITHUB_REF" = "refs/heads/release/v1.2.66-ci-publish-20261029"
+          for i in $(seq 1 60); do
+            run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$VERIFIED_RUN")"
+            state="$(jq -r '.status' <<<"$run_json")"
+            conclusion="$(jq -r '.conclusion // ""' <<<"$run_json")"
+            sha="$(jq -r '.head_sha' <<<"$run_json")"
+            test "$sha" = "$SOURCE_SHA"
+            if [[ "$state" == "completed" ]]; then
+              test "$conclusion" = "success" || { echo "Verified source workflow did not pass: $conclusion" >&2; exit 1; }
+              break
+            fi
+            echo "Verify source is $state (attempt $i/60)"
+            sleep 15
+          done
+          test "$state" = "completed" && test "$conclusion" = "success"
+          all="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SOURCE_SHA&per_page=100")"
+          for name in "Verify source" "Uppercase ITMC.Regedit Windows integration v2" "Dual registration DLL Windows integration v3"; do
+            jq -e --arg sha "$SOURCE_SHA" --arg name "$name" '
+              any(.workflow_runs[]; .head_sha == $sha and .name == $name
+                and .status == "completed" and .conclusion == "success")
+            ' <<<"$all"
+          done
+          last="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')"
+          test "$last" = "v1.2.65" || {
+            echo "Unexpected existing stable release $last; refusing publication" >&2
+            exit 1
+          }
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; refusing to overwrite" >&2
+            exit 1
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists; refusing to replace it" >&2
+            exit 1
+          fi
+      - name: Download exact CI-built ZIPs and validate checksums and version
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stable
+          gh run download "$VERIFIED_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name LicenseRecover-latest --dir stable
+          for asset in LicenseRecover-latest.zip LicenseRecover-update.zip SHA256SUMS.txt; do
+            test -s "stable/$asset"
+          done
+          (cd stable && sha256sum --check SHA256SUMS.txt)
+          for package in LicenseRecover-latest.zip LicenseRecover-update.zip; do
+            got="$(unzip -p "stable/$package" VERSION.txt | tr -d '\r\n[:space:]')"
+            test "$got" = "1.2.66" || {
+              echo "$package has wrong internal VERSION.txt: $got" >&2
+              exit 1
+            }
+            unzip -Z1 "stable/$package" | grep -Eq '(^|/)LicenseRecoverRuntime\.jar$'
+          done
+          unzip -Z1 stable/LicenseRecover-latest.zip | grep -Eq '(^|/)LicenseRecoverGUI\.exe$'
+          unzip -Z1 stable/LicenseRecover-latest.zip | grep -Eq '(^|/)jre/bin/javaw\.exe$'
+          unzip -p stable/LicenseRecover-update.zip RELEASE_NOTES.md > stable/RELEASE_NOTES.md
+          grep -q "v1.2.66" stable/RELEASE_NOTES.md
+          grep -q "可信原版/Patch 指纹库" stable/RELEASE_NOTES.md
+      - name: Publish official stable release for existing auto-updater
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            stable/LicenseRecover-latest.zip \
+            stable/LicenseRecover-update.zip \
+            stable/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title "LicenseRecover v1.2.66" \
+            --notes-file stable/RELEASE_NOTES.md \
+            --latest
+          for i in $(seq 1 12); do
+            latest="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')"
+            if [[ "$latest" == "$TAG" ]]; then
+              echo "LATEST_STABLE_RELEASE=$latest"
+              echo "AUTO_UPDATE_READY=https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG"
+              exit 0
+            fi
+            echo "GitHub latest release still $latest; checking visibility ($i/12)"
+            sleep 5
+          done
+          echo "Official release created, but /releases/latest did not select $TAG" >&2
+          exit 1
