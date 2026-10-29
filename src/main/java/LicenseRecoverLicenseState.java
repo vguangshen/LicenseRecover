@@ -46,6 +46,23 @@ public final class LicenseRecoverLicenseState {
                 evidence, "versioned-code-comparison");
     }
 
+    /**
+     * Merge two independently established facts without promoting a patch to
+     * a valid license. Evidence must remain traceable to its verifier.
+     */
+    public static LicenseRecoverLicenseState combine(LicenseRecoverLicenseState nativeState,
+                                                      LicenseRecoverLicenseState codeState) {
+        if (nativeState == null || codeState == null)
+            throw new IllegalArgumentException("both evidence channels are required");
+        if (!"target-native".equals(nativeState.source))
+            throw new IllegalArgumentException("native evidence must come from target verifier");
+        if (!"versioned-code-comparison".equals(codeState.source))
+            throw new IllegalArgumentException("patch evidence must come from versioned comparison");
+        return new LicenseRecoverLicenseState(nativeState.authorization, codeState.codeIntegrity,
+                "native: " + nativeState.evidence + "; code: " + codeState.evidence,
+                "target-native+versioned-code-comparison");
+    }
+
     public boolean selectedByDefault() {
         if (authorization == Authorization.ERROR || codeIntegrity == CodeIntegrity.ERROR) return false;
         if (authorization == Authorization.VERIFIED_VALID) return false;
@@ -55,6 +72,8 @@ public final class LicenseRecoverLicenseState {
 
     public String display() {
         if (authorization == Authorization.ERROR || codeIntegrity == CodeIntegrity.ERROR) return "检测失败";
+        if (authorization == Authorization.VERIFIED_VALID && codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED)
+            return "已验证激活（代码已 Patch）";
         if (authorization == Authorization.VERIFIED_VALID) return "已验证激活";
         if (authorization == Authorization.VERIFIED_INVALID) return "已验证未激活";
         if (codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED) return "已确认 Patch（授权未验证）";
