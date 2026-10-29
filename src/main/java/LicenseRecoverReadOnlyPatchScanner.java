@@ -149,8 +149,18 @@ public final class LicenseRecoverReadOnlyPatchScanner {
                 if (Files.isSymbolicLink(cursor))
                     return LicenseRecoverLicenseState.scanError("审核目标路径含符号链接");
             }
-            if (!Files.exists(artifact, LinkOption.NOFOLLOW_LINKS))
+            // Files.exists() can return false on permission or metadata I/O
+            // errors. Distinguish a genuinely missing file (gray) from a
+            // failed read-only inspection (red).
+            try {
+                Files.readAttributes(artifact, java.nio.file.attribute.BasicFileAttributes.class,
+                        LinkOption.NOFOLLOW_LINKS);
+            } catch (java.nio.file.NoSuchFileException ex) {
                 return LicenseRecoverLicenseState.unverified("目标文件缺失，不能确认 Patch");
+            } catch (java.io.IOException ex) {
+                return LicenseRecoverLicenseState.scanError(
+                        "审核目标属性读取失败: " + ex.getClass().getSimpleName());
+            }
             return LicenseRecoverReadOnlyFingerprint.compare(
                     artifact.toFile(), detectedVersion, reviewed.version,
                     reviewed.originalSha256, reviewed.patchedSha256);
