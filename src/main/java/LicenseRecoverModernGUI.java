@@ -986,7 +986,7 @@ public final class LicenseRecoverModernGUI {
                             target = BatchTarget.javaTarget(child.getName(), info.appRoot, info.libDir);
                             LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(info.appRoot);
                             String verifyText = !plan.detected ? "待识别"
-                                    : (plan.automaticRecoveryReady ? "待执行: RegisterMain"
+                                    : (plan.automaticRecoveryReady ? "未执行: RegisterMain 原生校验"
                                     : "未执行: " + plan.recoveryReadiness);
                             String statusText = !plan.detected ? "待识别"
                                     : (plan.automaticRecoveryReady ? "待处理" : "待确认");
@@ -1013,9 +1013,9 @@ public final class LicenseRecoverModernGUI {
                                     && LicenseRecoverModernGUIAutoRecovery.isKnownDs0101RegistrationPair(d.runtimeDir);
                             String verify = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
                                     ? (dotNetIdentityReady && dotNetRegReady
-                                            ? "待执行: DoRegistry + CheckReInfo"
+                                            ? "未执行: DoRegistry + CheckReInfo"
                                             : "未执行: DLL注册证据不足")
-                                    : (ds0101Ready ? "待执行: 原生离线注册 + 网站校验"
+                                    : (ds0101Ready ? "未执行: 原生离线注册 + 网站校验"
                                             : "禁止自动写回：旧版 .NET 协议");
                             String dotNetStatus = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
                                     ? (ds0101Ready ? "待原生校验" : "不支持自动写回")
