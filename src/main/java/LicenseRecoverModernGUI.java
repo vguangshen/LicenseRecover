@@ -31,7 +31,7 @@ import java.util.regex.Pattern;
  */
 public final class LicenseRecoverModernGUI {
     private static final long PROCESS_TIMEOUT_SECONDS = 600L;
-    private static final long BATCH_SCAN_DIRECTORY_TIMEOUT_MILLIS = 20000L;
+    private static final long BATCH_SCAN_DIRECTORY_TIMEOUT_MILLIS = 5000L;
     // Bound orphaned metadata-read threads if Windows/native I/O ignores interruption.
     private static final Semaphore BATCH_SCAN_INSPECTION_PERMITS = new Semaphore(4);
     private static final AtomicInteger BATCH_SCAN_THREAD_IDS = new AtomicInteger();
@@ -700,40 +700,52 @@ public final class LicenseRecoverModernGUI {
             return;
         }
 
-        File parent = new File(batchRootField.getText().trim());
-        File[] children = parent.isDirectory() ? parent.listFiles(File::isDirectory) : null;
-        if (children == null) {
+        final File parent = new File(batchRootField.getText().trim());
+        if (!parent.isDirectory()) {
             setStatus("批量父目录无效", false);
             return;
         }
-        Arrays.sort(children);
-
         batchTargets.clear();
         batchModel.setRowCount(0);
-        final int total = children.length;
-        batchProgress.setIndeterminate(false);
-        batchProgress.setMinimum(0);
-        batchProgress.setMaximum(Math.max(1, total));
-        batchProgress.setValue(0);
-        batchProgress.setString(total == 0 ? "扫描完成：0 个目录" : "准备扫描：0 / " + total);
-
-        if (total == 0) {
-            setStatus("批量扫描完成：父目录下没有子目录", true);
-            return;
-        }
-
+        batchProgress.setIndeterminate(true);
+        batchProgress.setString("正在读取子目录...");
         batchScanButton.setEnabled(false);
         batchRunButton.setEnabled(false);
         batchCancelButton.setEnabled(true);
-        setStatusInfo("正在扫描子目录：0 / " + total);
-        appendLog("[批量扫描] 开始扫描 " + total + " 个子目录。\n");
+        setStatusInfo("正在读取子目录，可随时取消");
 
         batchWorker = new SwingWorker<Void, BatchScanRow>() {
             private int detectedCount;
             private int skippedCount;
             private int errorCount;
+            private int total;
+            private String listingError;
+            private boolean emptyDirectory;
 
             protected Void doInBackground() {
+                // Directory enumeration can block on Windows; keep it off the EDT.
+                File[] children = parent.listFiles(File::isDirectory);
+                if (isCancelled()) return null;
+                if (children == null) {
+                    listingError = "无法读取批量父目录，请检查目录权限或磁盘状态";
+                    return null;
+                }
+                Arrays.sort(children);
+                total = children.length;
+                if (total == 0) {
+                    emptyDirectory = true;
+                    return null;
+                }
+                SwingUtilities.invokeLater(() -> {
+                    if (isCancelled()) return;
+                    batchProgress.setIndeterminate(false);
+                    batchProgress.setMinimum(0);
+                    batchProgress.setMaximum(total);
+                    batchProgress.setValue(0);
+                    batchProgress.setString("准备扫描：0 / " + total);
+                    setStatusInfo("正在扫描子目录：0 / " + total);
+                });
+                appendLog("[批量扫描] 开始扫描 " + total + " 个子目录。\n");
                 for (int i = 0; i < children.length; i++) {
                     if (isCancelled()) break;
                     final File child = children[i];
@@ -748,6 +760,7 @@ public final class LicenseRecoverModernGUI {
                         setStatusInfo("正在扫描：" + child.getName() + "（" + current + " / " + total + "）");
                     });
 
+                    appendLog("[批量扫描] 检测 " + current + "/" + total + ": " + child.getName() + "\n");
                     BatchScanInspection inspection;
                     try {
                         inspection = runBoundedBatchInspection(
@@ -758,13 +771,14 @@ public final class LicenseRecoverModernGUI {
                         break;
                     } catch (TimeoutException ex) {
                         inspection = BatchScanInspection.failed(child,
-                                "检测超时（20 秒），已跳过该目录的深入识别；其他目录继续扫描");
+                                "检测超时（5 秒），已跳过该目录的深入识别；其他目录继续扫描");
                     } catch (Exception ex) {
                         String msg = ex.getMessage();
                         inspection = BatchScanInspection.failed(child,
                                 ex.getClass().getSimpleName()
                                 + (msg == null ? "" : ": " + msg));
                     }
+                    if (isCancelled()) break;
                     detectedCount += inspection.detected;
                     skippedCount += inspection.skipped;
                     errorCount += inspection.errors;
@@ -806,6 +820,15 @@ public final class LicenseRecoverModernGUI {
                     statusLabel.setText("批量扫描已取消（已完成 " + processed + " / " + total + "）");
                     statusLabel.setForeground(new Color(0x57606a));
                     appendLog("[批量扫描] 已取消，完成 " + processed + " / " + total + " 个目录。\n");
+                } else if (listingError != null) {
+                    batchProgress.setIndeterminate(false);
+                    batchProgress.setString("目录读取失败");
+                    setStatus(listingError, false);
+                    appendLog("[批量扫描] " + listingError + "\n");
+                } else if (emptyDirectory) {
+                    batchProgress.setIndeterminate(false);
+                    batchProgress.setString("扫描完成：0 个目录");
+                    setStatus("批量扫描完成：父目录下没有子目录", true);
                 } else {
                     batchProgress.setValue(total);
                     batchProgress.setString("扫描完成：" + total + " 个目录；识别 " + detectedCount
@@ -822,7 +845,7 @@ public final class LicenseRecoverModernGUI {
                     batchModel.setRowCount(0);
                 }
                 batchWorker = null;
-                if (!cancelled && runAfterScan && hasExecutableBatchTargets()) {
+                if (!cancelled && listingError == null && !emptyDirectory && runAfterScan && hasExecutableBatchTargets()) {
                     SwingUtilities.invokeLater(() -> runBatch());
                 }
             }
@@ -1203,6 +1226,9 @@ public final class LicenseRecoverModernGUI {
         if (batchWorker != null && !batchWorker.isDone()) {
             batchWorker.cancel(true);
             batchCancelButton.setEnabled(false);
+            batchProgress.setIndeterminate(false);
+            batchProgress.setString("正在取消扫描，请稍候...");
+            setStatusInfo("已请求取消批量任务");
             appendLog("[提示] 已请求取消当前批量任务。\n");
         }
     }
@@ -1273,8 +1299,16 @@ public final class LicenseRecoverModernGUI {
         };
         if (SwingUtilities.isEventDispatchThread()) render.run();
         else SwingUtilities.invokeLater(render);
-        // Never wait for filesystem logging on Swing's event dispatch thread.
-        appendPersistentLog(text);
+        // Persistent logging can block on antivirus, slow disks or file locks.
+        // Never perform it on the Swing event dispatch thread.
+        if (SwingUtilities.isEventDispatchThread()) {
+            Thread logWriter = new Thread(() -> appendPersistentLog(text),
+                    "LicenseRecover-BatchLogWriter");
+            logWriter.setDaemon(true);
+            logWriter.start();
+        } else {
+            appendPersistentLog(text);
+        }
     }
 
     private void appendPersistentLog(String text) {
