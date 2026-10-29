@@ -386,6 +386,8 @@ $classPrefixes = @(
     'ConfigSafety',
     'LicenseRecoverModernGUI',
     'LicenseRecoverLicenseState',
+    'LicenseRecoverReadOnlyFingerprint',
+    'LicenseRecoverReadOnlyPatchScanner',
     'LicenseRecoverSharedLog',
     'LicenseRecoverJavaHost',
     'JavaRegistrationRuntimeProfile',
@@ -427,6 +429,22 @@ $listOverlayArgs = @('tf', $overlayJar)
 $overlayEntries = @(Invoke-External -Command 'jar' -ArgumentList $listOverlayArgs)
 if ($overlayEntries -notcontains 'LicenseRecoverSharedLog.class') {
     throw 'Overlay is missing LicenseRecoverSharedLog.class; batch scan would fail with NoClassDefFoundError.'
+}
+# Fail the CI build if any of the scanner's link-time dependencies are missing
+# from the RUNTIME jar. Source-only tests cannot catch shipped ClassNotFound errors.
+foreach ($required in @(
+    'LicenseRecoverReadOnlyFingerprint.class',
+    'LicenseRecoverReadOnlyPatchScanner.class',
+    'LicenseRecoverReadOnlyPatchScanner$Runtime.class',
+    'LicenseRecoverReadOnlyPatchScanner$Reviewed.class',
+    'LicenseRecoverLicenseState.class',
+    'LicenseRecoverLicenseState$Authorization.class',
+    'LicenseRecoverLicenseState$CodeIntegrity.class',
+    'LicenseRecoverLicenseState$VisualStatus.class'
+)) {
+    if ($overlayEntries -notcontains $required) {
+        throw "Shipped runtime is missing read-only scan dependency: $required"
+    }
 }
 if ($overlayEntries -notcontains 'LicenseRecoverModernGUI.class') {
     throw 'Overlay is missing LicenseRecoverModernGUI.class.'
@@ -475,6 +493,17 @@ Invoke-External -Command 'javac' -ArgumentList @(
 Invoke-External -Command 'java' -ArgumentList @(
     '-cp', ($protocolRuntimeClasspath + $classpathSeparator + $testDir),
     'LegacyProtocolDistributionSmokeTest', $runtimeJar)
+
+# Exercise the actual shipped JAR-first classpath; never build/verify. The
+# scanner's nested Runtime enum was absent from v1.2.66 release ZIP, causing
+# NoClassDefFoundError for every scanned application despite passing source CI.
+$scanDistributionTest = Join-Path $testSourceDir 'LicenseRecoverDistributionReadOnlySmokeTest.java'
+Invoke-External -Command 'javac' -ArgumentList @(
+    '-encoding', 'UTF-8', '-cp', $protocolRuntimeClasspath,
+    '-d', $testDir, $scanDistributionTest)
+Invoke-External -Command 'java' -ArgumentList @(
+    '-cp', ($protocolRuntimeClasspath + $classpathSeparator + $testDir),
+    'LicenseRecoverDistributionReadOnlySmokeTest', $runtimeJar)
 
 if ($overlayEntries -notcontains 'LicenseRecoverJavaHost.class') {
     throw 'Overlay is missing LicenseRecoverJavaHost.class; Java target-native recovery cannot run.'
