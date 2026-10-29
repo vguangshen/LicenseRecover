@@ -71,9 +71,9 @@ public final class LicenseRecoverLicenseState {
     public VisualStatus visualStatus() {
         if (authorization == Authorization.ERROR || codeIntegrity == CodeIntegrity.ERROR)
             return VisualStatus.SCAN_ERROR;
+        if (codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED) return VisualStatus.PATCHED_UNVERIFIED;
         if (authorization == Authorization.VERIFIED_VALID) return VisualStatus.NATIVE_VALID;
         if (authorization == Authorization.VERIFIED_INVALID) return VisualStatus.NATIVE_INVALID;
-        if (codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED) return VisualStatus.PATCHED_UNVERIFIED;
         return VisualStatus.UNVERIFIED;
     }
 
@@ -81,6 +81,7 @@ public final class LicenseRecoverLicenseState {
     public static VisualStatus visualStatus(String label) {
         if (label == null) return VisualStatus.UNVERIFIED;
         if (label.startsWith("检测失败")) return VisualStatus.SCAN_ERROR;
+        if (label.contains("代码已 Patch")) return VisualStatus.PATCHED_UNVERIFIED;
         if (label.startsWith("已验证激活")) return VisualStatus.NATIVE_VALID;
         if (label.startsWith("已确认 Patch")) return VisualStatus.PATCHED_UNVERIFIED;
         if (label.startsWith("已验证未激活")) return VisualStatus.NATIVE_INVALID;
