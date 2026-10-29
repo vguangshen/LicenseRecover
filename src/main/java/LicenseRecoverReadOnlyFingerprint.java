@@ -54,9 +54,14 @@ public final class LicenseRecoverReadOnlyFingerprint {
         }
         if (artifact == null) return LicenseRecoverLicenseState.unverified("目标文件不存在");
         Path path = artifact.toPath();
-        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS))
-            return LicenseRecoverLicenseState.unverified("目标不是常规文件或为符号链接");
         try {
+            // isRegularFile() returns false for both non-files and I/O failures.
+            // Read attributes explicitly so permission/read errors are red,
+            // rather than being silently downgraded to gray "unverified".
+            java.nio.file.attribute.BasicFileAttributes attrs = Files.readAttributes(
+                    path, java.nio.file.attribute.BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            if (!attrs.isRegularFile())
+                return LicenseRecoverLicenseState.unverified("目标不是常规文件或为符号链接");
             String actual = digest(path);
             String version = auditedVersion.trim();
             if (actual.equals(originalSha256.toLowerCase(Locale.ROOT)))
@@ -67,7 +72,9 @@ public final class LicenseRecoverReadOnlyFingerprint {
                         "已审核补丁 SHA-256 精确匹配；版本 " + version + "；SHA-256 " + actual);
             return LicenseRecoverLicenseState.unverified(
                     "SHA-256 不匹配已审核原版或补丁，不能据此确认 Patch；版本 " + version);
-        } catch (IOException | NoSuchAlgorithmException ex) {
+        } catch (java.nio.file.NoSuchFileException ex) {
+            return LicenseRecoverLicenseState.unverified("目标文件不存在");
+        } catch (IOException | NoSuchAlgorithmException | SecurityException ex) {
             return LicenseRecoverLicenseState.scanError(
                     "只读 SHA-256 检测失败: " + ex.getClass().getSimpleName());
         }
