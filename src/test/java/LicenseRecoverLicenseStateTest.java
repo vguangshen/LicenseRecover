@@ -214,6 +214,16 @@ public final class LicenseRecoverLicenseStateTest {
                                 new LicenseRecoverReadOnlyPatchScanner.Reviewed[]{fixture, linkedFixture})
                                 .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
                                 "hard-linked paths must not count as two independent reviewed files");
+                        java.nio.file.Files.write(artifact, "reviewed-patch".getBytes("UTF-8"));
+                        try {
+                            check(LicenseRecoverReadOnlyPatchScanner.scanReviewed(
+                                    root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                                    new LicenseRecoverReadOnlyPatchScanner.Reviewed[]{fixture, linkedFixture})
+                                    .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                                    "hard-linked patched bytes must not produce light-green Patch status");
+                        } finally {
+                            java.nio.file.Files.write(artifact, "original-binary".getBytes("UTF-8"));
+                        }
                     }
                 } finally {
                     java.nio.file.Files.deleteIfExists(hardlink);
