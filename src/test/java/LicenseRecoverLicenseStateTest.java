@@ -126,6 +126,7 @@ public final class LicenseRecoverLicenseStateTest {
             java.nio.file.Path root = java.nio.file.Files.createTempDirectory("lr-scanner-");
             java.nio.file.Path bin = java.nio.file.Files.createDirectories(root.resolve("bin"));
             java.nio.file.Path artifact = bin.resolve("RegisterMain.bin");
+            java.nio.file.Path companion = bin.resolve("Companion.bin");
             String originalHash = "bfc8234d0e0f6184640fec12438757ceac504df4ab8b232921b9bb506c981cb1";
             String patchedHash = "ba15b5958ced9058f5441c1b8929a72905e71c2898b82a9eab307b85f78cab07";
             LicenseRecoverReadOnlyPatchScanner.Reviewed fixture =
@@ -158,6 +159,41 @@ public final class LicenseRecoverLicenseStateTest {
                 check("reviewed-patch".equals(new String(
                         java.nio.file.Files.readAllBytes(artifact), "UTF-8")),
                         "fixture scanner must not write the target");
+                // A reviewed patch set is atomic: one matching file must not
+                // turn the whole application light green when another differs.
+                LicenseRecoverReadOnlyPatchScanner.Reviewed companionFixture =
+                        new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                                "bin/Companion.bin", originalHash, patchedHash);
+                LicenseRecoverReadOnlyPatchScanner.Reviewed[] reviewedPair =
+                        new LicenseRecoverReadOnlyPatchScanner.Reviewed[]{fixture, companionFixture};
+                java.nio.file.Files.write(companion, "original-binary".getBytes("UTF-8"));
+                check(LicenseRecoverReadOnlyPatchScanner.scanReviewed(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101", reviewedPair)
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                        "one patched artifact and one original must not confirm the full patch");
+                java.nio.file.Files.write(companion, "reviewed-patch".getBytes("UTF-8"));
+                check(LicenseRecoverReadOnlyPatchScanner.scanReviewed(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101", reviewedPair)
+                        .codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED,
+                        "all reviewed artifacts patched must confirm patch");
+                java.nio.file.Files.write(artifact, "original-binary".getBytes("UTF-8"));
+                java.nio.file.Files.write(companion, "original-binary".getBytes("UTF-8"));
+                check(LicenseRecoverReadOnlyPatchScanner.scanReviewed(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101", reviewedPair)
+                        .codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL,
+                        "all reviewed artifacts original must confirm original code only");
+                java.nio.file.Files.delete(companion);
+                check(LicenseRecoverReadOnlyPatchScanner.scanReviewed(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101", reviewedPair)
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                        "missing companion artifact must not confirm original or patch");
+                check(LicenseRecoverReadOnlyPatchScanner.scanReviewed(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                        new LicenseRecoverReadOnlyPatchScanner.Reviewed[]{fixture, fixture})
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                        "duplicate audited paths must not count as independent evidence");
+                java.nio.file.Files.write(artifact, "reviewed-patch".getBytes("UTF-8"));
                 LicenseRecoverReadOnlyPatchScanner.Reviewed traversal =
                         new LicenseRecoverReadOnlyPatchScanner.Reviewed(
                                 LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
@@ -173,6 +209,7 @@ public final class LicenseRecoverLicenseStateTest {
                         "missing target must not be marked as original or patched");
             } finally {
                 java.nio.file.Files.deleteIfExists(artifact);
+                java.nio.file.Files.deleteIfExists(companion);
                 java.nio.file.Files.deleteIfExists(bin);
                 java.nio.file.Files.deleteIfExists(root);
             }
