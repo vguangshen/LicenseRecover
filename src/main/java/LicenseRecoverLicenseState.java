@@ -73,10 +73,14 @@ public final class LicenseRecoverLicenseState {
         NATIVE_VALID, PATCHED_UNVERIFIED, NATIVE_INVALID, SCAN_ERROR, UNVERIFIED
     }
 
+    /** A failed evidence channel is an inspection error, not a license verdict. */
+    public boolean isScanError() {
+        return authorization == Authorization.ERROR || codeIntegrity == CodeIntegrity.ERROR;
+    }
+
     /** A typed state is authoritative; the label is only for display. */
     public VisualStatus visualStatus() {
-        if (authorization == Authorization.ERROR || codeIntegrity == CodeIntegrity.ERROR)
-            return VisualStatus.SCAN_ERROR;
+        if (isScanError()) return VisualStatus.SCAN_ERROR;
         if (codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED) return VisualStatus.PATCHED_UNVERIFIED;
         if (authorization == Authorization.VERIFIED_VALID) return VisualStatus.NATIVE_VALID;
         if (authorization == Authorization.VERIFIED_INVALID) return VisualStatus.NATIVE_INVALID;
@@ -108,14 +112,14 @@ public final class LicenseRecoverLicenseState {
     }
 
     public boolean selectedByDefault() {
-        if (authorization == Authorization.ERROR || codeIntegrity == CodeIntegrity.ERROR) return false;
+        if (isScanError()) return false;
         if (authorization == Authorization.VERIFIED_VALID) return false;
         if (codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED) return false;
         return true;
     }
 
     public String display() {
-        if (authorization == Authorization.ERROR || codeIntegrity == CodeIntegrity.ERROR) return "检测失败";
+        if (isScanError()) return "检测失败";
         if (authorization == Authorization.VERIFIED_VALID && codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED)
             return "已验证激活（代码已 Patch）";
         if (authorization == Authorization.VERIFIED_VALID) return "已验证激活";
