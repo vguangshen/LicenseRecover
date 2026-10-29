@@ -194,6 +194,20 @@ public final class LicenseRecoverLicenseStateTest {
                         .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
                         "duplicate audited paths must not count as independent evidence");
                 java.nio.file.Files.write(artifact, "reviewed-patch".getBytes("UTF-8"));
+                // Different spellings of the same file are not two independent
+                // audited artifacts. An alias must never turn the row light green.
+                for (String alias : new String[]{"./bin/RegisterMain.bin",
+                        "bin/../bin/RegisterMain.bin", "bin/./RegisterMain.bin"}) {
+                    LicenseRecoverReadOnlyPatchScanner.Reviewed aliasFixture =
+                            new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                    LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                                    alias, originalHash, patchedHash);
+                    check(LicenseRecoverReadOnlyPatchScanner.scanReviewed(
+                            root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                            new LicenseRecoverReadOnlyPatchScanner.Reviewed[]{fixture, aliasFixture})
+                            .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                            "alias must not count as a second independent patch artifact: " + alias);
+                }
                 LicenseRecoverReadOnlyPatchScanner.Reviewed traversal =
                         new LicenseRecoverReadOnlyPatchScanner.Reviewed(
                                 LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
