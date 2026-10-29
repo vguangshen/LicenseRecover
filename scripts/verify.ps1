@@ -353,6 +353,7 @@ $classPrefixes = @(
     'BatchTarget',
     'ConfigSafety',
     'LicenseRecoverModernGUI',
+    'LicenseRecoverSharedLog',
     'LicenseRecoverJavaHost',
     'JavaRegistrationRuntimeProfile',
     'OperationResult',
@@ -391,6 +392,9 @@ if ((Get-FileHash -LiteralPath $overlayJar -Algorithm SHA256).Hash -ne
 
 $listOverlayArgs = @('tf', $overlayJar)
 $overlayEntries = @(Invoke-External -Command 'jar' -ArgumentList $listOverlayArgs)
+if ($overlayEntries -notcontains 'LicenseRecoverSharedLog.class') {
+    throw 'Overlay is missing LicenseRecoverSharedLog.class; batch scan would fail with NoClassDefFoundError.'
+}
 if ($overlayEntries -notcontains 'LicenseRecoverModernGUI.class') {
     throw 'Overlay is missing LicenseRecoverModernGUI.class.'
 }
