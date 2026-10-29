@@ -745,7 +745,7 @@ public final class LicenseRecoverModernGUI {
                     batchProgress.setString("准备扫描：0 / " + total);
                     setStatusInfo("正在扫描子目录：0 / " + total);
                 });
-                appendLog("[批量扫描] 开始扫描 " + total + " 个子目录。\\n".replace("\\n", "\n"));
+                appendLog("[批量扫描] 开始扫描 " + total + " 个子目录。\n");
                 for (int i = 0; i < children.length; i++) {
                     if (isCancelled()) break;
                     final File child = children[i];
