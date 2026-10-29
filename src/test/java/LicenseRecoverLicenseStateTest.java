@@ -24,6 +24,9 @@ public final class LicenseRecoverLicenseStateTest {
         try { LicenseRecoverLicenseState.combine(unknown, patched); }
         catch (IllegalArgumentException expected) { badSource = true; }
         check(badSource, "unverified state cannot masquerade as native evidence");
+        check(LicenseRecoverLicenseState.visualStatus("已验证激活（代码已 Patch）")
+                == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED,
+                "patched and valid must use the light green patch color");
         check(!LicenseRecoverLicenseState.selectedByDefault("已验证激活（代码已 Patch）"),
                 "combined verified state must be deselected");
         check(!LicenseRecoverLicenseState.selectedByDefault("检测失败"),
@@ -40,8 +43,8 @@ public final class LicenseRecoverLicenseStateTest {
         check(invalidAndPatched.display().contains("未激活（代码已 Patch）"),
                 "a patch must never hide a failed native license check");
         check(invalidAndPatched.visualStatus()
-                == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID,
-                "native invalid takes precedence over patch color");
+                == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED,
+                "confirmed patch uses light green even when native validation differs");
         check(LicenseRecoverLicenseState.visualStatus(invalidAndPatched.display())
                 == invalidAndPatched.visualStatus(), "typed and table status must agree");
         boolean rejected = false;
