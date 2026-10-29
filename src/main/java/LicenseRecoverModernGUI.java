@@ -492,13 +492,6 @@ public final class LicenseRecoverModernGUI {
     }
 
     /** Selection is based on current scan evidence, not prior tool execution history. */
-    private static boolean shouldSelectBatchState(String state) {
-        if (state == null) return true;
-        return !state.startsWith("已验证激活")
-                && !state.startsWith("已确认 Patch")
-                && !state.startsWith("检测失败");
-    }
-
     private static void applyBatchEvidenceColors(JTable table, Component component,
                                                   boolean selected, int viewRow) {
         int modelRow = table.convertRowIndexToModel(viewRow);
@@ -506,16 +499,17 @@ public final class LicenseRecoverModernGUI {
         String state = raw == null ? "" : raw.toString();
         Color background;
         Color foreground;
-        if (state.startsWith("已验证激活")) {
+        LicenseRecoverLicenseState.VisualStatus visual = LicenseRecoverLicenseState.visualStatus(state);
+        if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_VALID) {
             background = new Color(22, 94, 58);
             foreground = Color.WHITE;
-        } else if (state.startsWith("已确认 Patch")) {
+        } else if (visual == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED) {
             background = new Color(205, 239, 210);
             foreground = new Color(20, 75, 37);
-        } else if (state.startsWith("已验证未激活")) {
+        } else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID) {
             background = new Color(255, 226, 220);
             foreground = new Color(115, 35, 25);
-        } else if (state.startsWith("检测失败")) {
+        } else if (visual == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR) {
             background = new Color(165, 45, 45);
             foreground = Color.WHITE;
         } else {
@@ -881,7 +875,7 @@ public final class LicenseRecoverModernGUI {
                     batchTargets.add(row.target);
                     Object[] selectableCells = new Object[row.cells.length + 1];
                     selectableCells[0] = Boolean.valueOf(row.target != null && row.target.type != BatchTarget.Type.NONE
-                            && shouldSelectBatchState(String.valueOf(row.cells[7])));
+                            && LicenseRecoverLicenseState.selectedByDefault(String.valueOf(row.cells[7])));
                     System.arraycopy(row.cells, 0, selectableCells, 1, row.cells.length);
                     batchModel.addRow(selectableCells);
                     batchProgress.setMaximum(Math.max(1, row.total));
