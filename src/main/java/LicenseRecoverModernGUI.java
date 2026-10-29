@@ -74,7 +74,23 @@ public final class LicenseRecoverModernGUI {
         public boolean isCellEditable(int row, int column) { return column == BATCH_COL_SELECTED && (batchWorker == null || batchWorker.isDone()); }
         public Class<?> getColumnClass(int column) { return column == BATCH_COL_SELECTED ? Boolean.class : String.class; }
     };
-    private final JTable batchTable = new JTable(batchModel);
+    private final JTable batchTable = new JTable(batchModel) {
+        @Override public String getToolTipText(java.awt.event.MouseEvent event) {
+            int viewRow = rowAtPoint(event.getPoint());
+            if (viewRow < 0) return null;
+            int modelRow = convertRowIndexToModel(viewRow);
+            String state = String.valueOf(getModel().getValueAt(modelRow, BATCH_COL_LICENSE_STATE));
+            if (state.startsWith("已验证激活"))
+                return "目标软件原生只读校验确认授权有效；不是根据历史执行记录推断";
+            if (state.startsWith("已确认 Patch"))
+                return "目标代码与已知版本特征匹配；这不能证明授权有效";
+            if (state.startsWith("已验证未激活"))
+                return "目标软件原生校验明确返回授权无效";
+            if (state.startsWith("检测失败"))
+                return "扫描异常或超时；不能判断当前授权是否有效";
+            return "当前没有足够的原生校验或代码比对证据；不代表未激活";
+        }
+    };
     private final List<BatchTarget> batchTargets = new ArrayList<BatchTarget>();
     private final JRadioButton batchWay1 = new JRadioButton("一键恢复授权（推荐）", true);
     private final JRadioButton batchWay3 = new JRadioButton("方式三：移除联网授权代码");
