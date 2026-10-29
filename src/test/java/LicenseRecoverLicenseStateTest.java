@@ -191,10 +191,46 @@ public final class LicenseRecoverLicenseStateTest {
                         .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
                         "one patched artifact and one original must not confirm the full patch");
                 java.nio.file.Files.write(companion, "reviewed-patch".getBytes("UTF-8"));
-                check(LicenseRecoverReadOnlyPatchScanner.scanReviewed(
-                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101", reviewedPair)
-                        .codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED,
+                LicenseRecoverLicenseState stablePair = LicenseRecoverReadOnlyPatchScanner.scanReviewed(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101", reviewedPair);
+                check(stablePair.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED,
                         "all reviewed artifacts patched must confirm patch");
+                check(stablePair.evidence.contains("两次只读指纹一致"),
+                        "normal batch scanner must complete a final consistency pass");
+                java.util.List<LicenseRecoverReadOnlyPatchScanner.Reviewed> firstPassPair =
+                        java.util.Arrays.asList(fixture, companionFixture);
+                check(LicenseRecoverReadOnlyPatchScanner.recheckReviewedSet(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                        firstPassPair, true, 2, "first pass")
+                        .codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED,
+                        "unchanged patched files may pass the second read-only comparison");
+                // Deterministically emulate a file changing *after* its first
+                // hash: a stale first-pass match is not permission to turn
+                // the full application's row light green.
+                java.nio.file.Files.write(companion, "unknown-build".getBytes("UTF-8"));
+                check(LicenseRecoverReadOnlyPatchScanner.recheckReviewedSet(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                        firstPassPair, true, 2, "first pass")
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                        "changing the reviewed patch bytes between passes must stay gray");
+                java.nio.file.Files.write(companion, "original-binary".getBytes("UTF-8"));
+                check(LicenseRecoverReadOnlyPatchScanner.recheckReviewedSet(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                        firstPassPair, true, 2, "first pass")
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                        "a reverted companion must not confirm the stale patch result");
+                java.nio.file.Files.delete(companion);
+                check(LicenseRecoverReadOnlyPatchScanner.recheckReviewedSet(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                        firstPassPair, true, 2, "first pass")
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                        "a removed companion must not confirm the stale patch result");
+                java.nio.file.Files.write(companion, "reviewed-patch".getBytes("UTF-8"));
+                check(LicenseRecoverReadOnlyPatchScanner.recheckReviewedSet(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                        firstPassPair, true, 1, "first pass")
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                        "incomplete second-pass evidence list must never become green");
                 java.nio.file.Files.write(artifact, "original-binary".getBytes("UTF-8"));
                 java.nio.file.Files.write(companion, "original-binary".getBytes("UTF-8"));
                 check(LicenseRecoverReadOnlyPatchScanner.scanReviewed(
