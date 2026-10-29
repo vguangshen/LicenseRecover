@@ -184,6 +184,15 @@ $licenseStateTest = Join-Path $repoRoot 'src/test/java/LicenseRecoverLicenseStat
 Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $licenseStateTest)
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverLicenseStateTest')
 
+$inspectionTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyInspectionTest.java'
+$peMetadataTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyPeMetadataTest.java'
+$realSampleTest = Join-Path $testSourceDir 'LicenseRecoverRealSampleReadOnlyTest.java'
+$readOnlyPlanTest = Join-Path $testSourceDir 'LicenseRecoverJavaPlanReadOnlyTest.java'
+Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $inspectionTest, $peMetadataTest, $realSampleTest, $readOnlyPlanTest)
+Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyInspectionTest')
+Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyPeMetadataTest')
+Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverJavaPlanReadOnlyTest')
+
 $netRemoverScanTest = Join-Path $repoRoot 'src/test/java/NetRemoverReadOnlyScanTest.java'
 Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $netRemoverScanTest)
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'NetRemoverReadOnlyScanTest')
@@ -319,11 +328,15 @@ $batchInspectSource = $modernGuiSource.Substring($batchInspectStart, $batchInspe
 if (([regex]::Matches($batchInspectSource, 'LicenseRecoverReadOnlyPatchScanner\.scan\s*\(')).Count -ne 2) {
     throw 'Java and .NET batch inspection must use the reviewed read-only fingerprint scanner.'
 }
+if (-not $batchInspectSource.Contains('LicenseRecoverModernGUIJavaPlan.inspectReadOnly(info.appRoot)')) {
+    throw 'Java batch inspection must use static-only planning with native probes disabled.'
+}
 foreach ($unsafeCall in @(
     'runJavaHost(', 'runNativeCapture(', 'new ProcessBuilder(',
     'Runtime.getRuntime().exec(', 'nativeVerification(',
     'LicenseRecoverJavaHost.', 'LicenseRecoverModernGUIAutoRecovery.recoverDotNet(',
-    'LicenseRecoverModernGUIAutoRecovery.recoverJava('
+    'LicenseRecoverModernGUIAutoRecovery.recoverJava(',
+    'LicenseRecoverModernGUIJavaPlan.inspect(', 'ExistingLocalRegStrProbe.recover('
 )) {
     if ($batchInspectSource.Contains($unsafeCall)) {
         throw "Batch inspection calls unapproved native execution/verification: $unsafeCall"
@@ -376,47 +389,25 @@ if (-not $autoSource.Contains('JavaRegistrationRuntimeProfile.inspect') -or -not
 if ($autoSource.Contains('runtimeDir.getAbsolutePath() + File.separator + "*";')) { throw 'Java helper system classpath still contains target jars.' }
 
 Write-Host 'Building deterministic runtime overlay...'
-$classPrefixes = @(
-    'AppDetector',
-    'ExistingLocalRegStrProbe',
-    'LegacyJavaRegistrationMetadata',
-    'LegacyDotNetProtocol',
-    'AppInfo',
-    'BatchTarget',
-    'ConfigSafety',
-    'LicenseRecoverModernGUI',
-    'LicenseRecoverLicenseState',
-    'LicenseRecoverReadOnlyFingerprint',
-    'LicenseRecoverReadOnlyPatchScanner',
-    'LicenseRecoverSharedLog',
-    'LicenseRecoverJavaHost',
-    'JavaRegistrationRuntimeProfile',
-    'OperationResult',
-    'PatchSafety',
-    'ProcessRunner',
-    'SafeNetRemoverCLI',
-    'SafetyBackup'
-)
-foreach ($prefix in $classPrefixes) {
-    $matches = @(Get-ChildItem -Path (Join-Path $verifyDir ($prefix + '*.class')) -File)
-    if ($matches.Count -eq 0) {
-        throw "No compiled classes found for overlay prefix: $prefix"
-    }
-    foreach ($match in $matches) {
-        Copy-Item -LiteralPath $match.FullName -Destination $overlayDir -Force
-    }
+# Export the entire freshly compiled main-source tree. An allowlist of class
+# prefixes missed new scanner classes in v1.2.66 and can miss future nested or
+# package-private helpers. Tests are compiled separately, never into verifyDir.
+$compiledClasses = @(Get-ChildItem -LiteralPath $verifyDir -Filter '*.class' -Recurse -File | Sort-Object FullName)
+if ($compiledClasses.Count -eq 0) { throw 'No compiled main classes found for runtime.' }
+$compiledClassManifest = @()
+foreach ($compiledClass in $compiledClasses) {
+    $relative = $compiledClass.FullName.Substring($verifyDir.Length + 1).Replace('\', '/')
+    $destination = Join-Path $overlayDir $relative
+    New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+    Copy-Item -LiteralPath $compiledClass.FullName -Destination $destination -Force
+    $compiledClassManifest += ((Get-FileHash -LiteralPath $compiledClass.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $relative)
 }
-$coreMatches = @(Get-ChildItem -LiteralPath $verifyDir -Filter 'LicenseRecover*.class' -File |
-    Where-Object { $_.Name -eq 'LicenseRecover.class' -or $_.Name.StartsWith('LicenseRecover$') })
-if ($coreMatches.Count -eq 0) {
-    throw 'No compiled LicenseRecover core classes found for overlay.'
-}
-foreach ($match in $coreMatches) {
-    Copy-Item -LiteralPath $match.FullName -Destination $overlayDir -Force
-}
+$metadataDir = Join-Path $overlayDir 'META-INF'
+New-Item -ItemType Directory -Path $metadataDir -Force | Out-Null
+Set-Content -LiteralPath (Join-Path $metadataDir 'LicenseRecover-classes.sha256') -Value $compiledClassManifest -Encoding ASCII
 
 $fixedTime = [DateTime]::ParseExact('1980-01-01 00:00:00', 'yyyy-MM-dd HH:mm:ss', [Globalization.CultureInfo]::InvariantCulture)
-Get-ChildItem -LiteralPath $overlayDir -File | ForEach-Object { $_.LastWriteTime = $fixedTime }
+Get-ChildItem -LiteralPath $overlayDir -Recurse | ForEach-Object { $_.LastWriteTime = $fixedTime }
 $createOverlayArgs = @('cfM', $overlayJar, '-C', $overlayDir, '.')
 Invoke-External -Command 'jar' -ArgumentList $createOverlayArgs
 Copy-Item -LiteralPath $overlayJar -Destination $runtimeJar -Force
@@ -427,6 +418,12 @@ if ((Get-FileHash -LiteralPath $overlayJar -Algorithm SHA256).Hash -ne
 
 $listOverlayArgs = @('tf', $overlayJar)
 $overlayEntries = @(Invoke-External -Command 'jar' -ArgumentList $listOverlayArgs)
+foreach ($compiledClass in $compiledClasses) {
+    $relative = $compiledClass.FullName.Substring($verifyDir.Length + 1).Replace('\', '/')
+    if ($overlayEntries -notcontains $relative) {
+        throw "Runtime omitted freshly compiled class: $relative"
+    }
+}
 if ($overlayEntries -notcontains 'LicenseRecoverSharedLog.class') {
     throw 'Overlay is missing LicenseRecoverSharedLog.class; batch scan would fail with NoClassDefFoundError.'
 }
@@ -503,7 +500,7 @@ Invoke-External -Command 'javac' -ArgumentList @(
     '-d', $testDir, $scanDistributionTest)
 Invoke-External -Command 'java' -ArgumentList @(
     '-cp', ($protocolRuntimeClasspath + $classpathSeparator + $testDir),
-    'LicenseRecoverDistributionReadOnlySmokeTest', $runtimeJar)
+    'LicenseRecoverDistributionReadOnlySmokeTest', $runtimeJar, $verifyDir)
 
 if ($overlayEntries -notcontains 'LicenseRecoverJavaHost.class') {
     throw 'Overlay is missing LicenseRecoverJavaHost.class; Java target-native recovery cannot run.'

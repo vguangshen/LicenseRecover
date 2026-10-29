@@ -138,6 +138,13 @@ $portableCheck = Join-Path $nativeDir 'portable-check'
 $updateCheck = Join-Path $nativeDir 'update-check'
 Expand-Archive -LiteralPath $portableZip -DestinationPath $portableCheck -Force
 Expand-Archive -LiteralPath $updateZip -DestinationPath $updateCheck -Force
+$runtimeJava = 'java'
+if ($env:OS -eq 'Windows_NT') {
+    # On Windows run the shipped JRE, including for the update ZIP (an update
+    # reuses the installed portable JRE). Linux CI cannot execute Windows PE.
+    $runtimeJava = Join-Path $portableCheck 'jre/bin/java.exe'
+    if (-not (Test-Path -LiteralPath $runtimeJava)) { throw 'Missing shipped Java runtime.' }
+}
 foreach ($dir in @($portableCheck, $updateCheck)) {
     if (-not (Test-Path -LiteralPath (Join-Path $dir 'LicenseRecoverGUI.exe'))) {
         throw "Repacked archive is missing LicenseRecoverGUI.exe: $dir"
@@ -157,10 +164,18 @@ foreach ($dir in @($portableCheck, $updateCheck)) {
     if (-not (Test-Path -LiteralPath (Join-Path $smokeClasses 'LicenseRecoverDistributionReadOnlySmokeTest.class'))) {
         throw 'Missing compiled distribution-level scanner smoke test.'
     }
-    Invoke-Checked 'java' @(
+    Write-Host "Testing extracted archive runtime: $dir using $runtimeJava"
+    Invoke-Checked $runtimeJava @(
         '-cp', ($jarFirst + [IO.Path]::PathSeparator + $guiJar + [IO.Path]::PathSeparator + $smokeClasses),
-        'LicenseRecoverDistributionReadOnlySmokeTest', $jarFirst
+        'LicenseRecoverDistributionReadOnlySmokeTest', $jarFirst, (Join-Path $buildRoot 'verify')
     )
+    # Exercise behavior against each extracted archive as well as class linkage.
+    # These tests create only synthetic fixtures in a separate temporary tree.
+    foreach ($test in @('LicenseRecoverLicenseStateTest', 'LicenseRecoverReadOnlyInspectionTest', 'LicenseRecoverReadOnlyPeMetadataTest', 'LicenseRecoverJavaPlanReadOnlyTest')) {
+        Invoke-Checked $runtimeJava @(
+            '-cp', ($jarFirst + [IO.Path]::PathSeparator + $guiJar + [IO.Path]::PathSeparator + $smokeClasses), $test
+        )
+    }
     if (Test-Path -LiteralPath (Join-Path $dir 'LicenseRecoverGUI-legacy.exe')) {
         throw "Repacked archive still contains LicenseRecoverGUI-legacy.exe: $dir"
     }
