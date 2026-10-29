@@ -72,6 +72,58 @@ public final class LicenseRecoverLicenseStateTest {
                 "valid status label must agree with typed state");
         check(LicenseRecoverLicenseState.visualStatus(patched.display()) == patched.visualStatus(),
                 "patch status label must agree with typed state");
+        // Exact, reviewed binary fingerprints are required; history, missing
+        // markers and unrelated versions must never turn a row light green.
+        try {
+            java.nio.file.Path artifact = java.nio.file.Files.createTempFile("lr-readonly-", ".bin");
+            String originalHash = "bfc8234d0e0f6184640fec12438757ceac504df4ab8b232921b9bb506c981cb1";
+            String patchedHash = "ba15b5958ced9058f5441c1b8929a72905e71c2898b82a9eab307b85f78cab07";
+            try {
+                java.nio.file.Files.write(artifact, "original-binary".getBytes("UTF-8"));
+                LicenseRecoverLicenseState originalFingerprint = LicenseRecoverReadOnlyFingerprint.compare(
+                        artifact.toFile(), "DS0101", "DS0101", originalHash, patchedHash);
+                check(originalFingerprint.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL,
+                        "exact audited original fingerprint");
+                check(originalFingerprint.authorization == LicenseRecoverLicenseState.Authorization.UNVERIFIED,
+                        "original file is not proof of valid license");
+                check(LicenseRecoverReadOnlyFingerprint.compare(
+                        artifact.toFile(), "DS0107", "DS0101", originalHash, patchedHash)
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                        "a different product version cannot inherit evidence");
+                check(LicenseRecoverReadOnlyFingerprint.compare(
+                        artifact.toFile(), "DS0101", "DS0101", originalHash, originalHash)
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                        "ambiguous identical fingerprints must be rejected");
+                check(LicenseRecoverReadOnlyFingerprint.compare(
+                        artifact.toFile(), "DS0101", "DS0101", originalHash, "")
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                        "missing reviewed patch baseline cannot confirm original or patch");
+                java.nio.file.Files.write(artifact, "unknown-build".getBytes("UTF-8"));
+                check(LicenseRecoverReadOnlyFingerprint.compare(
+                        artifact.toFile(), "DS0101", "DS0101", originalHash, patchedHash)
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                        "unrecognized modified binary is not confirmed patch");
+                java.nio.file.Files.write(artifact, "reviewed-patch".getBytes("UTF-8"));
+                LicenseRecoverLicenseState patchFingerprint = LicenseRecoverReadOnlyFingerprint.compare(
+                        artifact.toFile(), "DS0101", "DS0101", originalHash, patchedHash);
+                check(patchFingerprint.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED,
+                        "exact reviewed patch fingerprint");
+                check(patchFingerprint.authorization == LicenseRecoverLicenseState.Authorization.UNVERIFIED,
+                        "confirmed patch must not imply native license verification");
+                check(patchFingerprint.visualStatus() == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED,
+                        "reviewed patch must be light green");
+                check("reviewed-patch".equals(new String(java.nio.file.Files.readAllBytes(artifact), "UTF-8")),
+                        "read-only comparison must never modify target bytes");
+            } finally {
+                java.nio.file.Files.deleteIfExists(artifact);
+            }
+        } catch (java.io.IOException ex) {
+            throw new AssertionError("read-only fingerprint fixture failed", ex);
+        }
+        LicenseRecoverLicenseState scanFailure = LicenseRecoverLicenseState.scanError("I/O failure");
+        check(scanFailure.visualStatus() == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR,
+                "inspection failure must be red, not invalid white");
+        check(!scanFailure.selectedByDefault(), "scan error must not be auto-selected");
         boolean rejected = false;
         try { LicenseRecoverLicenseState.nativeVerification(true, ""); }
         catch (IllegalArgumentException expected) { rejected = true; }
