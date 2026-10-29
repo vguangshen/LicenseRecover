@@ -61,6 +61,9 @@ public final class LicenseRecoverReadOnlyPatchScanner {
         if (reviewed == null)
             return LicenseRecoverLicenseState.unverified("没有可信审核指纹集");
         java.util.Set<String> seenPaths = new java.util.HashSet<String>();
+        // Distinct paths can still be hard links to the same physical file.
+        // Count only independent reviewed artifacts as evidence.
+        java.util.List<Path> verifiedPaths = new java.util.ArrayList<Path>();
         boolean original = false, patched = false, incomplete = false;
         int matched = 0;
         StringBuilder evidence = new StringBuilder();
@@ -102,6 +105,31 @@ public final class LicenseRecoverReadOnlyPatchScanner {
             if (result.authorization == LicenseRecoverLicenseState.Authorization.ERROR
                     || result.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.ERROR)
                 return result;
+            if (result.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL
+                    || result.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED) {
+                // Normalized path equality does not detect hard-link aliases.
+                // Check filesystem identity only after compareReviewed has
+                // rejected traversal, symlinks and unreadable artifacts.
+                Path current = runtimeRoot.toPath().toAbsolutePath().normalize()
+                        .resolve(Paths.get(candidate.relativeArtifact).normalize()).normalize();
+                try {
+                    boolean alias = false;
+                    for (Path previous : verifiedPaths) {
+                        if (Files.isSameFile(previous, current)) {
+                            alias = true;
+                            break;
+                        }
+                    }
+                    if (alias) {
+                        incomplete = true;
+                        continue;
+                    }
+                    verifiedPaths.add(current);
+                } catch (java.io.IOException | SecurityException ex) {
+                    return LicenseRecoverLicenseState.scanError(
+                            "审核文件身份核对失败: " + ex.getClass().getSimpleName());
+                }
+            }
             if (result.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL)
                 original = true;
             else if (result.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED)
