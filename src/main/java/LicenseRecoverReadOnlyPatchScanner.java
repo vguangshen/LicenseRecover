@@ -61,8 +61,14 @@ public final class LicenseRecoverReadOnlyPatchScanner {
         int matched = 0;
         StringBuilder evidence = new StringBuilder();
         for (Reviewed candidate : reviewed) {
-            if (candidate == null || candidate.runtime != runtime || candidate.version == null
-                    || !detectedVersion.equalsIgnoreCase(candidate.version)) continue;
+            // Fail closed on malformed audited registry entries. Silently
+            // skipping a record without a version/runtime could make a
+            // partial fingerprint set look complete and turn the row green.
+            if (candidate == null || candidate.runtime == null || candidate.version == null
+                    || candidate.version.trim().isEmpty())
+                return LicenseRecoverLicenseState.scanError("审核指纹集存在缺失平台或版本的记录");
+            if (candidate.runtime != runtime || !detectedVersion.equalsIgnoreCase(candidate.version))
+                continue;
             matched++;
             // Normalize aliases before counting independent reviewed artifacts.
             // Otherwise "bin/./X.dll" and "bin/X.dll" can count as two files.
