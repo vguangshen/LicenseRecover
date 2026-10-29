@@ -1,3 +1,17 @@
+## 1.2.68 - 2026-10-30
+
+### Read-only evidence and safety
+- Add current-file SHA-256 and Java/class / .NET PE/CLI metadata evidence, explicit safety scopes, and per-result unverified reasons in GUI and JSONL scans.
+- Use a static-only Java plan for batch scans and passive previews; prevent the legacy RegStr fallback from initializing target classes during discovery. A synthetic side-effect fixture and positive control cover this boundary.
+- Document 16 Java and 10 .NET real-application audits. Observed unsafe-component hashes only explain why native verification is rejected; they do not establish original/Patch provenance or license validity.
+
+### Distribution verification
+- Package every freshly compiled main/nested class automatically and verify each class against its SHA-256 inventory.
+- Exercise both final portable and update ZIP runtimes, including 26 independent real sample-input copies locally. No native-valid, native-invalid, or confirmed-Patch result is claimed for those samples.
+
+### Limits
+- The production reviewed original/Patch registry remains empty. Existing native checks have write/network/HASP paths; the restricted Java-copy experiment produced no usable native verdict. Gray means unverified, not unlicensed.
+
 ## 1.2.58 - 2026-10-17
 
 ### Reliability
