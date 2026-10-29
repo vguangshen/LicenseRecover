@@ -909,11 +909,12 @@ public final class LicenseRecoverModernGUI {
                                     : "未执行: " + plan.recoveryReadiness);
                             String statusText = !plan.detected ? "待识别"
                                     : (plan.automaticRecoveryReady ? "待处理" : "待确认");
+                            LicenseRecoverLicenseState licenseState = LicenseRecoverLicenseState.unverified("Java 原生只读校验尚未完成审计");
                             cells = new Object[]{child.getName(),
                                     plan.detected ? "Java / " + plan.generation : "Java",
                                     valueOrDash(plan.softVersionId), valueOrDash(plan.authorizationFamily),
                                     valueOrDash(plan.runtimeProductId), plan.regStrSummary(), plan.configTargets,
-                                    "未验证", verifyText, statusText, info.appRoot.getAbsolutePath()};
+                                    licenseState.display(), verifyText, statusText, info.appRoot.getAbsolutePath()};
                             detectedCount = 1;
                         } else if (info.type == AppInfo.Type.DOTNET) {
                             target = BatchTarget.dotNetTarget(child.getName(), info.binDir);
@@ -936,9 +937,10 @@ public final class LicenseRecoverModernGUI {
                             String dotNetStatus = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
                                     ? (ds0101Ready ? "待原生校验" : "不支持自动写回")
                                     : ((!dotNetIdentityReady || !dotNetRegReady) ? "待确认" : "待处理");
+                            LicenseRecoverLicenseState licenseState = LicenseRecoverLicenseState.unverified(".NET 原生只读校验尚未完成审计");
                             cells = new Object[]{child.getName(), kind,
                                     valueOrDash(d.versionId), valueOrDash(d.productName), valueOrDash(d.productName),
-                                    valueOrDash(dotNetRegStr), "config.xml", "未验证", verify, dotNetStatus,
+                                    valueOrDash(dotNetRegStr), "config.xml", licenseState.display(), verify, dotNetStatus,
                                     info.binDir.getAbsolutePath()};
                             detectedCount = 1;
                         } else {
