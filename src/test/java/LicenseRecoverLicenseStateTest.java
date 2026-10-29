@@ -230,6 +230,55 @@ public final class LicenseRecoverLicenseStateTest {
         } catch (java.io.IOException ex) {
             throw new AssertionError("reviewed scanner fixture failed", ex);
         }
+        // A symlinked ancestor is not caught by checking the runtime root
+        // itself. Even a byte-perfect reviewed patch must not be confirmed
+        // through an alias that escapes the expected physical directory.
+        try {
+            java.nio.file.Path sandbox = java.nio.file.Files.createTempDirectory("lr-parent-link-");
+            java.nio.file.Path real = sandbox.resolve("real");
+            java.nio.file.Path app = real.resolve("app");
+            java.nio.file.Path bin = app.resolve("bin");
+            java.nio.file.Path artifact = bin.resolve("RegisterMain.bin");
+            java.nio.file.Path link = sandbox.resolve("linked-parent");
+            try {
+                java.nio.file.Files.createDirectories(bin);
+                java.nio.file.Files.write(artifact, "reviewed-patch".getBytes("UTF-8"));
+                boolean linkSupported = true;
+                try {
+                    java.nio.file.Files.createSymbolicLink(link, real);
+                } catch (UnsupportedOperationException | SecurityException
+                        | java.nio.file.FileSystemException unavailable) {
+                    // Windows environments without symlink privileges can skip
+                    // this OS-specific fixture; Linux CI exercises it.
+                    linkSupported = false;
+                }
+                if (linkSupported) {
+                    java.nio.file.Path aliasedRoot = link.resolve("app");
+                    check(!java.nio.file.Files.isSymbolicLink(aliasedRoot),
+                            "fixture must use a symlinked ancestor, not the root itself");
+                    LicenseRecoverReadOnlyPatchScanner.Reviewed reviewed =
+                            new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                    LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                                    "bin/RegisterMain.bin",
+                                    "bfc8234d0e0f6184640fec12438757ceac504df4ab8b232921b9bb506c981cb1",
+                                    "ba15b5958ced9058f5441c1b8929a72905e71c2898b82a9eab307b85f78cab07");
+                    check(LicenseRecoverReadOnlyPatchScanner.compareReviewed(
+                            aliasedRoot.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA,
+                            "DS0101", reviewed).visualStatus()
+                            == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR,
+                            "symlinked runtime-root ancestor must not confirm a patch");
+                }
+            } finally {
+                java.nio.file.Files.deleteIfExists(link);
+                java.nio.file.Files.deleteIfExists(artifact);
+                java.nio.file.Files.deleteIfExists(bin);
+                java.nio.file.Files.deleteIfExists(app);
+                java.nio.file.Files.deleteIfExists(real);
+                java.nio.file.Files.deleteIfExists(sandbox);
+            }
+        } catch (java.io.IOException ex) {
+            throw new AssertionError("symlinked ancestor fixture failed", ex);
+        }
         LicenseRecoverLicenseState scanFailure = LicenseRecoverLicenseState.scanError("I/O failure");
         check(scanFailure.visualStatus() == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR,
                 "inspection failure must be red, not invalid white");
