@@ -481,7 +481,7 @@ public final class LicenseRecoverModernGUI {
         });
         JPanel results = new JPanel(new BorderLayout(0, 5));
         results.add(new JScrollPane(batchTable), BorderLayout.CENTER);
-        JLabel legend = new JLabel("状态颜色：深绿=原生激活   浅绿=确认 Patch   淡红=原生校验无效   灰色=未验证   红色=检测失败");
+        JLabel legend = new JLabel("状态颜色：深绿=原生激活   浅绿=确认 Patch   白色=原生校验无效   灰色=未验证   红色=检测失败");
         legend.setFont(legend.getFont().deriveFont(11f));
         legend.setBorder(new EmptyBorder(3, 7, 3, 7));
         results.add(legend, BorderLayout.SOUTH);
@@ -509,8 +509,8 @@ public final class LicenseRecoverModernGUI {
             background = new Color(205, 239, 210);
             foreground = new Color(20, 75, 37);
         } else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID) {
-            background = new Color(255, 226, 220);
-            foreground = new Color(115, 35, 25);
+            background = Color.WHITE;
+            foreground = Color.BLACK;
         } else if (visual == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR) {
             background = new Color(165, 45, 45);
             foreground = Color.WHITE;
