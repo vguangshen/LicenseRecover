@@ -66,9 +66,9 @@ public final class LicenseRecoverModernGUI {
 
     private final JTextField batchRootField = new JTextField();
     private static final int BATCH_COL_SELECTED = 0;
-    private static final int BATCH_COL_LICENSE_STATE = 9;
-    private static final int BATCH_COL_VERIFY = 10;
-    private static final int BATCH_COL_STATUS = 11;
+    private static final int BATCH_COL_LICENSE_STATE = 8;
+    private static final int BATCH_COL_VERIFY = 9;
+    private static final int BATCH_COL_STATUS = 10;
     private final DefaultTableModel batchModel = new DefaultTableModel(
             new String[]{"执行", "应用", "类型 / 授权代际", "SoftVersionID", "授权族", "运行校验ID", "RegStr", "配置目标", "授权状态", "原生校验", "状态", "路径"}, 0) {
         public boolean isCellEditable(int row, int column) { return column == BATCH_COL_SELECTED && (batchWorker == null || batchWorker.isDone()); }
@@ -865,7 +865,7 @@ public final class LicenseRecoverModernGUI {
                     batchTargets.add(row.target);
                     Object[] selectableCells = new Object[row.cells.length + 1];
                     selectableCells[0] = Boolean.valueOf(row.target != null && row.target.type != BatchTarget.Type.NONE
-                            && shouldSelectBatchState(String.valueOf(row.cells[8])));
+                            && shouldSelectBatchState(String.valueOf(row.cells[7])));
                     System.arraycopy(row.cells, 0, selectableCells, 1, row.cells.length);
                     batchModel.addRow(selectableCells);
                     batchProgress.setMaximum(Math.max(1, row.total));
