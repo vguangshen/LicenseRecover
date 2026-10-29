@@ -1205,6 +1205,9 @@ public final class LicenseRecoverModernGUI {
         if (batchWorker != null && !batchWorker.isDone()) {
             batchWorker.cancel(true);
             batchCancelButton.setEnabled(false);
+            batchProgress.setIndeterminate(false);
+            batchProgress.setString("正在取消扫描，请稍候...");
+            setStatusInfo("已请求取消批量任务");
             appendLog("[提示] 已请求取消当前批量任务。\n");
         }
     }
