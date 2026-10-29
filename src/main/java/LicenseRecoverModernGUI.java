@@ -1,6 +1,8 @@
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.TableCellRenderer;
 import java.awt.*;
 import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
@@ -441,12 +443,64 @@ public final class LicenseRecoverModernGUI {
         batchTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
         int[] widths = new int[]{52, 120, 170, 105, 95, 115, 180, 200, 110, 140, 85, 320};
         for (int i = 0; i < widths.length; i++) batchTable.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
-        root.add(new JScrollPane(batchTable), BorderLayout.CENTER);
+        // Color is driven by current evidence, never by historical tool operations.
+        batchTable.setDefaultRenderer(String.class, new DefaultTableCellRenderer() {
+            @Override public Component getTableCellRendererComponent(JTable table, Object value,
+                    boolean selected, boolean focused, int viewRow, int viewColumn) {
+                Component component = super.getTableCellRendererComponent(table, value,
+                        selected, focused, viewRow, viewColumn);
+                applyBatchEvidenceColors(table, component, selected, viewRow);
+                return component;
+            }
+        });
+        final TableCellRenderer checkboxRenderer = batchTable.getDefaultRenderer(Boolean.class);
+        batchTable.setDefaultRenderer(Boolean.class, (table, value, selected, focused, viewRow, viewColumn) -> {
+            Component component = checkboxRenderer.getTableCellRendererComponent(
+                    table, value, selected, focused, viewRow, viewColumn);
+            applyBatchEvidenceColors(table, component, selected, viewRow);
+            return component;
+        });
+        JPanel results = new JPanel(new BorderLayout(0, 5));
+        results.add(new JScrollPane(batchTable), BorderLayout.CENTER);
+        JLabel legend = new JLabel("状态颜色：深绿=原生校验有效   浅绿=确认 Patch（授权未验证）   淡红=原生校验无效   灰色=未验证   红色=检测失败");
+        legend.setFont(legend.getFont().deriveFont(11f));
+        legend.setBorder(new EmptyBorder(3, 7, 3, 7));
+        results.add(legend, BorderLayout.SOUTH);
+        root.add(results, BorderLayout.CENTER);
 
         batchProgress.setStringPainted(true);
         batchProgress.setString("未开始");
         root.add(batchProgress, BorderLayout.SOUTH);
         return root;
+    }
+
+    private static void applyBatchEvidenceColors(JTable table, Component component,
+                                                  boolean selected, int viewRow) {
+        int modelRow = table.convertRowIndexToModel(viewRow);
+        Object raw = table.getModel().getValueAt(modelRow, 8);
+        String state = raw == null ? "" : raw.toString();
+        Color background;
+        Color foreground;
+        if (state.startsWith("已验证激活")) {
+            background = new Color(22, 94, 58);
+            foreground = Color.WHITE;
+        } else if (state.startsWith("已确认 Patch")) {
+            background = new Color(205, 239, 210);
+            foreground = new Color(20, 75, 37);
+        } else if (state.startsWith("已验证未激活")) {
+            background = new Color(255, 226, 220);
+            foreground = new Color(115, 35, 25);
+        } else if (state.startsWith("检测失败")) {
+            background = new Color(165, 45, 45);
+            foreground = Color.WHITE;
+        } else {
+            background = table.getBackground();
+            foreground = table.getForeground();
+        }
+        // Keep evidence colors visible even when selecting rows.
+        component.setBackground(background);
+        component.setForeground(foreground);
+        if (component instanceof JComponent) ((JComponent) component).setOpaque(true);
     }
 
     private void updateBatchOperationUi() {
