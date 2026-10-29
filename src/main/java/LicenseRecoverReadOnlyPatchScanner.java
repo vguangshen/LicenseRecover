@@ -111,7 +111,7 @@ public final class LicenseRecoverReadOnlyPatchScanner {
                 // Check filesystem identity only after compareReviewed has
                 // rejected traversal, symlinks and unreadable artifacts.
                 Path current = runtimeRoot.toPath().toAbsolutePath().normalize()
-                        .resolve(Paths.get(candidate.relativeArtifact).normalize()).normalize();
+                        .resolve(Paths.get(candidate.relativeArtifact.replace('\\', '/')).normalize()).normalize();
                 try {
                     boolean alias = false;
                     for (Path previous : verifiedPaths) {
@@ -173,7 +173,10 @@ public final class LicenseRecoverReadOnlyPatchScanner {
             return LicenseRecoverLicenseState.scanError("审核指纹路径包含盘符或备用数据流语法");
         try {
             Path root = runtimeRoot.toPath().toAbsolutePath().normalize();
-            Path relative = Paths.get(reviewed.relativeArtifact).normalize();
+            // Audited paths use portable separators. Java on Unix treats a
+            // backslash as a filename character, so normalize it before
+            // checking absolute/traversal syntax on every host platform.
+            Path relative = Paths.get(reviewed.relativeArtifact.replace('\\', '/')).normalize();
             if (relative.isAbsolute() || relative.getNameCount() == 0
                     || relative.startsWith("..") || relative.toString().equals("."))
                 return LicenseRecoverLicenseState.scanError("审核指纹包含非法相对路径");
