@@ -1,0 +1,210 @@
+name: Publish LicenseRecover v1.2.68 (pinned verified artifacts)
+
+# One-shot publisher. A failed partial draft/tag is left for inspection; never overwritten/deleted.
+on:
+  push:
+    branches: [release/v1.2.68-publish]
+    paths: [.github/workflows/publish-v1.2.68.yml]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: publish-LicenseRecover-v1.2.68
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'vguangshen/LicenseRecover'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: vguangshen/LicenseRecover
+      SOURCE_SHA: cbc3477346812c02694b53e4bbd5d01ed3fa0430
+      VERIFIED_RUN: '40959942363'
+      TAG: v1.2.68
+      VERSION: 1.2.68
+    steps:
+      - name: Require exact frozen source, three successful checks, absent release and tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "$REPO"
+          test "$GITHUB_REF" = refs/heads/release/v1.2.68-publish
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ && "$VERIFIED_RUN" =~ ^[0-9]+$ ]]
+          test "$(gh api "repos/$REPO/commits/$SOURCE_SHA" --jq .sha)" = "$SOURCE_SHA"
+          test "$(gh api "repos/$REPO/git/ref/heads/release/v1.2.68" --jq .object.sha)" = "$SOURCE_SHA"
+          mkdir -p evidence assets roundtrip
+          gh api "repos/$REPO/contents/VERSION.txt?ref=$SOURCE_SHA" --jq .content | base64 -d > evidence/VERSION.txt
+          gh api "repos/$REPO/contents/release-notes/$TAG.md?ref=$SOURCE_SHA" --jq .content | base64 -d > evidence/RELEASE_NOTES.md
+          test "$(tr -d '\r\n' < evidence/VERSION.txt)" = "$VERSION"
+          test -s evidence/RELEASE_NOTES.md
+          gh api "repos/$REPO/actions/runs/$VERIFIED_RUN" > evidence/verified-run.json
+          jq -e --arg sha "$SOURCE_SHA" --arg repo "$REPO" '
+            .head_sha == $sha and .head_repository.full_name == $repo and
+            .status == "completed" and .conclusion == "success" and
+            .name == "Verify source" and .path == ".github/workflows/verify-source.yml"
+          ' evidence/verified-run.json
+          gh api --paginate "repos/$REPO/actions/runs?head_sha=$SOURCE_SHA&per_page=100" \
+            --jq '.workflow_runs[]' | jq -s . > evidence/all-runs.json
+          for name in "Verify source" "Uppercase ITMC.Regedit Windows integration v2" "Dual registration DLL Windows integration v3"; do
+            jq -e --arg sha "$SOURCE_SHA" --arg repo "$REPO" --arg name "$name" '
+              [.[] | select(.head_sha == $sha and .head_repository.full_name == $repo and .name == $name)]
+              | sort_by(.id) | last | .status == "completed" and .conclusion == "success"
+            ' evidence/all-runs.json
+          done
+          gh api --paginate "repos/$REPO/releases?per_page=100" --jq '.[]' | jq -s \
+            --arg tag "$TAG" -e 'all(.[]; .tag_name != $tag)'
+          # Distinguish a genuine 404 from access/network/server errors.
+          require_404() {
+            if gh api --include "$1" > evidence/absence-response.txt 2> evidence/absence-error.txt; then
+              echo "Refusing existing resource: $1" >&2; exit 1
+            fi
+            head -n 1 evidence/absence-response.txt | grep -Eq '^HTTP/[^ ]+ 404( |$)'
+          }
+          require_404 "repos/$REPO/releases/tags/$TAG"
+          require_404 "repos/$REPO/git/ref/tags/$TAG"
+
+      - name: Download the exact successful Verify source artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$REPO/actions/runs/$VERIFIED_RUN/artifacts?per_page=100" \
+            --jq '.artifacts[]' | jq -s . > evidence/artifacts.json
+          jq -e '[.[] | select(.name == "LicenseRecover-latest" and .expired == false)] | length == 1' evidence/artifacts.json
+          gh run download "$VERIFIED_RUN" --repo "$REPO" --name LicenseRecover-latest --dir assets
+          test "$(find assets -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 3
+          test "$(find assets -mindepth 1 -type d | wc -l)" -eq 0
+          for file in LicenseRecover-latest.zip LicenseRecover-update.zip SHA256SUMS.txt; do test -s "assets/$file"; done
+
+      - name: Check ZIPs, source metadata, every runtime class, and portable/update identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > evidence/validate.py <<'PY'
+          import hashlib, io, pathlib, re, stat, sys, zipfile
+          folder = pathlib.Path(sys.argv[1])
+          expected_notes = pathlib.Path('evidence/RELEASE_NOTES.md').read_bytes()
+          version = pathlib.Path('evidence/VERSION.txt').read_bytes()
+          required_assets = {'LicenseRecover-latest.zip','LicenseRecover-update.zip','SHA256SUMS.txt'}
+          assert {p.name for p in folder.iterdir()} == required_assets, 'unexpected assets'
+          sums = {}
+          for line in (folder/'SHA256SUMS.txt').read_text(encoding='ascii').splitlines():
+              match = re.fullmatch(r'([0-9a-f]{64})  (LicenseRecover-(?:latest|update)\.zip)',line)
+              assert match and match[2] not in sums, 'malformed or duplicate checksum'
+              sums[match[2]] = match[1]
+          assert set(sums) == required_assets-{'SHA256SUMS.txt'}, 'incomplete checksums'
+          def digest(data): return hashlib.sha256(data).hexdigest()
+          def archive(blob):
+              z = zipfile.ZipFile(blob)
+              names = [e.filename for e in z.infolist()]
+              assert len(names)==len(set(n.casefold() for n in names)), 'duplicate ZIP path'
+              assert sum(e.file_size for e in z.infolist()) < 1024**3, 'archive too large'
+              for e in z.infolist():
+                  n=e.filename; path=pathlib.PurePosixPath(n)
+                  assert n and not path.is_absolute() and '\\' not in n and ':' not in n and '..' not in path.parts, 'unsafe ZIP path'
+                  assert not e.flag_bits & 1 and not stat.S_ISLNK(e.external_attr >> 16), 'encrypted or linked ZIP entry'
+              assert z.testzip() is None, 'ZIP CRC error'
+              return z, {e.filename for e in z.infolist() if not e.is_dir()}
+          jars = {}
+          zips = {}
+          file_sets = {}
+          for filename,sha in sums.items():
+              assert digest((folder/filename).read_bytes()) == sha, 'ZIP SHA mismatch'
+              z, files = archive(folder/filename)
+              zips[filename]=z;file_sets[filename]=files
+              assert z.read('VERSION.txt') == version and version.strip() == b'1.2.68', 'wrong source version'
+              assert z.read('RELEASE_NOTES.md') == expected_notes, 'release notes do not match pinned source'
+              for f in ('LicenseRecoverGUI.exe','LicenseRecoverRuntime.jar','LicenseRecoverOverlay.jar','LicenseRecoverGUI.jar','LicenseRecover.jar'):
+                  assert f in files and z.getinfo(f).file_size>0, 'missing launcher/runtime'
+              assert {f for f in files if '/' not in f and f.lower().endswith('.exe')}=={'LicenseRecoverGUI.exe'}, 'root executable layout'
+              assert z.read('LicenseRecoverGUI.exe')[:2] == b'MZ', 'launcher PE header'
+              runtime=z.read('LicenseRecoverRuntime.jar')
+              assert runtime == z.read('LicenseRecoverOverlay.jar'), 'runtime/overlay differ'
+              jar, class_names=archive(io.BytesIO(runtime))
+              declared={}
+              for line in jar.read('META-INF/LicenseRecover-classes.sha256').decode('ascii').splitlines():
+                  match=re.fullmatch(r'([0-9a-f]{64})  ([A-Za-z0-9_$/]+\.class)',line)
+                  assert match and match[2] not in declared, 'malformed class inventory'
+                  declared[match[2]]=match[1]
+              assert len(declared)==111, 'expected exactly 111 compiled main/nested classes'
+              assert {n for n in class_names if n.endswith('.class')}==set(declared), 'missing/unlisted runtime classes'
+              for name,sha_class in declared.items():
+                  data=jar.read(name)
+                  assert data[:4]==b'\xca\xfe\xba\xbe' and digest(data)==sha_class, 'class hash mismatch'
+              for name in ('LicenseRecoverReadOnlyInspection','LicenseRecoverReadOnlyInspection$Result',
+                           'LicenseRecoverReadOnlyPeMetadata','LicenseRecoverReadOnlyPeMetadata$Reader',
+                           'LicenseRecoverReadOnlyPatchScanner','LicenseRecoverReadOnlyPatchScanner$Runtime',
+                           'LicenseRecoverReadOnlyPatchScanner$Reviewed','LicenseRecoverReadOnlyFingerprint'):
+                  assert name+'.class' in declared, 'missing critical scanner dependency'
+              jars[filename]=runtime
+          portable=file_sets['LicenseRecover-latest.zip']; update=file_sets['LicenseRecover-update.zip']
+          for name in ('jre/bin/java.exe','jre/bin/javaw.exe','jre/lib/rt.jar','jre/LICENSE','jre/ASSEMBLY_EXCEPTION','jre/THIRD_PARTY_README','JRE_SOURCE_NOTICE.txt'):
+              assert name in portable, 'missing portable JRE component'
+          assert not any(n.startswith('jre/') for n in update), 'update bundles JRE'
+          assert not any('/' not in n and n.lower().endswith('.bat') for n in portable), 'portable exposes BAT'
+          assert {n for n in update if '/' not in n and n.lower().endswith('.bat')}=={'run_gui.bat'}, 'update BAT layout'
+          trampoline=zips['LicenseRecover-update.zip'].read('run_gui.bat')
+          assert b'LicenseRecoverGUI.exe' in trampoline and b'&&' not in trampoline, 'invalid update trampoline'
+          shared_portable={n for n in portable if not n.startswith('jre/') and n!='JRE_SOURCE_NOTICE.txt'}
+          shared_update=update-{'run_gui.bat'}
+          assert shared_portable==shared_update, 'portable/update application file sets differ'
+          for name in shared_portable:
+              assert digest(zips['LicenseRecover-latest.zip'].read(name))==digest(zips['LicenseRecover-update.zip'].read(name)), 'portable/update file differs: '+name
+          assert len(set(jars.values()))==1, 'portable/update runtime differs'
+          print('PASS: both ZIP hashes, pinned metadata, 111 exact runtime classes, JRE layout and all shared application files')
+          PY
+          python3 evidence/validate.py assets
+
+      - name: Create new exact-source tag and draft, upload without overwriting, verify round trip
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Every mutation is explicit to this repository. Existing tags/assets are never overwritten.
+          jq -n --arg tag "refs/tags/$TAG" --arg sha "$SOURCE_SHA" '{ref:$tag,sha:$sha}' > evidence/tag.json
+          gh api --method POST "repos/$REPO/git/refs" --input evidence/tag.json > evidence/created-tag.json
+          jq -e --arg sha "$SOURCE_SHA" '.object.type == "commit" and .object.sha == $sha' evidence/created-tag.json
+          jq -n --arg tag "$TAG" --arg sha "$SOURCE_SHA" --rawfile notes evidence/RELEASE_NOTES.md \
+            '{tag_name:$tag,target_commitish:$sha,name:("LicenseRecover "+$tag),body:$notes,draft:true,prerelease:false,make_latest:"false"}' > evidence/draft.json
+          gh api --method POST "repos/$REPO/releases" --input evidence/draft.json > evidence/created-release.json
+          release_id="$(jq -r .id evidence/created-release.json)"
+          [[ "$release_id" =~ ^[0-9]+$ ]]
+          echo "RELEASE_ID=$release_id" >> "$GITHUB_ENV"
+          gh release upload "$TAG" --repo "$REPO" assets/LicenseRecover-latest.zip assets/LicenseRecover-update.zip assets/SHA256SUMS.txt
+          gh api "repos/$REPO/releases/$release_id" > evidence/draft-with-assets.json
+          jq -e --arg tag "$TAG" --arg sha "$SOURCE_SHA" '
+            .draft == true and .prerelease == false and .tag_name == $tag and .target_commitish == $sha and
+            ([.assets[].name] | sort) == ["LicenseRecover-latest.zip","LicenseRecover-update.zip","SHA256SUMS.txt"]
+          ' evidence/draft-with-assets.json
+          gh release download "$TAG" --repo "$REPO" --dir roundtrip
+          for file in LicenseRecover-latest.zip LicenseRecover-update.zip SHA256SUMS.txt; do cmp "assets/$file" "roundtrip/$file"; done
+          python3 evidence/validate.py roundtrip
+          gh api "repos/$REPO/git/ref/tags/$TAG" --jq .object.sha | grep -Fx "$SOURCE_SHA"
+
+      - name: Publish verified draft as stable latest and verify final source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_ID" =~ ^[0-9]+$ ]]
+          # Publish only the draft created in this run after every round-trip check above passed.
+          gh api "repos/$REPO/releases/$RELEASE_ID" --jq '.draft' | grep -Fx true
+          gh api "repos/$REPO/git/ref/tags/$TAG" --jq .object.sha | grep -Fx "$SOURCE_SHA"
+          jq -n '{draft:false,prerelease:false,make_latest:"true"}' > evidence/publish.json
+          gh api --method PATCH "repos/$REPO/releases/$RELEASE_ID" --input evidence/publish.json > evidence/published.json
+          jq -e --arg tag "$TAG" --arg sha "$SOURCE_SHA" --argjson id "$RELEASE_ID" '
+            .id == $id and .tag_name == $tag and .target_commitish == $sha and .draft == false and .prerelease == false
+          ' evidence/published.json
+          latest_verified=false
+          for attempt in 1 2 3 4 5; do
+            gh api "repos/$REPO/releases/latest" > evidence/latest.json
+            if jq -e --arg tag "$TAG" --arg sha "$SOURCE_SHA" --argjson id "$RELEASE_ID" '
+              .id == $id and .tag_name == $tag and .target_commitish == $sha and .draft == false and .prerelease == false
+            ' evidence/latest.json; then latest_verified=true; break; fi
+            sleep 5
+          done
+          test "$latest_verified" = true
+          gh api "repos/$REPO/git/ref/tags/$TAG" | jq -e --arg sha "$SOURCE_SHA" '.object.type == "commit" and .object.sha == $sha'
+          echo "Published $TAG from exact source $SOURCE_SHA with verified asset round trip."
+
