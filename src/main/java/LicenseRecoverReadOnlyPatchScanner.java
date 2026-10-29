@@ -64,6 +64,7 @@ public final class LicenseRecoverReadOnlyPatchScanner {
         // Distinct paths can still be hard links to the same physical file.
         // Count only independent reviewed artifacts as evidence.
         java.util.List<Path> verifiedPaths = new java.util.ArrayList<Path>();
+        java.util.List<Reviewed> firstPassConfirmed = new java.util.ArrayList<Reviewed>();
         boolean original = false, patched = false, incomplete = false;
         int matched = 0;
         StringBuilder evidence = new StringBuilder();
@@ -136,11 +137,13 @@ public final class LicenseRecoverReadOnlyPatchScanner {
                             "审核文件身份核对失败: " + ex.getClass().getSimpleName());
                 }
             }
-            if (result.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL)
+            if (result.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL) {
                 original = true;
-            else if (result.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED)
+                firstPassConfirmed.add(candidate);
+            } else if (result.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED) {
                 patched = true;
-            else incomplete = true;
+                firstPassConfirmed.add(candidate);
+            } else incomplete = true;
             if (result.codeIntegrity != LicenseRecoverLicenseState.CodeIntegrity.UNKNOWN) {
                 if (evidence.length() > 0) evidence.append("; ");
                 evidence.append(relative).append(": ").append(result.evidence);
@@ -153,8 +156,54 @@ public final class LicenseRecoverReadOnlyPatchScanner {
         if (incomplete || (original && patched))
             return LicenseRecoverLicenseState.unverified(
                     "已审核文件证据不完整、重复或原版/Patch 混合；不能确认整套 Patch");
-        return LicenseRecoverLicenseState.codeComparison(patched,
-                "全部 " + matched + " 个审核文件指纹一致；" + evidence);
+        // A multi-file scan is not an atomic filesystem snapshot. If an
+        // installer or another process changes an artifact after its first
+        // hash, that stale hash must not confirm a full patched set.
+        return recheckReviewedSet(runtimeRoot, runtime, detectedVersion,
+                firstPassConfirmed, patched, matched, evidence.toString());
+    }
+
+    /**
+     * Recheck every previously matched artifact before promoting a multi-file
+     * result. This is best-effort consistency, not an atomic filesystem
+     * snapshot: a file can still change after the final read.
+     * Package-private so tests can deterministically mutate files between
+     * the two phases without adding a production write callback.
+     */
+    static LicenseRecoverLicenseState recheckReviewedSet(File runtimeRoot, Runtime runtime,
+            String detectedVersion, java.util.List<Reviewed> confirmed,
+            boolean expectedPatched, int matched, String firstPassEvidence) {
+        if (runtimeRoot == null || runtime == null || detectedVersion == null
+                || confirmed == null || confirmed.isEmpty() || matched != confirmed.size())
+            return LicenseRecoverLicenseState.unverified("复核文件集合不完整，不能确认代码状态");
+        LicenseRecoverLicenseState.CodeIntegrity expected = expectedPatched
+                ? LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED
+                : LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL;
+        java.util.List<Path> recheckedPaths = new java.util.ArrayList<Path>();
+        for (Reviewed candidate : confirmed) {
+            LicenseRecoverLicenseState second = compareReviewed(
+                    runtimeRoot, runtime, detectedVersion, candidate);
+            if (second.isScanError()) return second;
+            if (second.codeIntegrity != expected)
+                return LicenseRecoverLicenseState.unverified(
+                        "扫描期间审核文件状态变化或不再匹配，不能确认整套原版/Patch");
+            try {
+                Path path = runtimeRoot.toPath().toAbsolutePath().normalize()
+                        .resolve(Paths.get(candidate.relativeArtifact.replace('\\', '/')).normalize())
+                        .normalize();
+                for (Path previous : recheckedPaths) {
+                    if (Files.isSameFile(previous, path))
+                        return LicenseRecoverLicenseState.unverified(
+                                "复核期间审核文件路径指向同一文件，不能确认独立 Patch 证据");
+                }
+                recheckedPaths.add(path);
+            } catch (java.io.IOException | SecurityException | InvalidPathException ex) {
+                return LicenseRecoverLicenseState.scanError(
+                        "二次文件身份核对失败: " + ex.getClass().getSimpleName());
+            }
+        }
+        return LicenseRecoverLicenseState.codeComparison(expectedPatched,
+                "全部 " + matched + " 个审核文件两次只读指纹一致；" + firstPassEvidence);
     }
 
     /**
