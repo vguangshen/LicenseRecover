@@ -149,6 +149,18 @@ foreach ($dir in @($portableCheck, $updateCheck)) {
         (Get-FileHash -LiteralPath (Join-Path $dir 'LicenseRecoverOverlay.jar') -Algorithm SHA256).Hash) {
         throw "Repacked runtime/overlay jars diverged: $dir"
     }
+    # Run the scanner using the EXTRACTED final portable/update ZIP runtime.
+    # Source-classpath tests alone missed the v1.2.66 Runtime nested-class bug.
+    $jarFirst = (Join-Path $dir 'LicenseRecoverRuntime.jar')
+    $guiJar = (Join-Path $dir 'LicenseRecoverGUI.jar')
+    $smokeClasses = (Join-Path $buildRoot 'test')
+    if (-not (Test-Path -LiteralPath (Join-Path $smokeClasses 'LicenseRecoverDistributionReadOnlySmokeTest.class'))) {
+        throw 'Missing compiled distribution-level scanner smoke test.'
+    }
+    Invoke-Checked 'java' @(
+        '-cp', ($jarFirst + [IO.Path]::PathSeparator + $guiJar + [IO.Path]::PathSeparator + $smokeClasses),
+        'LicenseRecoverDistributionReadOnlySmokeTest', $jarFirst
+    )
     if (Test-Path -LiteralPath (Join-Path $dir 'LicenseRecoverGUI-legacy.exe')) {
         throw "Repacked archive still contains LicenseRecoverGUI-legacy.exe: $dir"
     }
