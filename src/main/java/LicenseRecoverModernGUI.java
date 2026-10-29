@@ -31,7 +31,7 @@ import java.util.regex.Pattern;
  */
 public final class LicenseRecoverModernGUI {
     private static final long PROCESS_TIMEOUT_SECONDS = 600L;
-    private static final long BATCH_SCAN_DIRECTORY_TIMEOUT_MILLIS = 20000L;
+    private static final long BATCH_SCAN_DIRECTORY_TIMEOUT_MILLIS = 5000L;
     // Bound orphaned metadata-read threads if Windows/native I/O ignores interruption.
     private static final Semaphore BATCH_SCAN_INSPECTION_PERMITS = new Semaphore(4);
     private static final AtomicInteger BATCH_SCAN_THREAD_IDS = new AtomicInteger();
@@ -748,6 +748,7 @@ public final class LicenseRecoverModernGUI {
                         setStatusInfo("正在扫描：" + child.getName() + "（" + current + " / " + total + "）");
                     });
 
+                    appendLog("[批量扫描] 检测 " + current + "/" + total + ": " + child.getName() + "\n");
                     BatchScanInspection inspection;
                     try {
                         inspection = runBoundedBatchInspection(
@@ -758,13 +759,14 @@ public final class LicenseRecoverModernGUI {
                         break;
                     } catch (TimeoutException ex) {
                         inspection = BatchScanInspection.failed(child,
-                                "检测超时（20 秒），已跳过该目录的深入识别；其他目录继续扫描");
+                                "检测超时（5 秒），已跳过该目录的深入识别；其他目录继续扫描");
                     } catch (Exception ex) {
                         String msg = ex.getMessage();
                         inspection = BatchScanInspection.failed(child,
                                 ex.getClass().getSimpleName()
                                 + (msg == null ? "" : ": " + msg));
                     }
+                    if (isCancelled()) break;
                     detectedCount += inspection.detected;
                     skippedCount += inspection.skipped;
                     errorCount += inspection.errors;
