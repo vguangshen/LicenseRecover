@@ -1275,8 +1275,16 @@ public final class LicenseRecoverModernGUI {
         };
         if (SwingUtilities.isEventDispatchThread()) render.run();
         else SwingUtilities.invokeLater(render);
-        // Never wait for filesystem logging on Swing's event dispatch thread.
-        appendPersistentLog(text);
+        // Persistent logging can block on antivirus, slow disks or file locks.
+        // Never perform it on the Swing event dispatch thread.
+        if (SwingUtilities.isEventDispatchThread()) {
+            Thread logWriter = new Thread(() -> appendPersistentLog(text),
+                    "LicenseRecover-BatchLogWriter");
+            logWriter.setDaemon(true);
+            logWriter.start();
+        } else {
+            appendPersistentLog(text);
+        }
     }
 
     private void appendPersistentLog(String text) {
