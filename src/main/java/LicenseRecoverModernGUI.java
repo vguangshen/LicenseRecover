@@ -995,7 +995,14 @@ public final class LicenseRecoverModernGUI {
                             LicenseRecoverLicenseState licenseState =
                                     LicenseRecoverReadOnlyPatchScanner.scan(info.libDir,
                                             LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, plan.softVersionId);
-                            if (licenseState.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED
+                            if (licenseState.isScanError()) {
+                                // Keep the red row and the aggregate error count consistent.
+                                // A failed read-only inspection is not a verified invalid license.
+                                errorCount = 1;
+                                statusText = "检测失败";
+                                diagnostic = "只读指纹检测失败: " + licenseState.evidence;
+                                verifyText += "；" + diagnostic;
+                            } else if (licenseState.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED
                                     || licenseState.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL)
                                 verifyText += "；只读代码比对：" + licenseState.evidence;
                             cells = new Object[]{child.getName(),
@@ -1003,7 +1010,7 @@ public final class LicenseRecoverModernGUI {
                                     valueOrDash(plan.softVersionId), valueOrDash(plan.authorizationFamily),
                                     valueOrDash(plan.runtimeProductId), plan.regStrSummary(), plan.configTargets,
                                     licenseState.display(), verifyText, statusText, info.appRoot.getAbsolutePath()};
-                            detectedCount = 1;
+                            detectedCount = errorCount == 0 ? 1 : 0;
                         } else if (info.type == AppInfo.Type.DOTNET) {
                             target = BatchTarget.dotNetTarget(child.getName(), info.binDir);
                             LicenseRecoverModernGUIAutoRecovery.Detection d =
@@ -1032,14 +1039,19 @@ public final class LicenseRecoverModernGUI {
                             LicenseRecoverLicenseState licenseState =
                                     LicenseRecoverReadOnlyPatchScanner.scan(info.binDir,
                                             LicenseRecoverReadOnlyPatchScanner.Runtime.DOTNET, d.versionId);
-                            if (licenseState.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED
+                            if (licenseState.isScanError()) {
+                                errorCount = 1;
+                                dotNetStatus = "检测失败";
+                                diagnostic = "只读指纹检测失败: " + licenseState.evidence;
+                                verify += "；" + diagnostic;
+                            } else if (licenseState.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED
                                     || licenseState.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL)
                                 verify += "；只读代码比对：" + licenseState.evidence;
                             cells = new Object[]{child.getName(), kind,
                                     valueOrDash(d.versionId), valueOrDash(d.productName), valueOrDash(d.productName),
                                     valueOrDash(dotNetRegStr), "config.xml", licenseState.display(), verify, dotNetStatus,
                                     info.binDir.getAbsolutePath()};
-                            detectedCount = 1;
+                            detectedCount = errorCount == 0 ? 1 : 0;
                         } else {
                             target = BatchTarget.skipped(child.getName());
                             cells = new Object[]{child.getName(), "—", "—", "—", "—", "—", "—", "未知", "—",
