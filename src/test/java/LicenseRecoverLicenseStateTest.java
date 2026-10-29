@@ -120,6 +120,65 @@ public final class LicenseRecoverLicenseStateTest {
         } catch (java.io.IOException ex) {
             throw new AssertionError("read-only fingerprint fixture failed", ex);
         }
+        // Exercise the actual Java/.NET artifact resolver with independently
+        // supplied fixture fingerprints. Production has no approved patch pair.
+        try {
+            java.nio.file.Path root = java.nio.file.Files.createTempDirectory("lr-scanner-");
+            java.nio.file.Path bin = java.nio.file.Files.createDirectories(root.resolve("bin"));
+            java.nio.file.Path artifact = bin.resolve("RegisterMain.bin");
+            String originalHash = "bfc8234d0e0f6184640fec12438757ceac504df4ab8b232921b9bb506c981cb1";
+            String patchedHash = "ba15b5958ced9058f5441c1b8929a72905e71c2898b82a9eab307b85f78cab07";
+            LicenseRecoverReadOnlyPatchScanner.Reviewed fixture =
+                    new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                            LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                            "bin/RegisterMain.bin", originalHash, patchedHash);
+            try {
+                java.nio.file.Files.write(artifact, "original-binary".getBytes("UTF-8"));
+                check(LicenseRecoverReadOnlyPatchScanner.scan(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101")
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                        "production registry without independently reviewed pairs must remain gray");
+                check(LicenseRecoverReadOnlyPatchScanner.compareReviewed(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101", fixture)
+                        .codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL,
+                        "reviewed fixture resolves the exact original artifact");
+                check(LicenseRecoverReadOnlyPatchScanner.compareReviewed(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.DOTNET, "DS0101", fixture)
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                        "Java fingerprint must not apply to .NET");
+                check(LicenseRecoverReadOnlyPatchScanner.compareReviewed(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0107", fixture)
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                        "other version must not inherit Java fingerprint");
+                java.nio.file.Files.write(artifact, "reviewed-patch".getBytes("UTF-8"));
+                check(LicenseRecoverReadOnlyPatchScanner.compareReviewed(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101", fixture)
+                        .codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED,
+                        "reviewed fixture resolves the exact patched artifact");
+                check("reviewed-patch".equals(new String(
+                        java.nio.file.Files.readAllBytes(artifact), "UTF-8")),
+                        "fixture scanner must not write the target");
+                LicenseRecoverReadOnlyPatchScanner.Reviewed traversal =
+                        new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                                "../escape.bin", originalHash, patchedHash);
+                check(LicenseRecoverReadOnlyPatchScanner.compareReviewed(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101", traversal)
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR,
+                        "reviewed path traversal must be rejected");
+                java.nio.file.Files.delete(artifact);
+                check(LicenseRecoverReadOnlyPatchScanner.compareReviewed(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101", fixture)
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                        "missing target must not be marked as original or patched");
+            } finally {
+                java.nio.file.Files.deleteIfExists(artifact);
+                java.nio.file.Files.deleteIfExists(bin);
+                java.nio.file.Files.deleteIfExists(root);
+            }
+        } catch (java.io.IOException ex) {
+            throw new AssertionError("reviewed scanner fixture failed", ex);
+        }
         LicenseRecoverLicenseState scanFailure = LicenseRecoverLicenseState.scanError("I/O failure");
         check(scanFailure.visualStatus() == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR,
                 "inspection failure must be red, not invalid white");
