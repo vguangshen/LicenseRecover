@@ -50,6 +50,28 @@ public final class LicenseRecoverLicenseStateTest {
         check(LicenseRecoverLicenseState.visualStatus("未知异常：代码已 Patch 字样")
                 == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
                 "arbitrary labels must never be promoted to confirmed patch");
+        check(LicenseRecoverLicenseState.visualStatus("已验证激活（检测尚未执行）")
+                == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                "untrusted native-valid prefix must not turn dark green");
+        check(LicenseRecoverLicenseState.visualStatus("已确认 Patch（仅根据历史日志）")
+                == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                "untrusted patch prefix must not turn light green");
+        check(LicenseRecoverLicenseState.visualStatus("检测失败后又发现状态")
+                == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                "diagnostics must not masquerade as a typed scan error");
+        check(LicenseRecoverLicenseState.visualStatus("已验证未激活（不明附注）")
+                == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                "unknown invalid-status suffix must not be accepted");
+        check(LicenseRecoverLicenseState.visualStatus(invalid.display())
+                == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID,
+                "verified-invalid status must retain its white color category");
+        check(LicenseRecoverLicenseState.visualStatus(unknown.display())
+                == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                "unknown status must retain its gray color category");
+        check(LicenseRecoverLicenseState.visualStatus(valid.display()) == valid.visualStatus(),
+                "valid status label must agree with typed state");
+        check(LicenseRecoverLicenseState.visualStatus(patched.display()) == patched.visualStatus(),
+                "patch status label must agree with typed state");
         boolean rejected = false;
         try { LicenseRecoverLicenseState.nativeVerification(true, ""); }
         catch (IllegalArgumentException expected) { rejected = true; }
