@@ -515,8 +515,10 @@ public final class LicenseRecoverModernGUI {
             background = new Color(165, 45, 45);
             foreground = Color.WHITE;
         } else {
-            background = table.getBackground();
-            foreground = table.getForeground();
+            // UNVERIFIED: a neutral light gray, distinct from the white
+            // background reserved for a verified invalid native license.
+            background = new Color(241, 243, 246);
+            foreground = new Color(55, 65, 81);
         }
         // Keep evidence colors visible even when selecting rows.
         component.setBackground(background);
