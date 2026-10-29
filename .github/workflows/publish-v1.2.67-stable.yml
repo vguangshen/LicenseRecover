@@ -5,7 +5,7 @@ name: Publish verified LicenseRecover v1.2.67 stable update
 on:
   push:
     branches:
-      - release/v1.2.67-ci-publish-20261029
+      - release/v1.2.67-scanner-classpath-20261029
     paths:
       - .github/workflows/publish-v1.2.67-stable.yml
 
@@ -29,7 +29,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = "vguangshen/LicenseRecover"
-          test "$GITHUB_REF" = "refs/heads/release/v1.2.67-ci-publish-20261029"
+          test "$GITHUB_REF" = "refs/heads/release/v1.2.67-scanner-classpath-20261029"
           for i in $(seq 1 60); do
             run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$VERIFIED_RUN")"
             state="$(jq -r '.status' <<<"$run_json")"
