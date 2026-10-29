@@ -41,16 +41,59 @@ public final class LicenseRecoverReadOnlyPatchScanner {
 
     public static LicenseRecoverLicenseState scan(File runtimeRoot, Runtime runtime,
                                                    String detectedVersion) {
+        return scanReviewed(runtimeRoot, runtime, detectedVersion, REVIEWED);
+    }
+
+    /**
+     * All reviewed artifacts for one runtime/version form one evidence set.
+     * A single matching DLL/JAR is insufficient if other audited artifacts
+     * are missing, unknown or still original. Never use first-match wins.
+     */
+    static LicenseRecoverLicenseState scanReviewed(File runtimeRoot, Runtime runtime,
+            String detectedVersion, Reviewed[] reviewed) {
         if (runtimeRoot == null || runtime == null || detectedVersion == null
                 || detectedVersion.trim().isEmpty())
             return LicenseRecoverLicenseState.unverified("缺少运行目录、平台或版本，不能确认 Patch");
-        for (Reviewed candidate : REVIEWED) {
-            if (candidate.runtime == runtime && detectedVersion.equalsIgnoreCase(candidate.version))
-                return compareReviewed(runtimeRoot, runtime, detectedVersion, candidate);
+        if (reviewed == null)
+            return LicenseRecoverLicenseState.unverified("没有可信审核指纹集");
+        java.util.Set<String> seenPaths = new java.util.HashSet<String>();
+        boolean original = false, patched = false, incomplete = false;
+        int matched = 0;
+        StringBuilder evidence = new StringBuilder();
+        for (Reviewed candidate : reviewed) {
+            if (candidate == null || candidate.runtime != runtime || candidate.version == null
+                    || !detectedVersion.equalsIgnoreCase(candidate.version)) continue;
+            matched++;
+            String relative = candidate.relativeArtifact == null ? ""
+                    : candidate.relativeArtifact.replace('\\', '/').toLowerCase(java.util.Locale.ROOT);
+            if (!seenPaths.add(relative)) {
+                incomplete = true; // Conflicting or duplicate baselines are not independent evidence.
+                continue;
+            }
+            LicenseRecoverLicenseState result =
+                    compareReviewed(runtimeRoot, runtime, detectedVersion, candidate);
+            if (result.authorization == LicenseRecoverLicenseState.Authorization.ERROR
+                    || result.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.ERROR)
+                return result;
+            if (result.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL)
+                original = true;
+            else if (result.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED)
+                patched = true;
+            else incomplete = true;
+            if (result.codeIntegrity != LicenseRecoverLicenseState.CodeIntegrity.UNKNOWN) {
+                if (evidence.length() > 0) evidence.append("; ");
+                evidence.append(relative).append(": ").append(result.evidence);
+            }
         }
-        return LicenseRecoverLicenseState.unverified(
-                "未收录经独立审核的 " + runtime + " " + detectedVersion
-                + " 原版与 Patch 双指纹；不能确认 Patch");
+        if (matched == 0)
+            return LicenseRecoverLicenseState.unverified(
+                    "未收录经独立审核的 " + runtime + " " + detectedVersion
+                    + " 原版与 Patch 双指纹；不能确认 Patch");
+        if (incomplete || (original && patched))
+            return LicenseRecoverLicenseState.unverified(
+                    "已审核文件证据不完整、重复或原版/Patch 混合；不能确认整套 Patch");
+        return LicenseRecoverLicenseState.codeComparison(patched,
+                "全部 " + matched + " 个审核文件指纹一致；" + evidence);
     }
 
     /**
