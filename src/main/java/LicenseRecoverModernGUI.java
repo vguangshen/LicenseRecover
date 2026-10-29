@@ -131,7 +131,7 @@ public final class LicenseRecoverModernGUI {
         static BatchScanInspection failed(File child, String reason) {
             return new BatchScanInspection(BatchTarget.skipped(child.getName()),
                     new Object[]{child.getName(), "检测未完成", "—", "—", "—", "—", "—",
-                            "—", reason, child.getAbsolutePath()}, 0, 0, 1, reason);
+                            "检测失败", "—", reason, child.getAbsolutePath()}, 0, 0, 1, reason);
         }
     }
 
