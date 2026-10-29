@@ -180,7 +180,7 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
         File selected = new File(appRoot.getText().trim());
         LicenseRecoverModernGUIAutoRecovery.Detection detection = LicenseRecoverModernGUIAutoRecovery.detect(selected);
         if (detection.kind == LicenseRecoverModernGUIAutoRecovery.Kind.JAVA) {
-            LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(selected);
+            LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspectReadOnly(selected);
             generation.setText(plan.generation);
             family.setText(value(plan.authorizationFamily));
             runtime.setText(value(plan.runtimeProductId));

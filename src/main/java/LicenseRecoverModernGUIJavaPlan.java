@@ -12,14 +12,14 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Read-only Java authorization plan used by both the single-app and batch GUI.
+ * Java authorization planning shared by recovery actions and read-only GUI discovery.
  *
  * Important: this class must remain independent from LicenseRecover.class because
- * the GUI process intentionally does not load the selected application's ITMCReg
- * classes into its own classpath. The actual recovery still runs in a child JVM
- * with the application's WEB-INF/lib classpath (and the existing Virbox unpack
- * compatibility path). Keeping the preview file-only prevents the first Java
- * target in a batch from failing with NoClassDefFoundError before execution.
+ * inspectReadOnly() uses static files only and never loads the application's classes.
+ * inspect() retains the legacy recovery-planning fallback, which may initialize
+ * target classes and call getRegInfo(); it is not a read-only verification API.
+ * Recovery actions continue to use the application's runtime and existing Virbox
+ * compatibility path. Passive previews and batch scans must use inspectReadOnly().
  */
 public final class LicenseRecoverModernGUIJavaPlan {
     private static final Pattern XML_ELEMENT_TEMPLATE = Pattern.compile("a");
@@ -73,7 +73,17 @@ public final class LicenseRecoverModernGUIJavaPlan {
         this.recoveryReadiness = recoveryReadiness;
     }
 
+    /** Recovery-action compatibility path; may execute a target RegStr probe. */
     public static LicenseRecoverModernGUIJavaPlan inspect(File selected) {
+        return inspect(selected, true);
+    }
+
+    /** Batch discovery: static evidence only; never initializes or invokes target code. */
+    public static LicenseRecoverModernGUIJavaPlan inspectReadOnly(File selected) {
+        return inspect(selected, false);
+    }
+
+    private static LicenseRecoverModernGUIJavaPlan inspect(File selected, boolean allowNativeProbe) {
         LicenseRecoverModernGUIAutoRecovery.Detection detection =
                 LicenseRecoverModernGUIAutoRecovery.detect(selected);
         if (detection.kind != LicenseRecoverModernGUIAutoRecovery.Kind.JAVA
@@ -172,7 +182,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
         } else if (!blank(dataDrivenPrimaryRegStr)) {
             products = dataDrivenPrimaryRegStr;
         } else {
-            recoveredLocalRegStr = blank(runtimeProduct)
+            recoveredLocalRegStr = !allowNativeProbe || blank(runtimeProduct)
                     ? null : ExistingLocalRegStrProbe.recover(root, lib, runtimeProduct);
             products = recoveredLocalRegStr;
         }

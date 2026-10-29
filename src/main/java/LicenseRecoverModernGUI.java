@@ -986,7 +986,7 @@ public final class LicenseRecoverModernGUI {
                         AppInfo info = AppDetector.detectLocal(child);
                         if (info.type == AppInfo.Type.JAVA) {
                             target = BatchTarget.javaTarget(child.getName(), info.appRoot, info.libDir);
-                            LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(info.appRoot);
+                            LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspectReadOnly(info.appRoot);
                             String verifyText = !plan.detected ? "待识别"
                                     : (plan.automaticRecoveryReady ? "未执行: RegisterMain 原生校验"
                                     : "未执行: " + plan.recoveryReadiness);
@@ -995,6 +995,11 @@ public final class LicenseRecoverModernGUI {
                             LicenseRecoverLicenseState licenseState =
                                     LicenseRecoverReadOnlyPatchScanner.scan(info.libDir,
                                             LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, plan.softVersionId);
+                            LicenseRecoverReadOnlyInspection.Result inspection = LicenseRecoverReadOnlyInspection.inspect(
+                                    info.appRoot, info.libDir, LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA,
+                                    plan.softVersionId, licenseState);
+                            licenseState = inspection.state;
+                            verifyText += "；" + inspection.summary();
                             if (licenseState.isScanError()) {
                                 // Keep the red row and the aggregate error count consistent.
                                 // A failed read-only inspection is not a verified invalid license.
@@ -1039,6 +1044,11 @@ public final class LicenseRecoverModernGUI {
                             LicenseRecoverLicenseState licenseState =
                                     LicenseRecoverReadOnlyPatchScanner.scan(info.binDir,
                                             LicenseRecoverReadOnlyPatchScanner.Runtime.DOTNET, d.versionId);
+                            LicenseRecoverReadOnlyInspection.Result inspection = LicenseRecoverReadOnlyInspection.inspect(
+                                    info.appRoot, info.binDir, LicenseRecoverReadOnlyPatchScanner.Runtime.DOTNET,
+                                    d.versionId, licenseState);
+                            licenseState = inspection.state;
+                            verify += "；" + inspection.summary();
                             if (licenseState.isScanError()) {
                                 errorCount = 1;
                                 dotNetStatus = "检测失败";

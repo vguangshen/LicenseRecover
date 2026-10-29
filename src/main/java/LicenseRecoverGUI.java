@@ -616,7 +616,7 @@ public class LicenseRecoverGUI {
                 }
                 setAppTypeBadge("JAVA");
                 File appRootDir = new File(lib).getParentFile().getParentFile();
-                LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(appRootDir);
+                LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspectReadOnly(appRootDir);
                 if (!plan.detected || !plan.automaticRecoveryReady) {
                     appendLog("[阻止] Java 注册身份未从目标目录完整确认："
                             + (plan.detected ? plan.recoveryReadiness : "未识别注册结构") + "\n");
