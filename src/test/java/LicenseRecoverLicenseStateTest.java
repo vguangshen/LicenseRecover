@@ -296,6 +296,26 @@ public final class LicenseRecoverLicenseStateTest {
                         root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101", traversal)
                         .visualStatus() == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR,
                         "reviewed path traversal must be rejected");
+                // A trusted baseline cannot name a Windows drive-relative
+                // target or an NTFS alternate data stream. Neither can count
+                // as an independent, byte-perfect reviewed artifact.
+                for (String invalidPath : new String[]{
+                        "C:bin/RegisterMain.bin", "bin/RegisterMain.bin:payload"}) {
+                    LicenseRecoverReadOnlyPatchScanner.Reviewed unsafePath =
+                            new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                    LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                                    invalidPath, originalHash, patchedHash);
+                    check(LicenseRecoverReadOnlyPatchScanner.compareReviewed(
+                            root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA,
+                            "DS0101", unsafePath).visualStatus()
+                            == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR,
+                            "drive-relative or alternate-stream path must be rejected: " + invalidPath);
+                    check(LicenseRecoverReadOnlyPatchScanner.scanReviewed(
+                            root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA,
+                            "DS0101", new LicenseRecoverReadOnlyPatchScanner.Reviewed[]{fixture, unsafePath})
+                            .visualStatus() == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR,
+                            "unsafe trusted path must not be silently skipped: " + invalidPath);
+                }
                 // On Unix a path nested beneath a regular file is an I/O
                 // error, not a missing artifact. Never silently downgrade it
                 // to gray or claim the reviewed patch is valid.
