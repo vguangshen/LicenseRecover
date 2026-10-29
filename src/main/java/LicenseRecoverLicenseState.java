@@ -77,16 +77,20 @@ public final class LicenseRecoverLicenseState {
         return VisualStatus.UNVERIFIED;
     }
 
-    /** Compatibility for the existing table; unrecognized labels stay unverified. */
+    /**
+     * Compatibility with the table's textual status column. Match only labels
+     * emitted by display(); an arbitrary prefix or diagnostic message is NOT
+     * authorization evidence and must never acquire a green background.
+     */
     public static VisualStatus visualStatus(String label) {
         if (label == null) return VisualStatus.UNVERIFIED;
-        if (label.startsWith("检测失败")) return VisualStatus.SCAN_ERROR;
-        if (label.equals("已验证激活（代码已 Patch）")
-                || label.equals("已验证未激活（代码已 Patch）"))
+        if ("检测失败".equals(label)) return VisualStatus.SCAN_ERROR;
+        if ("已验证激活（代码已 Patch）".equals(label)
+                || "已验证未激活（代码已 Patch）".equals(label)
+                || "已确认 Patch（授权未验证）".equals(label))
             return VisualStatus.PATCHED_UNVERIFIED;
-        if (label.startsWith("已验证激活")) return VisualStatus.NATIVE_VALID;
-        if (label.startsWith("已确认 Patch")) return VisualStatus.PATCHED_UNVERIFIED;
-        if (label.startsWith("已验证未激活")) return VisualStatus.NATIVE_INVALID;
+        if ("已验证激活".equals(label)) return VisualStatus.NATIVE_VALID;
+        if ("已验证未激活".equals(label)) return VisualStatus.NATIVE_INVALID;
         return VisualStatus.UNVERIFIED;
     }
 
