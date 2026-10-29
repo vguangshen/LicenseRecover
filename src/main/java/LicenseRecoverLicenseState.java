@@ -26,6 +26,12 @@ public final class LicenseRecoverLicenseState {
         return new LicenseRecoverLicenseState(Authorization.UNVERIFIED, CodeIntegrity.UNKNOWN, reason, "none");
     }
 
+    /** Read-only inspection failed; a failure is not proof of invalid authorization. */
+    public static LicenseRecoverLicenseState scanError(String reason) {
+        return new LicenseRecoverLicenseState(Authorization.ERROR, CodeIntegrity.ERROR,
+                reason == null ? "" : reason, "read-only-scan");
+    }
+
     /**
      * Only a separately audited, current, target-native verification may call
      * this factory. No record of previous actions is accepted as evidence.
