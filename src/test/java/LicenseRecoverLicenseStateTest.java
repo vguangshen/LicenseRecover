@@ -14,6 +14,16 @@ public final class LicenseRecoverLicenseStateTest {
         LicenseRecoverLicenseState patched = LicenseRecoverLicenseState.codeComparison(true, "versioned original comparison");
         check(!patched.selectedByDefault(), "patched must be deselected");
         check(patched.authorization == LicenseRecoverLicenseState.Authorization.UNVERIFIED, "patch is not activation");
+        LicenseRecoverLicenseState both = LicenseRecoverLicenseState.combine(valid, patched);
+        check(both.authorization == LicenseRecoverLicenseState.Authorization.VERIFIED_VALID,
+                "native evidence must survive merge");
+        check(both.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED,
+                "patch evidence must survive merge");
+        check(both.display().contains("代码已 Patch"), "combined status must show both facts");
+        boolean badSource = false;
+        try { LicenseRecoverLicenseState.combine(unknown, patched); }
+        catch (IllegalArgumentException expected) { badSource = true; }
+        check(badSource, "unverified state cannot masquerade as native evidence");
         boolean rejected = false;
         try { LicenseRecoverLicenseState.nativeVerification(true, ""); }
         catch (IllegalArgumentException expected) { rejected = true; }
