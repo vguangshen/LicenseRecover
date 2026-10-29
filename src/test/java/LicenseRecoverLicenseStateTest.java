@@ -47,6 +47,9 @@ public final class LicenseRecoverLicenseStateTest {
                 "confirmed patch uses light green even when native validation differs");
         check(LicenseRecoverLicenseState.visualStatus(invalidAndPatched.display())
                 == invalidAndPatched.visualStatus(), "typed and table status must agree");
+        check(LicenseRecoverLicenseState.visualStatus("未知异常：代码已 Patch 字样")
+                == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                "arbitrary labels must never be promoted to confirmed patch");
         boolean rejected = false;
         try { LicenseRecoverLicenseState.nativeVerification(true, ""); }
         catch (IllegalArgumentException expected) { rejected = true; }
