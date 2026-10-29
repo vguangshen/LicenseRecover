@@ -159,6 +159,24 @@ public final class LicenseRecoverLicenseStateTest {
                 check("reviewed-patch".equals(new String(
                         java.nio.file.Files.readAllBytes(artifact), "UTF-8")),
                         "fixture scanner must not write the target");
+                // Portable reviewed paths must be interpreted identically on
+                // Windows and Unix. A Windows separator is not a literal
+                // filename character when validating trusted artifacts.
+                LicenseRecoverReadOnlyPatchScanner.Reviewed windowsSeparatorFixture =
+                        new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                                "bin\\RegisterMain.bin", originalHash, patchedHash);
+                check(LicenseRecoverReadOnlyPatchScanner.compareReviewed(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA,
+                        "DS0101", windowsSeparatorFixture).codeIntegrity
+                        == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED,
+                        "portable Windows-style separator must resolve the same patched file");
+                check(LicenseRecoverReadOnlyPatchScanner.scanReviewed(
+                        root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                        new LicenseRecoverReadOnlyPatchScanner.Reviewed[]{fixture, windowsSeparatorFixture})
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                        "separator aliases must not count as independent patch artifacts");
+
                 // A reviewed patch set is atomic: one matching file must not
                 // turn the whole application light green when another differs.
                 LicenseRecoverReadOnlyPatchScanner.Reviewed companionFixture =
@@ -300,7 +318,9 @@ public final class LicenseRecoverLicenseStateTest {
                 // target or an NTFS alternate data stream. Neither can count
                 // as an independent, byte-perfect reviewed artifact.
                 for (String invalidPath : new String[]{
-                        "C:bin/RegisterMain.bin", "bin/RegisterMain.bin:payload"}) {
+                        "C:bin/RegisterMain.bin", "bin/RegisterMain.bin:payload",
+                        "..\\escape.bin", "\\Windows\\system32\\other.bin",
+                        "\\\\server\\share\\other.bin"}) {
                     LicenseRecoverReadOnlyPatchScanner.Reviewed unsafePath =
                             new LicenseRecoverReadOnlyPatchScanner.Reviewed(
                                     LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
