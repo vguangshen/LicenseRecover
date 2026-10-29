@@ -165,6 +165,12 @@ public final class LicenseRecoverReadOnlyPatchScanner {
         if (runtimeRoot == null || reviewed.relativeArtifact == null
                 || reviewed.relativeArtifact.trim().isEmpty())
             return LicenseRecoverLicenseState.unverified("缺少目标文件路径");
+        // Trusted artifact paths must be ordinary portable relative filenames.
+        // Reject Windows drive-relative syntax (C:foo.dll) and NTFS alternate
+        // data streams (file.dll:stream) before any filesystem access, even
+        // when tests run on a non-Windows host.
+        if (reviewed.relativeArtifact.indexOf(':') >= 0)
+            return LicenseRecoverLicenseState.scanError("审核指纹路径包含盘符或备用数据流语法");
         try {
             Path root = runtimeRoot.toPath().toAbsolutePath().normalize();
             Path relative = Paths.get(reviewed.relativeArtifact).normalize();
