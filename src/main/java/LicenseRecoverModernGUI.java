@@ -64,10 +64,10 @@ public final class LicenseRecoverModernGUI {
 
     private final JTextField batchRootField = new JTextField();
     private static final int BATCH_COL_SELECTED = 0;
-    private static final int BATCH_COL_VERIFY = 8;
-    private static final int BATCH_COL_STATUS = 9;
+    private static final int BATCH_COL_VERIFY = 9;
+    private static final int BATCH_COL_STATUS = 10;
     private final DefaultTableModel batchModel = new DefaultTableModel(
-            new String[]{"执行", "应用", "类型 / 授权代际", "SoftVersionID", "授权族", "运行校验ID", "RegStr", "配置目标", "原生校验", "状态", "路径"}, 0) {
+            new String[]{"执行", "应用", "类型 / 授权代际", "SoftVersionID", "授权族", "运行校验ID", "RegStr", "配置目标", "授权状态", "原生校验", "状态", "路径"}, 0) {
         public boolean isCellEditable(int row, int column) { return column == BATCH_COL_SELECTED && (batchWorker == null || batchWorker.isDone()); }
         public Class<?> getColumnClass(int column) { return column == BATCH_COL_SELECTED ? Boolean.class : String.class; }
     };
@@ -439,7 +439,7 @@ public final class LicenseRecoverModernGUI {
         batchTable.getColumnModel().getColumn(BATCH_COL_SELECTED).setMaxWidth(65);
         batchTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         batchTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-        int[] widths = new int[]{52, 120, 170, 105, 95, 115, 180, 200, 140, 85, 320};
+        int[] widths = new int[]{52, 120, 170, 105, 95, 115, 180, 200, 110, 140, 85, 320};
         for (int i = 0; i < widths.length; i++) batchTable.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
         root.add(new JScrollPane(batchTable), BorderLayout.CENTER);
 
@@ -913,7 +913,7 @@ public final class LicenseRecoverModernGUI {
                                     plan.detected ? "Java / " + plan.generation : "Java",
                                     valueOrDash(plan.softVersionId), valueOrDash(plan.authorizationFamily),
                                     valueOrDash(plan.runtimeProductId), plan.regStrSummary(), plan.configTargets,
-                                    verifyText, statusText, info.appRoot.getAbsolutePath()};
+                                    "未验证", verifyText, statusText, info.appRoot.getAbsolutePath()};
                             detectedCount = 1;
                         } else if (info.type == AppInfo.Type.DOTNET) {
                             target = BatchTarget.dotNetTarget(child.getName(), info.binDir);
@@ -938,12 +938,12 @@ public final class LicenseRecoverModernGUI {
                                     : ((!dotNetIdentityReady || !dotNetRegReady) ? "待确认" : "待处理");
                             cells = new Object[]{child.getName(), kind,
                                     valueOrDash(d.versionId), valueOrDash(d.productName), valueOrDash(d.productName),
-                                    valueOrDash(dotNetRegStr), "config.xml", verify, dotNetStatus,
+                                    valueOrDash(dotNetRegStr), "config.xml", "未验证", verify, dotNetStatus,
                                     info.binDir.getAbsolutePath()};
                             detectedCount = 1;
                         } else {
                             target = BatchTarget.skipped(child.getName());
-                            cells = new Object[]{child.getName(), "—", "—", "—", "—", "—", "—", "—",
+                            cells = new Object[]{child.getName(), "—", "—", "—", "—", "—", "—", "未知", "—",
                                     "未识别", child.getAbsolutePath()};
                             skippedCount = 1;
                         }
@@ -953,7 +953,7 @@ public final class LicenseRecoverModernGUI {
                         String msg = ex.getMessage();
                         String reason = ex.getClass().getSimpleName()
                                 + (msg == null || msg.trim().isEmpty() ? "" : ": " + msg.trim());
-                        cells = new Object[]{child.getName(), "检测异常", "—", "—", "—", "—", "—", "—",
+                        cells = new Object[]{child.getName(), "检测异常", "—", "—", "—", "—", "—", "检测失败", "—",
                                 reason, child.getAbsolutePath()};
                         diagnostic = reason;
                     }
