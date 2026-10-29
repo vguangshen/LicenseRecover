@@ -1009,6 +1009,8 @@ public final class LicenseRecoverModernGUI {
                                     : LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(d));
                             boolean dotNetIdentityReady = d.productName != null && !d.productName.trim().isEmpty();
                             boolean dotNetRegReady = dotNetRegStr != null && !dotNetRegStr.trim().isEmpty();
+                            boolean knownDs0101DllPair = ds0101Ready
+                                    && LicenseRecoverModernGUIAutoRecovery.isKnownDs0101RegistrationPair(d.runtimeDir);
                             String verify = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
                                     ? (dotNetIdentityReady && dotNetRegReady
                                             ? "待执行: DoRegistry + CheckReInfo"
@@ -1018,7 +1020,12 @@ public final class LicenseRecoverModernGUI {
                             String dotNetStatus = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_LEGACY
                                     ? (ds0101Ready ? "待原生校验" : "不支持自动写回")
                                     : ((!dotNetIdentityReady || !dotNetRegReady) ? "待确认" : "待处理");
-                            LicenseRecoverLicenseState licenseState = LicenseRecoverLicenseState.unverified(".NET 原生只读校验尚未完成审计");
+                            if (knownDs0101DllPair)
+                                verify = "已识别 DS0101 双 DLL 精确 SHA-256（授权未验证）";
+                            LicenseRecoverLicenseState licenseState = LicenseRecoverLicenseState.unverified(
+                                    knownDs0101DllPair
+                                    ? "DS0101 双 DLL 与已分析样本 SHA-256 一致；仅证明版本，未执行原生授权校验"
+                                    : ".NET 原生只读校验尚未完成审计");
                             cells = new Object[]{child.getName(), kind,
                                     valueOrDash(d.versionId), valueOrDash(d.productName), valueOrDash(d.productName),
                                     valueOrDash(dotNetRegStr), "config.xml", licenseState.display(), verify, dotNetStatus,
