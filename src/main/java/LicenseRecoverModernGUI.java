@@ -1009,7 +1009,7 @@ public final class LicenseRecoverModernGUI {
                                     : LicenseRecoverModernGUIAutoRecovery.detectDotNetRegStr(d));
                             boolean dotNetIdentityReady = d.productName != null && !d.productName.trim().isEmpty();
                             boolean dotNetRegReady = dotNetRegStr != null && !dotNetRegStr.trim().isEmpty();
-                            boolean knownDs0101DllPair = ds0101Ready
+                            boolean knownDs0101DllPair = "DS0101".equalsIgnoreCase(d.versionId)
                                     && LicenseRecoverModernGUIAutoRecovery.isKnownDs0101RegistrationPair(d.runtimeDir);
                             String verify = d.kind == LicenseRecoverModernGUIAutoRecovery.Kind.DOTNET_MODERN
                                     ? (dotNetIdentityReady && dotNetRegReady
