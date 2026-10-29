@@ -992,7 +992,12 @@ public final class LicenseRecoverModernGUI {
                                     : "未执行: " + plan.recoveryReadiness);
                             String statusText = !plan.detected ? "待识别"
                                     : (plan.automaticRecoveryReady ? "待处理" : "待确认");
-                            LicenseRecoverLicenseState licenseState = LicenseRecoverLicenseState.unverified("Java 原生只读校验尚未完成审计");
+                            LicenseRecoverLicenseState licenseState =
+                                    LicenseRecoverReadOnlyPatchScanner.scan(info.libDir,
+                                            LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, plan.softVersionId);
+                            if (licenseState.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED
+                                    || licenseState.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL)
+                                verifyText += "；只读代码比对：" + licenseState.evidence;
                             cells = new Object[]{child.getName(),
                                     plan.detected ? "Java / " + plan.generation : "Java",
                                     valueOrDash(plan.softVersionId), valueOrDash(plan.authorizationFamily),
@@ -1024,10 +1029,12 @@ public final class LicenseRecoverModernGUI {
                                     : ((!dotNetIdentityReady || !dotNetRegReady) ? "待确认" : "待处理");
                             if (knownDs0101DllPair)
                                 verify = "已识别 DS0101 双 DLL 精确 SHA-256（授权未验证）";
-                            LicenseRecoverLicenseState licenseState = LicenseRecoverLicenseState.unverified(
-                                    knownDs0101DllPair
-                                    ? "DS0101 双 DLL 与已分析样本 SHA-256 一致；仅证明版本，未执行原生授权校验"
-                                    : ".NET 原生只读校验尚未完成审计");
+                            LicenseRecoverLicenseState licenseState =
+                                    LicenseRecoverReadOnlyPatchScanner.scan(info.binDir,
+                                            LicenseRecoverReadOnlyPatchScanner.Runtime.DOTNET, d.versionId);
+                            if (licenseState.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED
+                                    || licenseState.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL)
+                                verify += "；只读代码比对：" + licenseState.evidence;
                             cells = new Object[]{child.getName(), kind,
                                     valueOrDash(d.versionId), valueOrDash(d.productName), valueOrDash(d.productName),
                                     valueOrDash(dotNetRegStr), "config.xml", licenseState.display(), verify, dotNetStatus,
