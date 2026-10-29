@@ -81,7 +81,9 @@ public final class LicenseRecoverLicenseState {
     public static VisualStatus visualStatus(String label) {
         if (label == null) return VisualStatus.UNVERIFIED;
         if (label.startsWith("检测失败")) return VisualStatus.SCAN_ERROR;
-        if (label.contains("代码已 Patch")) return VisualStatus.PATCHED_UNVERIFIED;
+        if (label.equals("已验证激活（代码已 Patch）")
+                || label.equals("已验证未激活（代码已 Patch）"))
+            return VisualStatus.PATCHED_UNVERIFIED;
         if (label.startsWith("已验证激活")) return VisualStatus.NATIVE_VALID;
         if (label.startsWith("已确认 Patch")) return VisualStatus.PATCHED_UNVERIFIED;
         if (label.startsWith("已验证未激活")) return VisualStatus.NATIVE_INVALID;
