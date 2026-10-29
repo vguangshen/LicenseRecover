@@ -353,6 +353,7 @@ $classPrefixes = @(
     'BatchTarget',
     'ConfigSafety',
     'LicenseRecoverModernGUI',
+    'LicenseRecoverLicenseState',
     'LicenseRecoverSharedLog',
     'LicenseRecoverJavaHost',
     'JavaRegistrationRuntimeProfile',
