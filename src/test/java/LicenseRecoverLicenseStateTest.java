@@ -235,6 +235,26 @@ public final class LicenseRecoverLicenseStateTest {
                         root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101", traversal)
                         .visualStatus() == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR,
                         "reviewed path traversal must be rejected");
+                // On Unix a path nested beneath a regular file is an I/O
+                // error, not a missing artifact. Never silently downgrade it
+                // to gray or claim the reviewed patch is valid.
+                if (!System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT)
+                        .contains("win")) {
+                    java.nio.file.Path impossible = artifact.resolve("nested.bin");
+                    check(LicenseRecoverReadOnlyFingerprint.compare(
+                            impossible.toFile(), "DS0101", "DS0101", originalHash, patchedHash)
+                            .visualStatus() == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR,
+                            "fingerprint attribute I/O error must be red");
+                    LicenseRecoverReadOnlyPatchScanner.Reviewed invalidParent =
+                            new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                    LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                                    "bin/RegisterMain.bin/nested.bin", originalHash, patchedHash);
+                    check(LicenseRecoverReadOnlyPatchScanner.compareReviewed(
+                            root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA,
+                            "DS0101", invalidParent)
+                            .visualStatus() == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR,
+                            "reviewed target attribute I/O error must be red");
+                }
                 java.nio.file.Files.delete(artifact);
                 check(LicenseRecoverReadOnlyPatchScanner.compareReviewed(
                         root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101", fixture)
