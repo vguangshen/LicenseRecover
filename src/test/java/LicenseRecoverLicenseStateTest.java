@@ -345,6 +345,11 @@ public final class LicenseRecoverLicenseStateTest {
             throw new AssertionError("symlinked ancestor fixture failed", ex);
         }
         LicenseRecoverLicenseState scanFailure = LicenseRecoverLicenseState.scanError("I/O failure");
+        check(scanFailure.isScanError(), "scan failures must be counted as inspection errors");
+        check(!LicenseRecoverLicenseState.unverified("no reviewed baseline").isScanError(),
+                "missing baseline is unverified, not a scan error");
+        check(!LicenseRecoverLicenseState.nativeVerification(false, "native invalid").isScanError(),
+                "verified invalid authorization is not a scanner failure");
         check(scanFailure.visualStatus() == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR,
                 "inspection failure must be red, not invalid white");
         check(!scanFailure.selectedByDefault(), "scan error must not be auto-selected");
