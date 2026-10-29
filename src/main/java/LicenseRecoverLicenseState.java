@@ -63,6 +63,27 @@ public final class LicenseRecoverLicenseState {
                 "target-native+versioned-code-comparison");
     }
 
+    public enum VisualStatus {
+        NATIVE_VALID, PATCHED_UNVERIFIED, NATIVE_INVALID, SCAN_ERROR, UNVERIFIED
+    }
+
+    /** Centralized display classification; unknown strings never become proof. */
+    public static VisualStatus visualStatus(String label) {
+        if (label == null) return VisualStatus.UNVERIFIED;
+        if (label.startsWith("检测失败")) return VisualStatus.SCAN_ERROR;
+        if (label.startsWith("已验证激活")) return VisualStatus.NATIVE_VALID;
+        if (label.startsWith("已确认 Patch")) return VisualStatus.PATCHED_UNVERIFIED;
+        if (label.startsWith("已验证未激活")) return VisualStatus.NATIVE_INVALID;
+        return VisualStatus.UNVERIFIED;
+    }
+
+    public static boolean selectedByDefault(String label) {
+        VisualStatus status = visualStatus(label);
+        return status != VisualStatus.NATIVE_VALID
+                && status != VisualStatus.PATCHED_UNVERIFIED
+                && status != VisualStatus.SCAN_ERROR;
+    }
+
     public boolean selectedByDefault() {
         if (authorization == Authorization.ERROR || codeIntegrity == CodeIntegrity.ERROR) return false;
         if (authorization == Authorization.VERIFIED_VALID) return false;
