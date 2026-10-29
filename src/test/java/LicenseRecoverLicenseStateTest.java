@@ -193,6 +193,31 @@ public final class LicenseRecoverLicenseStateTest {
                         new LicenseRecoverReadOnlyPatchScanner.Reviewed[]{fixture, fixture})
                         .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
                         "duplicate audited paths must not count as independent evidence");
+                // Two different relative paths can refer to the same inode
+                // through a hard link. They are not independent Patch evidence.
+                java.nio.file.Path hardlink = bin.resolve("RegisterMain-hardlink.bin");
+                boolean hardlinksSupported = true;
+                try {
+                    java.nio.file.Files.createLink(hardlink, artifact);
+                } catch (UnsupportedOperationException | SecurityException
+                        | java.nio.file.FileSystemException unavailable) {
+                    hardlinksSupported = false;
+                }
+                try {
+                    if (hardlinksSupported) {
+                        LicenseRecoverReadOnlyPatchScanner.Reviewed linkedFixture =
+                                new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                        LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                                        "bin/RegisterMain-hardlink.bin", originalHash, patchedHash);
+                        check(LicenseRecoverReadOnlyPatchScanner.scanReviewed(
+                                root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
+                                new LicenseRecoverReadOnlyPatchScanner.Reviewed[]{fixture, linkedFixture})
+                                .visualStatus() == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                                "hard-linked paths must not count as two independent reviewed files");
+                    }
+                } finally {
+                    java.nio.file.Files.deleteIfExists(hardlink);
+                }
                 // A corrupt reviewed registry must never silently drop a
                 // required entry and confirm a partial artifact set.
                 for (LicenseRecoverReadOnlyPatchScanner.Reviewed malformedEntry :
