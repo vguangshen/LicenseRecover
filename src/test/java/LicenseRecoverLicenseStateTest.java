@@ -258,6 +258,18 @@ public final class LicenseRecoverLicenseStateTest {
                                         null, "DS0101", "bin/Companion.bin", originalHash, patchedHash),
                                 new LicenseRecoverReadOnlyPatchScanner.Reviewed(
                                         LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, " ",
+                                        "bin/Companion.bin", originalHash, patchedHash),
+                                new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                        LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101 ",
+                                        "bin/Companion.bin", originalHash, patchedHash),
+                                new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                        LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, " DS0101",
+                                        "bin/Companion.bin", originalHash, patchedHash),
+                                new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                        LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS 0101",
+                                        "bin/Companion.bin", originalHash, patchedHash),
+                                new LicenseRecoverReadOnlyPatchScanner.Reviewed(
+                                        LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101\\t",
                                         "bin/Companion.bin", originalHash, patchedHash)}) {
                     check(LicenseRecoverReadOnlyPatchScanner.scanReviewed(
                             root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
