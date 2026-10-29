@@ -24,6 +24,15 @@ public final class LicenseRecoverLicenseStateTest {
         try { LicenseRecoverLicenseState.combine(unknown, patched); }
         catch (IllegalArgumentException expected) { badSource = true; }
         check(badSource, "unverified state cannot masquerade as native evidence");
+        check(!LicenseRecoverLicenseState.selectedByDefault("已验证激活（代码已 Patch）"),
+                "combined verified state must be deselected");
+        check(!LicenseRecoverLicenseState.selectedByDefault("检测失败"),
+                "failed inspection must be deselected");
+        check(LicenseRecoverLicenseState.selectedByDefault("未验证"),
+                "unknown evidence must remain selectable");
+        check(LicenseRecoverLicenseState.visualStatus("已确认 Patch（授权未验证）")
+                == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED,
+                "patch color must not imply native license validity");
         boolean rejected = false;
         try { LicenseRecoverLicenseState.nativeVerification(true, ""); }
         catch (IllegalArgumentException expected) { rejected = true; }
