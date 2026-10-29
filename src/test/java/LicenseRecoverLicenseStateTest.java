@@ -195,7 +195,7 @@ public final class LicenseRecoverLicenseStateTest {
                         "duplicate audited paths must not count as independent evidence");
                 // A corrupt reviewed registry must never silently drop a
                 // required entry and confirm a partial artifact set.
-                for (LicenseRecoverReadOnlyPatchScanner.Reviewed invalid :
+                for (LicenseRecoverReadOnlyPatchScanner.Reviewed malformedEntry :
                         new LicenseRecoverReadOnlyPatchScanner.Reviewed[]{
                                 null,
                                 new LicenseRecoverReadOnlyPatchScanner.Reviewed(
@@ -208,7 +208,7 @@ public final class LicenseRecoverLicenseStateTest {
                                         "bin/Companion.bin", originalHash, patchedHash)}) {
                     check(LicenseRecoverReadOnlyPatchScanner.scanReviewed(
                             root.toFile(), LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, "DS0101",
-                            new LicenseRecoverReadOnlyPatchScanner.Reviewed[]{fixture, invalid})
+                            new LicenseRecoverReadOnlyPatchScanner.Reviewed[]{fixture, malformedEntry})
                             .visualStatus() == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR,
                             "malformed reviewed registry entry must fail closed");
                 }
