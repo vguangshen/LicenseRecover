@@ -63,11 +63,13 @@ public final class LicenseRecoverModernGUI {
     private JPanel advancedPanel;
 
     private final JTextField batchRootField = new JTextField();
-    private static final int BATCH_COL_VERIFY = 7;
-    private static final int BATCH_COL_STATUS = 8;
+    private static final int BATCH_COL_SELECTED = 0;
+    private static final int BATCH_COL_VERIFY = 8;
+    private static final int BATCH_COL_STATUS = 9;
     private final DefaultTableModel batchModel = new DefaultTableModel(
-            new String[]{"应用", "类型 / 授权代际", "SoftVersionID", "授权族", "运行校验ID", "RegStr", "配置目标", "原生校验", "状态", "路径"}, 0) {
-        public boolean isCellEditable(int row, int column) { return false; }
+            new String[]{"执行", "应用", "类型 / 授权代际", "SoftVersionID", "授权族", "运行校验ID", "RegStr", "配置目标", "原生校验", "状态", "路径"}, 0) {
+        public boolean isCellEditable(int row, int column) { return column == BATCH_COL_SELECTED && (batchWorker == null || batchWorker.isDone()); }
+        public Class<?> getColumnClass(int column) { return column == BATCH_COL_SELECTED ? Boolean.class : String.class; }
     };
     private final JTable batchTable = new JTable(batchModel);
     private final List<BatchTarget> batchTargets = new ArrayList<BatchTarget>();
@@ -436,7 +438,7 @@ public final class LicenseRecoverModernGUI {
         batchTable.setAutoCreateRowSorter(true);
         batchTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         batchTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-        int[] widths = new int[]{120, 170, 105, 95, 115, 180, 200, 140, 85, 320};
+        int[] widths = new int[]{52, 120, 170, 105, 95, 115, 180, 200, 140, 85, 320};
         for (int i = 0; i < widths.length; i++) batchTable.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
         root.add(new JScrollPane(batchTable), BorderLayout.CENTER);
 
@@ -797,7 +799,10 @@ public final class LicenseRecoverModernGUI {
             protected void process(List<BatchScanRow> chunks) {
                 for (BatchScanRow row : chunks) {
                     batchTargets.add(row.target);
-                    batchModel.addRow(row.cells);
+                    Object[] selectableCells = new Object[row.cells.length + 1];
+                    selectableCells[0] = Boolean.valueOf(row.target != null && row.target.type != BatchTarget.Type.NONE);
+                    System.arraycopy(row.cells, 0, selectableCells, 1, row.cells.length);
+                    batchModel.addRow(selectableCells);
                     batchProgress.setMaximum(Math.max(1, row.total));
                     batchProgress.setValue(row.completed);
                     int percent = row.total == 0 ? 100 : (row.completed * 100 / row.total);
@@ -956,7 +961,9 @@ public final class LicenseRecoverModernGUI {
 
     private boolean hasExecutableBatchTargets() {
         for (BatchTarget target : batchTargets) {
-            if (target != null && target.type != BatchTarget.Type.NONE) return true;
+            int row = batchTargets.indexOf(target);
+            if (target != null && target.type != BatchTarget.Type.NONE && row >= 0
+                    && Boolean.TRUE.equals(batchModel.getValueAt(row, BATCH_COL_SELECTED))) return true;
         }
         return false;
     }
@@ -976,6 +983,16 @@ public final class LicenseRecoverModernGUI {
         }
         if (!hasExecutableBatchTargets()) {
             setStatus("扫描结果没有可处理的应用，请重新扫描", false);
+            return;
+        }
+        final boolean[] selectedRows = new boolean[batchTargets.size()];
+        int selectedCount = 0;
+        for (int row = 0; row < selectedRows.length; row++) {
+            selectedRows[row] = Boolean.TRUE.equals(batchModel.getValueAt(row, BATCH_COL_SELECTED));
+            if (selectedRows[row]) selectedCount++;
+        }
+        if (selectedCount == 0) {
+            setStatus("请至少勾选一个要执行的应用", false);
             return;
         }
         final boolean usePatch = batchWay3.isSelected();
@@ -1003,7 +1020,8 @@ public final class LicenseRecoverModernGUI {
                     if (isCancelled()) break;
                     BatchTarget target = batchTargets.get(row);
                     final int currentRow = row;
-                    if (target.type == BatchTarget.Type.NONE) {
+                    if (!selectedRows[row] || target.type == BatchTarget.Type.NONE) {
+                        if (!selectedRows[row]) appendLog("[batch] 用户取消勾选，跳过：" + target.name + "\\n");
                         done++;
                         updateBatchProgress(done, "跳过 " + target.name);
                         continue;
