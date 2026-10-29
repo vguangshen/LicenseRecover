@@ -66,8 +66,9 @@ public final class LicenseRecoverModernGUI {
 
     private final JTextField batchRootField = new JTextField();
     private static final int BATCH_COL_SELECTED = 0;
-    private static final int BATCH_COL_VERIFY = 9;
-    private static final int BATCH_COL_STATUS = 10;
+    private static final int BATCH_COL_LICENSE_STATE = 9;
+    private static final int BATCH_COL_VERIFY = 10;
+    private static final int BATCH_COL_STATUS = 11;
     private final DefaultTableModel batchModel = new DefaultTableModel(
             new String[]{"执行", "应用", "类型 / 授权代际", "SoftVersionID", "授权族", "运行校验ID", "RegStr", "配置目标", "授权状态", "原生校验", "状态", "路径"}, 0) {
         public boolean isCellEditable(int row, int column) { return column == BATCH_COL_SELECTED && (batchWorker == null || batchWorker.isDone()); }
@@ -474,10 +475,18 @@ public final class LicenseRecoverModernGUI {
         return root;
     }
 
+    /** Selection is based on current scan evidence, not prior tool execution history. */
+    private static boolean shouldSelectBatchState(String state) {
+        if (state == null) return true;
+        return !state.startsWith("已验证激活")
+                && !state.startsWith("已确认 Patch")
+                && !state.startsWith("检测失败");
+    }
+
     private static void applyBatchEvidenceColors(JTable table, Component component,
                                                   boolean selected, int viewRow) {
         int modelRow = table.convertRowIndexToModel(viewRow);
-        Object raw = table.getModel().getValueAt(modelRow, 8);
+        Object raw = table.getModel().getValueAt(modelRow, BATCH_COL_LICENSE_STATE);
         String state = raw == null ? "" : raw.toString();
         Color background;
         Color foreground;
@@ -855,7 +864,8 @@ public final class LicenseRecoverModernGUI {
                 for (BatchScanRow row : chunks) {
                     batchTargets.add(row.target);
                     Object[] selectableCells = new Object[row.cells.length + 1];
-                    selectableCells[0] = Boolean.valueOf(row.target != null && row.target.type != BatchTarget.Type.NONE);
+                    selectableCells[0] = Boolean.valueOf(row.target != null && row.target.type != BatchTarget.Type.NONE
+                            && shouldSelectBatchState(String.valueOf(row.cells[8])));
                     System.arraycopy(row.cells, 0, selectableCells, 1, row.cells.length);
                     batchModel.addRow(selectableCells);
                     batchProgress.setMaximum(Math.max(1, row.total));
