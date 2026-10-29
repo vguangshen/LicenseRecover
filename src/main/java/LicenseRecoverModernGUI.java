@@ -808,6 +808,19 @@ public final class LicenseRecoverModernGUI {
 
             protected void done() {
                 boolean cancelled = isCancelled();
+                Throwable scanFailure = null;
+                if (!cancelled) {
+                    try {
+                        get(); // Surface exceptions from doInBackground instead of reporting success.
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                        scanFailure = ex;
+                    } catch (ExecutionException ex) {
+                        scanFailure = ex.getCause() == null ? ex : ex.getCause();
+                    } catch (java.util.concurrent.CancellationException ex) {
+                        cancelled = true;
+                    }
+                }
                 batchScanButton.setEnabled(true);
                 // Never allow execution of an incomplete or cancelled scan.
                 batchRunButton.setEnabled(true); // allow scan-before-run and cleanup workflows
@@ -820,6 +833,15 @@ public final class LicenseRecoverModernGUI {
                     statusLabel.setText("批量扫描已取消（已完成 " + processed + " / " + total + "）");
                     statusLabel.setForeground(new Color(0x57606a));
                     appendLog("[批量扫描] 已取消，完成 " + processed + " / " + total + " 个目录。\n");
+                } else if (scanFailure != null) {
+                    batchProgress.setIndeterminate(false);
+                    batchProgress.setString("扫描失败：后台任务异常退出");
+                    String reason = scanFailure.getClass().getSimpleName() + ": "
+                            + String.valueOf(scanFailure.getMessage());
+                    setStatus("批量扫描失败：" + reason, false);
+                    appendLog("[批量扫描] 后台任务异常：" + reason + "\n");
+                    batchTargets.clear();
+                    batchModel.setRowCount(0);
                 } else if (listingError != null) {
                     batchProgress.setIndeterminate(false);
                     batchProgress.setString("目录读取失败");
@@ -829,6 +851,15 @@ public final class LicenseRecoverModernGUI {
                     batchProgress.setIndeterminate(false);
                     batchProgress.setString("扫描完成：0 个目录");
                     setStatus("批量扫描完成：父目录下没有子目录", true);
+                } else if (detectedCount + skippedCount + errorCount != total) {
+                    batchProgress.setIndeterminate(false);
+                    batchProgress.setString("扫描结果不完整，已拒绝执行");
+                    setStatus("扫描结果不完整：处理 " + (detectedCount + skippedCount + errorCount)
+                            + " / " + total + "，请查看日志", false);
+                    appendLog("[批量扫描] 结果数量不匹配：已处理 "
+                            + (detectedCount + skippedCount + errorCount) + " / " + total + "\n");
+                    batchTargets.clear();
+                    batchModel.setRowCount(0);
                 } else {
                     batchProgress.setValue(total);
                     batchProgress.setString("扫描完成：" + total + " 个目录；识别 " + detectedCount
@@ -845,7 +876,7 @@ public final class LicenseRecoverModernGUI {
                     batchModel.setRowCount(0);
                 }
                 batchWorker = null;
-                if (!cancelled && listingError == null && !emptyDirectory && runAfterScan && hasExecutableBatchTargets()) {
+                if (!cancelled && scanFailure == null && listingError == null && !emptyDirectory && runAfterScan && hasExecutableBatchTargets()) {
                     SwingUtilities.invokeLater(() -> runBatch());
                 }
             }
