@@ -74,6 +74,12 @@ public final class LicenseRecoverReadOnlyPatchScanner {
             if (candidate == null || candidate.runtime == null || candidate.version == null
                     || candidate.version.trim().isEmpty())
                 return LicenseRecoverLicenseState.scanError("审核指纹集存在缺失平台或版本的记录");
+            // A malformed version key must not be silently skipped as a
+            // different product build. Otherwise one valid reviewed entry
+            // could confirm the whole patch while a second required artifact
+            // with a whitespace-padded version is never inspected.
+            if (!candidate.version.matches("[A-Za-z0-9][A-Za-z0-9._-]*"))
+                return LicenseRecoverLicenseState.scanError("审核指纹集包含非法版本标识");
             if (candidate.runtime != runtime || !detectedVersion.equalsIgnoreCase(candidate.version))
                 continue;
             matched++;
