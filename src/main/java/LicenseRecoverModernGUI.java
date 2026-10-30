@@ -490,7 +490,7 @@ public final class LicenseRecoverModernGUI {
         });
         JPanel results = new JPanel(new BorderLayout(0, 5));
         results.add(new JScrollPane(batchTable), BorderLayout.CENTER);
-        JLabel legend = new JLabel("绿色=授权检查通过 / 原生激活 / 确认 Patch   白色=原生校验无效   灰色=证据不足   红色=检测失败");
+        JLabel legend = new JLabel("深绿=原生有效   浅绿=确认 Patch   蓝色=独立授权条件通过   白色=原生无效   灰色=未验证   红色=检测错误");
         legend.setFont(legend.getFont().deriveFont(11f));
         legend.setBorder(new EmptyBorder(3, 7, 3, 7));
         results.add(legend, BorderLayout.SOUTH);
@@ -511,11 +511,16 @@ public final class LicenseRecoverModernGUI {
         Color background;
         Color foreground;
         LicenseRecoverLicenseState.VisualStatus visual = LicenseRecoverLicenseState.visualStatus(state);
-        if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_VALID
-                || visual == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED
-                || visual == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE) {
+        if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_VALID) {
+            background = new Color(22, 94, 58);
+            foreground = Color.WHITE;
+        } else if (visual == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED) {
             background = new Color(205, 239, 210);
             foreground = new Color(20, 75, 37);
+        } else if (visual == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE) {
+            // Independently audited acceptance does not establish native validity or Patch provenance.
+            background = new Color(220, 235, 252);
+            foreground = new Color(24, 62, 112);
         } else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID) {
             background = Color.WHITE;
             foreground = Color.BLACK;
