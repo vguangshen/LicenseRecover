@@ -70,7 +70,7 @@ public final class LicenseRecoverModernGUI {
     private static final int BATCH_COL_VERIFY = 9;
     private static final int BATCH_COL_STATUS = 10;
     private final DefaultTableModel batchModel = new DefaultTableModel(
-            new String[]{"执行", "应用", "类型 / 授权代际", "SoftVersionID", "授权族", "运行校验ID", "RegStr", "配置目标", "授权状态", "原生校验", "状态", "路径"}, 0) {
+            new String[]{"执行", "应用", "类型 / 授权代际", "SoftVersionID", "授权族", "运行校验ID", "RegStr", "配置目标", "授权状态", "检测原因", "状态", "路径"}, 0) {
         public boolean isCellEditable(int row, int column) { return column == BATCH_COL_SELECTED && (batchWorker == null || batchWorker.isDone()); }
         public Class<?> getColumnClass(int column) { return column == BATCH_COL_SELECTED ? Boolean.class : String.class; }
     };
@@ -82,15 +82,20 @@ public final class LicenseRecoverModernGUI {
             String state = String.valueOf(getModel().getValueAt(modelRow, BATCH_COL_LICENSE_STATE));
             LicenseRecoverLicenseState.VisualStatus visual =
                     LicenseRecoverLicenseState.visualStatus(state);
+            String reason = String.valueOf(getModel().getValueAt(modelRow, BATCH_COL_VERIFY));
+            String meaning;
             if (visual == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED)
-                return "确认代码已 Patch，按约定显示浅绿色；原生授权结果以状态文字为准，Patch 本身不等于原生校验成功";
-            if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_VALID)
-                return "目标软件原生只读校验确认授权有效，按约定显示深绿色";
-            if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID)
-                return "目标软件原生校验明确返回授权无效";
-            if (visual == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR)
-                return "扫描异常或超时；不能判断当前授权是否有效";
-            return "当前没有足够的原生校验或代码比对证据；不代表未激活";
+                meaning = "精确原版/Patch 比对已确认代码修改；Patch 本身不等于原生授权校验成功";
+            else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_VALID)
+                meaning = "独立原生只读校验已确认授权有效";
+            else if (visual == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE)
+                meaning = "当前授权入口判定通过，未区分激活与 Patch；不证明原生许可证有效或所有业务功能可用";
+            else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID)
+                meaning = "独立原生校验明确返回授权无效";
+            else if (visual == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR)
+                meaning = "扫描异常或超时；不能判断当前授权是否有效";
+            else meaning = "当前证据不足；未验证不代表未激活";
+            return meaning + "；检测原因：" + reason;
         }
     };
     private final List<BatchTarget> batchTargets = new ArrayList<BatchTarget>();
@@ -460,8 +465,12 @@ public final class LicenseRecoverModernGUI {
         batchTable.getColumnModel().getColumn(BATCH_COL_SELECTED).setMaxWidth(65);
         batchTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         batchTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-        int[] widths = new int[]{52, 120, 170, 105, 95, 115, 180, 200, 110, 140, 85, 320};
+        int[] widths = new int[]{52, 120, 170, 105, 95, 115, 180, 200, 210, 460, 85, 320};
         for (int i = 0; i < widths.length; i++) batchTable.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
+        // Change only the presentation order. Inspection rows, background updates
+        // and recovery selection continue to use the stable model-column indices.
+        batchTable.moveColumn(batchTable.convertColumnIndexToView(BATCH_COL_LICENSE_STATE), 2);
+        batchTable.moveColumn(batchTable.convertColumnIndexToView(BATCH_COL_VERIFY), 3);
         // Color is driven by current evidence, never by historical tool operations.
         batchTable.setDefaultRenderer(String.class, new DefaultTableCellRenderer() {
             @Override public Component getTableCellRendererComponent(JTable table, Object value,
@@ -481,7 +490,7 @@ public final class LicenseRecoverModernGUI {
         });
         JPanel results = new JPanel(new BorderLayout(0, 5));
         results.add(new JScrollPane(batchTable), BorderLayout.CENTER);
-        JLabel legend = new JLabel("状态颜色：深绿=原生激活   浅绿=确认 Patch   白色=原生校验无效   灰色=未验证   红色=检测失败");
+        JLabel legend = new JLabel("绿色=授权检查通过 / 原生激活 / 确认 Patch   白色=原生校验无效   灰色=证据不足   红色=检测失败");
         legend.setFont(legend.getFont().deriveFont(11f));
         legend.setBorder(new EmptyBorder(3, 7, 3, 7));
         results.add(legend, BorderLayout.SOUTH);
@@ -502,10 +511,9 @@ public final class LicenseRecoverModernGUI {
         Color background;
         Color foreground;
         LicenseRecoverLicenseState.VisualStatus visual = LicenseRecoverLicenseState.visualStatus(state);
-        if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_VALID) {
-            background = new Color(22, 94, 58);
-            foreground = Color.WHITE;
-        } else if (visual == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED) {
+        if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_VALID
+                || visual == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED
+                || visual == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE) {
             background = new Color(205, 239, 210);
             foreground = new Color(20, 75, 37);
         } else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID) {
@@ -999,7 +1007,7 @@ public final class LicenseRecoverModernGUI {
                                     info.appRoot, info.libDir, LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA,
                                     plan.softVersionId, licenseState);
                             licenseState = inspection.state;
-                            verifyText += "；" + inspection.summary();
+                            verifyText = inspection.summary() + "；目标原生接口：" + verifyText;
                             if (licenseState.isScanError()) {
                                 // Keep the red row and the aggregate error count consistent.
                                 // A failed read-only inspection is not a verified invalid license.
@@ -1048,7 +1056,7 @@ public final class LicenseRecoverModernGUI {
                                     info.appRoot, info.binDir, LicenseRecoverReadOnlyPatchScanner.Runtime.DOTNET,
                                     d.versionId, licenseState);
                             licenseState = inspection.state;
-                            verify += "；" + inspection.summary();
+                            verify = inspection.summary() + "；目标原生接口：" + verify;
                             if (licenseState.isScanError()) {
                                 errorCount = 1;
                                 dotNetStatus = "检测失败";

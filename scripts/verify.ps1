@@ -188,10 +188,18 @@ $inspectionTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyInspectionTest
 $peMetadataTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyPeMetadataTest.java'
 $realSampleTest = Join-Path $testSourceDir 'LicenseRecoverRealSampleReadOnlyTest.java'
 $readOnlyPlanTest = Join-Path $testSourceDir 'LicenseRecoverJavaPlanReadOnlyTest.java'
-Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $inspectionTest, $peMetadataTest, $realSampleTest, $readOnlyPlanTest)
+$evidenceTableTest = Join-Path $testSourceDir 'LicenseRecoverBatchEvidenceTableTest.java'
+$machineIdentityTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyMachineIdentityTest.java'
+$javaVerifierTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyJavaVerifierTest.java'
+$dotNetVerifierTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyDotNetVerifierTest.java'
+Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $inspectionTest, $peMetadataTest, $realSampleTest, $readOnlyPlanTest, $evidenceTableTest, $machineIdentityTest, $javaVerifierTest, $dotNetVerifierTest)
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyInspectionTest')
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyPeMetadataTest')
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverJavaPlanReadOnlyTest')
+Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverBatchEvidenceTableTest')
+Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyMachineIdentityTest')
+Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyJavaVerifierTest')
+Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyDotNetVerifierTest')
 
 $netRemoverScanTest = Join-Path $repoRoot 'src/test/java/NetRemoverReadOnlyScanTest.java'
 Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $netRemoverScanTest)

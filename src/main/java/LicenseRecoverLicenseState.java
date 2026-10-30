@@ -7,17 +7,27 @@
 public final class LicenseRecoverLicenseState {
     public enum Authorization { VERIFIED_VALID, VERIFIED_INVALID, UNVERIFIED, ERROR }
     public enum CodeIntegrity { CONFIRMED_PATCHED, CONFIRMED_ORIGINAL, UNKNOWN, ERROR }
+    /** Current authorization-entry acceptance does not identify activation versus a Patch. */
+    public enum Acceptance { VERIFIED_USABLE, UNVERIFIED }
 
     public final Authorization authorization;
     public final CodeIntegrity codeIntegrity;
+    public final Acceptance acceptance;
     public final String evidence;
     public final String source;
 
     private LicenseRecoverLicenseState(Authorization authorization,
                                        CodeIntegrity codeIntegrity, String evidence, String source) {
-        if (authorization == null || codeIntegrity == null) throw new IllegalArgumentException("missing state");
+        this(authorization, codeIntegrity, Acceptance.UNVERIFIED, evidence, source);
+    }
+
+    private LicenseRecoverLicenseState(Authorization authorization, CodeIntegrity codeIntegrity,
+                                       Acceptance acceptance, String evidence, String source) {
+        if (authorization == null || codeIntegrity == null || acceptance == null)
+            throw new IllegalArgumentException("missing state");
         this.authorization = authorization;
         this.codeIntegrity = codeIntegrity;
+        this.acceptance = acceptance;
         this.evidence = evidence == null ? "" : evidence;
         this.source = source == null ? "" : source;
     }
@@ -41,6 +51,20 @@ public final class LicenseRecoverLicenseState {
             throw new IllegalArgumentException("native verification requires evidence");
         return new LicenseRecoverLicenseState(valid ? Authorization.VERIFIED_VALID : Authorization.VERIFIED_INVALID,
                 CodeIntegrity.UNKNOWN, evidence, "target-native");
+    }
+
+    /**
+     * A separately audited predicate proves the current authorization entry accepts
+     * the observed application state. It may accept a native activation or a Patch;
+     * neither origin nor the usability of every business function is established.
+     * Existence of configuration, a key, a backup or a previous action is insufficient.
+     * The caller must bind its evidence to current files and all audited dependencies.
+     */
+    public static LicenseRecoverLicenseState authorizationAcceptance(String auditedEvidence) {
+        if (auditedEvidence == null || auditedEvidence.trim().isEmpty())
+            throw new IllegalArgumentException("current authorization-entry acceptance requires audited evidence");
+        return new LicenseRecoverLicenseState(Authorization.UNVERIFIED, CodeIntegrity.UNKNOWN,
+                Acceptance.VERIFIED_USABLE, auditedEvidence, "audited-current-authorization-entry");
     }
 
     /** Patch status requires a known original version and verified bytecode evidence. */
@@ -69,8 +93,24 @@ public final class LicenseRecoverLicenseState {
                 "target-native+versioned-code-comparison");
     }
 
+    /** Merge an independently proven current entry result with code evidence, never native activation. */
+    public static LicenseRecoverLicenseState combineAcceptance(LicenseRecoverLicenseState acceptedState,
+                                                                LicenseRecoverLicenseState codeState) {
+        if (acceptedState == null || codeState == null)
+            throw new IllegalArgumentException("both evidence channels are required");
+        String evidence = "acceptance: " + acceptedState.evidence + "; code: " + codeState.evidence;
+        if (acceptedState.isScanError() || codeState.isScanError()) return scanError(evidence);
+        if (acceptedState.acceptance != Acceptance.VERIFIED_USABLE
+                || !"audited-current-authorization-entry".equals(acceptedState.source))
+            throw new IllegalArgumentException("acceptance must come from the audited current-entry predicate");
+        if (!"versioned-code-comparison".equals(codeState.source) && !"none".equals(codeState.source))
+            throw new IllegalArgumentException("code evidence must come from versioned comparison or remain unknown");
+        return new LicenseRecoverLicenseState(Authorization.UNVERIFIED, codeState.codeIntegrity,
+                Acceptance.VERIFIED_USABLE, evidence, acceptedState.source + "+" + codeState.source);
+    }
+
     public enum VisualStatus {
-        NATIVE_VALID, PATCHED_UNVERIFIED, NATIVE_INVALID, SCAN_ERROR, UNVERIFIED
+        NATIVE_VALID, PATCHED_UNVERIFIED, NATIVE_INVALID, SCAN_ERROR, UNVERIFIED, VERIFIED_USABLE
     }
 
     /** A failed evidence channel is an inspection error, not a license verdict. */
@@ -81,6 +121,7 @@ public final class LicenseRecoverLicenseState {
     /** A typed state is authoritative; the label is only for display. */
     public VisualStatus visualStatus() {
         if (isScanError()) return VisualStatus.SCAN_ERROR;
+        if (acceptance == Acceptance.VERIFIED_USABLE) return VisualStatus.VERIFIED_USABLE;
         if (codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED) return VisualStatus.PATCHED_UNVERIFIED;
         if (authorization == Authorization.VERIFIED_VALID) return VisualStatus.NATIVE_VALID;
         if (authorization == Authorization.VERIFIED_INVALID) return VisualStatus.NATIVE_INVALID;
@@ -100,6 +141,8 @@ public final class LicenseRecoverLicenseState {
                 || "已确认 Patch（授权未验证）".equals(label))
             return VisualStatus.PATCHED_UNVERIFIED;
         if ("已验证激活".equals(label)) return VisualStatus.NATIVE_VALID;
+        if ("授权检查通过（激活或 Patch）".equals(label)
+                || "授权检查通过（代码已 Patch）".equals(label)) return VisualStatus.VERIFIED_USABLE;
         if ("已验证未激活".equals(label)) return VisualStatus.NATIVE_INVALID;
         return VisualStatus.UNVERIFIED;
     }
@@ -108,6 +151,7 @@ public final class LicenseRecoverLicenseState {
         VisualStatus status = visualStatus(label);
         return status != VisualStatus.NATIVE_VALID
                 && status != VisualStatus.PATCHED_UNVERIFIED
+                && status != VisualStatus.VERIFIED_USABLE
                 && status != VisualStatus.SCAN_ERROR;
     }
 
@@ -115,11 +159,15 @@ public final class LicenseRecoverLicenseState {
         if (isScanError()) return false;
         if (authorization == Authorization.VERIFIED_VALID) return false;
         if (codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED) return false;
+        if (acceptance == Acceptance.VERIFIED_USABLE) return false;
         return true;
     }
 
     public String display() {
         if (isScanError()) return "检测失败";
+        if (acceptance == Acceptance.VERIFIED_USABLE)
+            return codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED
+                    ? "授权检查通过（代码已 Patch）" : "授权检查通过（激活或 Patch）";
         if (authorization == Authorization.VERIFIED_VALID && codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED)
             return "已验证激活（代码已 Patch）";
         if (authorization == Authorization.VERIFIED_VALID) return "已验证激活";

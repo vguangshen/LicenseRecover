@@ -171,7 +171,7 @@ foreach ($dir in @($portableCheck, $updateCheck)) {
     )
     # Exercise behavior against each extracted archive as well as class linkage.
     # These tests create only synthetic fixtures in a separate temporary tree.
-    foreach ($test in @('LicenseRecoverLicenseStateTest', 'LicenseRecoverReadOnlyInspectionTest', 'LicenseRecoverReadOnlyPeMetadataTest', 'LicenseRecoverJavaPlanReadOnlyTest')) {
+    foreach ($test in @('LicenseRecoverLicenseStateTest', 'LicenseRecoverReadOnlyInspectionTest', 'LicenseRecoverReadOnlyPeMetadataTest', 'LicenseRecoverJavaPlanReadOnlyTest', 'LicenseRecoverBatchEvidenceTableTest', 'LicenseRecoverReadOnlyMachineIdentityTest', 'LicenseRecoverReadOnlyJavaVerifierTest', 'LicenseRecoverReadOnlyDotNetVerifierTest')) {
         Invoke-Checked $runtimeJava @(
             '-cp', ($jarFirst + [IO.Path]::PathSeparator + $guiJar + [IO.Path]::PathSeparator + $smokeClasses), $test
         )
