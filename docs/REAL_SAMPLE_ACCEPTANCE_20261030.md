@@ -2,16 +2,16 @@
 
 本机独立扫描输入副本的实际结果；代码、配置或机器变化会重新计算状态，不按目录名套用。两种最终 ZIP 均通过真实 GUI 5 秒时限检查和逐应用独立期望表比对：26 识别、0 异常、8 接受、18 未验证。
 
-绿色属于独立 Acceptance 维度；不是目标原生方法实际执行证明、原版/Patch 来源认定或全部业务健康证明。
+蓝色属于独立 Acceptance 维度；不是目标原生方法实际执行证明、原版/Patch 来源认定或全部业务健康证明。
 
 | 应用 | 状态 | 方法 |
 | --- | --- | --- |
-| DS0101 | 授权条件通过，统一绿色 | audited-local-positive-predicate |
-| DS0105 | 授权条件通过，统一绿色 | audited-local-positive-predicate |
-| DS0107 | 授权条件通过，统一绿色 | audited-local-positive-predicate |
-| DS0109 | 授权条件通过，统一绿色 | audited-local-positive-predicate |
+| DS0101 | 授权条件通过，独立蓝色 | audited-local-positive-predicate |
+| DS0105 | 授权条件通过，独立蓝色 | audited-local-positive-predicate |
+| DS0107 | 授权条件通过，独立蓝色 | audited-local-positive-predicate |
+| DS0109 | 授权条件通过，独立蓝色 | audited-local-positive-predicate |
 | DS110102 | 未验证，灰色 | file-only-sha256+format+reviewed-pair+audited-acceptance |
-| DS2406 | 授权条件通过，统一绿色 | audited-static-authorization-gate |
+| DS2406 | 授权条件通过，独立蓝色 | audited-static-authorization-gate |
 | DS2801 | 未验证，灰色 | file-only-sha256+format+reviewed-pair+audited-acceptance |
 | DS3402 | 未验证，灰色 | file-only-sha256+format+reviewed-pair+audited-acceptance |
 | DS3503 | 未验证，灰色 | file-only-sha256+format+reviewed-pair+audited-acceptance |
@@ -29,9 +29,9 @@
 | YX0102 | 未验证，灰色 | file-only-sha256+format+reviewed-pair+audited-acceptance |
 | YX030107 | 未验证，灰色 | file-only-sha256+format+reviewed-pair+audited-acceptance |
 | YX030204 | 未验证，灰色 | file-only-sha256+format+reviewed-pair+audited-acceptance |
-| YX030308 | 授权条件通过，统一绿色 | audited-local-positive-predicate |
-| YX030321 | 授权条件通过，统一绿色 | audited-local-positive-predicate |
-| YX030322 | 授权条件通过，统一绿色 | audited-local-positive-predicate |
+| YX030308 | 授权条件通过，独立蓝色 | audited-local-positive-predicate |
+| YX030321 | 授权条件通过，独立蓝色 | audited-local-positive-predicate |
+| YX030322 | 授权条件通过，独立蓝色 | audited-local-positive-predicate |
 
 通过项的精确输入与正向谓词分别见 [独立 .NET 审核](DOTNET_READ_ONLY_ACCEPTANCE.md)、[Java 静态门槛](JAVA_STATIC_ACCEPTANCE_PROOF.md)。
 

@@ -1,7 +1,7 @@
 ## 1.2.69 - 2026-10-30
 
 ### Current authorization conditions
-- Add an independent acceptance dimension. Audited current authorization conditions, native-valid evidence and confirmed-Patch evidence share a green color while retaining distinct labels and sources.
+- Add an independent acceptance dimension. Audited current authorization conditions use blue; native-valid evidence remains dark green and confirmed-Patch evidence remains light green, preserving distinct labels and sources.
 - Add a positive-only .NET local predicate bound to exact website/registration/dependency builds, machine identity, current mode, expiry and unlimited counters. Unknown, finite-counter and unsupported override/network/HASP cases stay unverified.
 - Add a Java DS24 static gate proof bound to complete class/JAR and startup/interceptor configuration sets. It proves installed authorization-gate semantics, not original/Patch provenance.
 - Move authorization status and full diagnostic reasons next to the application column; accepted targets are deselected by default.
