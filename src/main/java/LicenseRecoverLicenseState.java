@@ -121,10 +121,12 @@ public final class LicenseRecoverLicenseState {
     /** A typed state is authoritative; the label is only for display. */
     public VisualStatus visualStatus() {
         if (isScanError()) return VisualStatus.SCAN_ERROR;
-        if (acceptance == Acceptance.VERIFIED_USABLE) return VisualStatus.VERIFIED_USABLE;
+        // Preserve independently verified native and reviewed Patch colors. An
+        // audited entry predicate is a separate fact, never native activation.
         if (codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED) return VisualStatus.PATCHED_UNVERIFIED;
         if (authorization == Authorization.VERIFIED_VALID) return VisualStatus.NATIVE_VALID;
         if (authorization == Authorization.VERIFIED_INVALID) return VisualStatus.NATIVE_INVALID;
+        if (acceptance == Acceptance.VERIFIED_USABLE) return VisualStatus.VERIFIED_USABLE;
         return VisualStatus.UNVERIFIED;
     }
 
@@ -138,11 +140,11 @@ public final class LicenseRecoverLicenseState {
         if ("检测失败".equals(label)) return VisualStatus.SCAN_ERROR;
         if ("已验证激活（代码已 Patch）".equals(label)
                 || "已验证未激活（代码已 Patch）".equals(label)
-                || "已确认 Patch（授权未验证）".equals(label))
+                || "已确认 Patch（授权未验证）".equals(label)
+                || "授权检查通过（代码已 Patch）".equals(label))
             return VisualStatus.PATCHED_UNVERIFIED;
         if ("已验证激活".equals(label)) return VisualStatus.NATIVE_VALID;
-        if ("授权检查通过（激活或 Patch）".equals(label)
-                || "授权检查通过（代码已 Patch）".equals(label)) return VisualStatus.VERIFIED_USABLE;
+        if ("授权检查通过（激活或 Patch）".equals(label)) return VisualStatus.VERIFIED_USABLE;
         if ("已验证未激活".equals(label)) return VisualStatus.NATIVE_INVALID;
         return VisualStatus.UNVERIFIED;
     }
