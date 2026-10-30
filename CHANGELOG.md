@@ -1,3 +1,15 @@
+## 1.2.69 - 2026-10-30
+
+### Current authorization conditions
+- Add an independent acceptance dimension. Audited current authorization conditions, native-valid evidence and confirmed-Patch evidence share a green color while retaining distinct labels and sources.
+- Add a positive-only .NET local predicate bound to exact website/registration/dependency builds, machine identity, current mode, expiry and unlimited counters. Unknown, finite-counter and unsupported override/network/HASP cases stay unverified.
+- Add a Java DS24 static gate proof bound to complete class/JAR and startup/interceptor configuration sets. It proves installed authorization-gate semantics, not original/Patch provenance.
+- Move authorization status and full diagnostic reasons next to the application column; accepted targets are deselected by default.
+
+### Validation and audit incident
+- Test both final ZIP runtimes, independent positive/unknown/damage/change boundaries, and all 26 sample-input copies with an explicit per-application oracle.
+- An auxiliary audit script accidentally overwrote DS2406 WEB-INF/web.xml with a receipt. It was disclosed and restored byte-for-byte, including the original modification timestamp, from the independently hashed pre-audit copy. The script is disabled and private-output boundaries were added. The production scanners do not use that script.
+
 ## 1.2.68 - 2026-10-30
 
 ### Read-only evidence and safety

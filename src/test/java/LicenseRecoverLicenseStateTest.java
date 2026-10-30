@@ -7,6 +7,39 @@ public final class LicenseRecoverLicenseStateTest {
         check(unknown.authorization == LicenseRecoverLicenseState.Authorization.UNVERIFIED, "config is not activation");
         check(unknown.selectedByDefault(), "unknown remains selectable");
         check("未验证".equals(unknown.display()), "unknown label");
+        check(unknown.acceptance == LicenseRecoverLicenseState.Acceptance.UNVERIFIED,
+                "missing evidence must not imply authorization-entry acceptance");
+        LicenseRecoverLicenseState accepted = LicenseRecoverLicenseState.authorizationAcceptance(
+                "audited current entry predicate; pinned code and observed inputs");
+        check(accepted.authorization == LicenseRecoverLicenseState.Authorization.UNVERIFIED,
+                "entry acceptance does not prove native activation");
+        check(accepted.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.UNKNOWN,
+                "entry acceptance does not establish a reviewed original/Patch comparison");
+        check(accepted.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE,
+                "audited entry acceptance has an independent evidence channel");
+        check(accepted.visualStatus() == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE,
+                "accepted entry has its own visual category");
+        check("授权检查通过（激活或 Patch）".equals(accepted.display()),
+                "entry label must describe the check without claiming native activation or all business functionality");
+        check(LicenseRecoverLicenseState.visualStatus(accepted.display()) == accepted.visualStatus(),
+                "typed and textual acceptance agree");
+        check(!accepted.selectedByDefault() && !LicenseRecoverLicenseState.selectedByDefault(accepted.display()),
+                "a current accepted entry is not selected for recovery");
+        check(accepted.source.equals("audited-current-authorization-entry")
+                        && accepted.evidence.contains("pinned code"),
+                "acceptance provenance and evidence remain traceable");
+        for (String missing : new String[]{null, "", " \t\n"}) {
+            boolean rejected = false;
+            try { LicenseRecoverLicenseState.authorizationAcceptance(missing); }
+            catch (IllegalArgumentException expected) { rejected = true; }
+            check(rejected, "entry acceptance requires nonblank audited evidence");
+        }
+        check(LicenseRecoverLicenseState.visualStatus("授权检查通过（激活或 Patch）（仅配置存在）")
+                        == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                "an arbitrary acceptance prefix cannot turn green");
+        check(LicenseRecoverLicenseState.unverified(accepted.display()).visualStatus()
+                        == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
+                "an acceptance-looking diagnostic is not a successful check");
         LicenseRecoverLicenseState valid = LicenseRecoverLicenseState.nativeVerification(true, "target native result");
         check(!valid.selectedByDefault(), "valid must be deselected");
         LicenseRecoverLicenseState invalid = LicenseRecoverLicenseState.nativeVerification(false, "target native result");
@@ -14,6 +47,42 @@ public final class LicenseRecoverLicenseStateTest {
         LicenseRecoverLicenseState patched = LicenseRecoverLicenseState.codeComparison(true, "versioned original comparison");
         check(!patched.selectedByDefault(), "patched must be deselected");
         check(patched.authorization == LicenseRecoverLicenseState.Authorization.UNVERIFIED, "patch is not activation");
+        check(patched.acceptance == LicenseRecoverLicenseState.Acceptance.UNVERIFIED,
+                "a Patch comparison alone does not prove the current authorization entry accepts");
+        LicenseRecoverLicenseState acceptedOriginal = LicenseRecoverLicenseState.combineAcceptance(accepted,
+                LicenseRecoverLicenseState.codeComparison(false, "reviewed original code set"));
+        check(acceptedOriginal.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE
+                        && acceptedOriginal.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL,
+                "accepted original retains independent entry and original-code evidence");
+        check(acceptedOriginal.authorization == LicenseRecoverLicenseState.Authorization.UNVERIFIED,
+                "accepted original must not be promoted to native activation");
+        LicenseRecoverLicenseState acceptedPatched = LicenseRecoverLicenseState.combineAcceptance(accepted, patched);
+        check(acceptedPatched.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE
+                        && acceptedPatched.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED,
+                "accepted Patch retains independent entry and Patch evidence");
+        check(acceptedPatched.visualStatus() == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE
+                        && acceptedPatched.display().contains("代码已 Patch")
+                        && LicenseRecoverLicenseState.visualStatus(acceptedPatched.display()) == acceptedPatched.visualStatus(),
+                "accepted Patch display must retain current entry acceptance and the confirmed code fact");
+        check(acceptedPatched.evidence.contains(accepted.evidence) && acceptedPatched.evidence.contains(patched.evidence),
+                "both independent evidence descriptions survive the merge");
+        check(LicenseRecoverLicenseState.combineAcceptance(accepted, unknown).acceptance
+                        == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE,
+                "unknown code does not invalidate a separately established current entry result");
+        check(LicenseRecoverLicenseState.combineAcceptance(accepted, LicenseRecoverLicenseState.scanError("read failure"))
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR,
+                "a code inspection error overrides a successful current entry result");
+        check(LicenseRecoverLicenseState.combineAcceptance(LicenseRecoverLicenseState.scanError("predicate failure"), patched)
+                        .visualStatus() == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR,
+                "a predicate error overrides a known Patch");
+        boolean unknownEntryRejected = false;
+        try { LicenseRecoverLicenseState.combineAcceptance(unknown, patched); }
+        catch (IllegalArgumentException expected) { unknownEntryRejected = true; }
+        check(unknownEntryRejected, "unknown entry evidence cannot be promoted by a code comparison");
+        boolean nativeAsCodeRejected = false;
+        try { LicenseRecoverLicenseState.combineAcceptance(accepted, valid); }
+        catch (IllegalArgumentException expected) { nativeAsCodeRejected = true; }
+        check(nativeAsCodeRejected, "native evidence must not enter through the code-comparison channel");
         LicenseRecoverLicenseState both = LicenseRecoverLicenseState.combine(valid, patched);
         check(both.authorization == LicenseRecoverLicenseState.Authorization.VERIFIED_VALID,
                 "native evidence must survive merge");
@@ -24,6 +93,10 @@ public final class LicenseRecoverLicenseStateTest {
         try { LicenseRecoverLicenseState.combine(unknown, patched); }
         catch (IllegalArgumentException expected) { badSource = true; }
         check(badSource, "unverified state cannot masquerade as native evidence");
+        boolean acceptedIsNotNative = false;
+        try { LicenseRecoverLicenseState.combine(accepted, patched); }
+        catch (IllegalArgumentException expected) { acceptedIsNotNative = true; }
+        check(acceptedIsNotNative, "entry acceptance cannot masquerade as target-native license evidence");
         check(LicenseRecoverLicenseState.visualStatus("已验证激活（代码已 Patch）")
                 == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED,
                 "patched and valid must use the light green patch color");

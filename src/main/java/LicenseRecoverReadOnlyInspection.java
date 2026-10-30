@@ -5,7 +5,7 @@ import java.security.MessageDigest;
 import java.util.*;
 import java.util.jar.*;
 
-/** File-only evidence collection. Never loads a vendor class/assembly or reads license values. */
+/** Independent read-only evidence collection. Never loads or executes a vendor class/assembly. */
 public final class LicenseRecoverReadOnlyInspection {
     private static final long MAX_ARTIFACT = 128L * 1024 * 1024;
     private LicenseRecoverReadOnlyInspection() { }
@@ -22,21 +22,27 @@ public final class LicenseRecoverReadOnlyInspection {
         public final String name, version, runtime, method, evidenceSource, reason, nativeVerifierSafety;
         public final boolean inspectionReadOnlyAudited = true;
         public final boolean nativeVerifierReadOnlyAudited = false;
+        public final boolean acceptanceVerifierReadOnlyAudited = true;
         public final LicenseRecoverLicenseState state;
         public final List<Artifact> artifacts;
         Result(File root, String version, String runtime, LicenseRecoverLicenseState state,
                List<Artifact> artifacts, String reason) {
             this.name = root.getName(); this.version = canonicalVersion(version);
             this.runtime = runtime; this.state = state;
-            this.method = "file-only-sha256+format+reviewed-pair";
-            this.evidenceSource = "current-files; compiled-reviewed-registry";
+            this.method = state.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE
+                    ? ("DOTNET".equals(runtime) ? "audited-local-positive-predicate" : "audited-static-authorization-gate")
+                    : "file-only-sha256+format+reviewed-pair+audited-acceptance";
+            this.evidenceSource = state.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE
+                    ? "audited-current-code; current-inputs; independent-read-only-predicate"
+                    : "current-files; compiled-reviewed-registry; audited-acceptance-profiles";
             this.reason = reason;
             this.nativeVerifierSafety = LicenseRecoverReadOnlyVerifierSafety.rejection(artifacts);
             this.artifacts = Collections.unmodifiableList(new ArrayList<Artifact>(artifacts));
         }
         public String summary() {
-            return "方法=" + method + "；组件=" + artifacts.size()
-                    + "；文件检查只读审计=通过；原生验证只读审计=未通过；" + nativeVerifierSafety + "；" + reason;
+            return reason + "；方法=" + method + "；组件=" + artifacts.size()
+                    + "；独立只读判定=" + (state.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE ? "通过" : "未确认")
+                    + "；未执行目标原生代码；" + nativeVerifierSafety;
         }
         public String toJson() {
             StringBuilder b = new StringBuilder("{");
@@ -44,9 +50,10 @@ public final class LicenseRecoverReadOnlyInspection {
             pair(b,"versionMeaning","configuration-product-id"); pair(b,"releaseVersion","unproven");
             pair(b,"status",state.visualStatus().name()); pair(b,"label",state.display());
             pair(b,"authorization",state.authorization.name()); pair(b,"codeIntegrity",state.codeIntegrity.name());
+            pair(b,"acceptance",state.acceptance.name());
             pair(b,"method",method); pair(b,"evidenceSource",evidenceSource); pair(b,"reason",reason);
             pair(b,"nativeVerifierSafety",nativeVerifierSafety);
-            b.append("\"inspectionReadOnlyAudited\":true,\"nativeVerifierReadOnlyAudited\":false,\"artifacts\":[");
+            b.append("\"inspectionReadOnlyAudited\":true,\"nativeVerifierReadOnlyAudited\":false,\"acceptanceVerifierReadOnlyAudited\":true,\"artifacts\":[");
             for (int i=0;i<artifacts.size();i++) {
                 if(i>0)b.append(','); Artifact a=artifacts.get(i); b.append('{');
                 pair(b,"path",a.path); pair(b,"sha256",a.sha256); pair(b,"format",a.format);
@@ -128,11 +135,33 @@ public final class LicenseRecoverReadOnlyInspection {
             state=LicenseRecoverLicenseState.scanError("组件只读检查失败: "+e.getClass().getSimpleName());
             reason=state.evidence; // Never expose paths, configuration or exception messages.
         }
+        if(!state.isScanError()) {
+            LicenseRecoverLicenseState accepted = runtime == LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA
+                    ? LicenseRecoverReadOnlyJavaVerifier.verify(root) : LicenseRecoverReadOnlyDotNetVerifier.verify(root);
+            if(accepted.isScanError()) {state=accepted;reason=accepted.evidence;}
+            else if(accepted.acceptance==LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE) {
+                try {
+                    // Bind the accepted result back to the same observed registration artifacts.
+                    for(Artifact first:artifacts) {
+                        Artifact last=readArtifact(root,root.toPath().resolve(first.path),runtime);
+                        if(!first.sha256.equals(last.sha256)||first.size!=last.size||!first.format.equals(last.format))
+                            throw new Changed();
+                    }
+                    state=LicenseRecoverLicenseState.combineAcceptance(accepted,state);
+                    reason=accepted.evidence;
+                } catch(Changed | NoSuchFileException ex) {
+                    state=LicenseRecoverLicenseState.unverified("接受条件与文件观测不再一致；扫描期间文件发生变化");reason=state.evidence;
+                } catch(IOException | java.security.GeneralSecurityException | SecurityException ex) {
+                    state=LicenseRecoverLicenseState.scanError("接受条件最终文件复核失败: "+ex.getClass().getSimpleName());reason=state.evidence;
+                }
+            } else reason=accepted.evidence+"；"+reason;
+        }
         return new Result(root,version,runtime.name(),state,artifacts,reason);
     }
 
     static boolean sameCodeEvidence(LicenseRecoverLicenseState first,LicenseRecoverLicenseState last) {
         return first.authorization==last.authorization && first.codeIntegrity==last.codeIntegrity
+                && first.acceptance==last.acceptance
                 && first.source.equals(last.source) && first.evidence.equals(last.evidence);
     }
 
