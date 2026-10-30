@@ -27,7 +27,7 @@ public final class LicenseRecoverBatchEvidenceTableTest {
             try { inspectTable(args); }
             catch (Exception failure) { throw new RuntimeException(failure); }
         });
-        System.out.println("PASS: evidence columns lead the view; sorted rows, tooltips and unified green preserve evidence semantics");
+        System.out.println("PASS: evidence columns, sorted rows, tooltips and separate evidence colors");
     }
 
     private static void inspectTable(String[] args) throws Exception {
@@ -67,17 +67,22 @@ public final class LicenseRecoverBatchEvidenceTableTest {
         table.setSize(1120, 300);
         table.doLayout();
         Color nativeGreen = color(table, 0, 2);
-        check(nativeGreen.equals(color(table, 1, 2)) && nativeGreen.equals(color(table, 2, 2)),
-                "native activation, current entry acceptance and reviewed Patch share one green");
+        Color acceptedBlue = color(table, 1, 2);
+        Color patchGreen = color(table, 2, 2);
+        Color unknownGray = color(table, 4, 2);
+        Color errorRed = color(table, 5, 2);
+        check(new Color(22, 94, 58).equals(nativeGreen), "verified native valid must be dark green");
+        check(new Color(205, 239, 210).equals(patchGreen), "reviewed Patch must be light green");
+        check(new Color(220, 235, 252).equals(acceptedBlue), "independent acceptance must be blue");
+        check(!nativeGreen.equals(patchGreen) && !nativeGreen.equals(acceptedBlue)
+                        && !patchGreen.equals(acceptedBlue), "different evidence must not share one green");
         check(Color.WHITE.equals(color(table, 3, 2)), "verified native invalid remains white");
-        check(!nativeGreen.equals(color(table, 4, 2)) && !Color.WHITE.equals(color(table, 4, 2)),
-                "unknown evidence remains gray rather than white or green");
-        check(!nativeGreen.equals(color(table, 5, 2)) && !Color.WHITE.equals(color(table, 5, 2)),
-                "read error remains distinct from a license verdict");
-        check(nativeGreen.equals(color(table, 1, 0)), "checkbox uses the sorted row's evidence color");
+        check(new Color(241, 243, 246).equals(unknownGray), "unverified must be neutral gray");
+        check(new Color(165, 45, 45).equals(errorRed), "scan errors must be red");
+        check(acceptedBlue.equals(color(table, 1, 0)), "checkbox uses the sorted row's evidence color");
         int acceptedViewRow = table.convertRowIndexToView(1);
         table.setRowSelectionInterval(acceptedViewRow, acceptedViewRow);
-        check(nativeGreen.equals(color(table, 1, 2)), "selection must not conceal evidence colors");
+        check(acceptedBlue.equals(color(table, 1, 2)), "selection must not conceal evidence colors");
         java.awt.Rectangle cell = table.getCellRect(acceptedViewRow, 2, true);
         check(cell.x < 250, "authorization state starts inside the first viewport");
         String tooltip = table.getToolTipText(new MouseEvent(table, MouseEvent.MOUSE_MOVED,
