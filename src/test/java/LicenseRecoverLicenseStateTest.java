@@ -42,10 +42,14 @@ public final class LicenseRecoverLicenseStateTest {
                 "an acceptance-looking diagnostic is not a successful check");
         LicenseRecoverLicenseState valid = LicenseRecoverLicenseState.nativeVerification(true, "target native result");
         check(!valid.selectedByDefault(), "valid must be deselected");
+        check(valid.visualStatus() == LicenseRecoverLicenseState.VisualStatus.NATIVE_VALID,
+                "native valid must keep its distinct dark-green state");
         LicenseRecoverLicenseState invalid = LicenseRecoverLicenseState.nativeVerification(false, "target native result");
         check(invalid.selectedByDefault(), "invalid must be selected");
         LicenseRecoverLicenseState patched = LicenseRecoverLicenseState.codeComparison(true, "versioned original comparison");
         check(!patched.selectedByDefault(), "patched must be deselected");
+        check(patched.visualStatus() == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED,
+                "reviewed Patch must keep its distinct light-green state");
         check(patched.authorization == LicenseRecoverLicenseState.Authorization.UNVERIFIED, "patch is not activation");
         check(patched.acceptance == LicenseRecoverLicenseState.Acceptance.UNVERIFIED,
                 "a Patch comparison alone does not prove the current authorization entry accepts");
@@ -60,7 +64,7 @@ public final class LicenseRecoverLicenseStateTest {
         check(acceptedPatched.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE
                         && acceptedPatched.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED,
                 "accepted Patch retains independent entry and Patch evidence");
-        check(acceptedPatched.visualStatus() == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE
+        check(acceptedPatched.visualStatus() == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED
                         && acceptedPatched.display().contains("代码已 Patch")
                         && LicenseRecoverLicenseState.visualStatus(acceptedPatched.display()) == acceptedPatched.visualStatus(),
                 "accepted Patch display must retain current entry acceptance and the confirmed code fact");
@@ -89,6 +93,10 @@ public final class LicenseRecoverLicenseStateTest {
         check(both.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED,
                 "patch evidence must survive merge");
         check(both.display().contains("代码已 Patch"), "combined status must show both facts");
+        check(both.visualStatus() == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED,
+                "combined native and Patch evidence retains the reviewed Patch color");
+        check(LicenseRecoverLicenseState.visualStatus(both.display()) == both.visualStatus(),
+                "combined native and Patch typed/text statuses agree");
         boolean badSource = false;
         try { LicenseRecoverLicenseState.combine(unknown, patched); }
         catch (IllegalArgumentException expected) { badSource = true; }
