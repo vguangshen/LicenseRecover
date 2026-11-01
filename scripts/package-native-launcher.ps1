@@ -16,6 +16,28 @@ $portableZip = Join-Path $buildRoot 'LicenseRecover-latest.zip'
 $updateZip = Join-Path $buildRoot 'LicenseRecover-update.zip'
 $checksumFile = Join-Path $buildRoot 'SHA256SUMS.txt'
 
+function Remove-BuildItem {
+    param([Parameter(Mandatory = $true)][string]$Path, [switch]$Recurse)
+    $absolute = [IO.Path]::GetFullPath($Path)
+    $boundary = [IO.Path]::GetFullPath($buildRoot).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+    $comparison = [StringComparison]::Ordinal
+    if ($env:OS -eq 'Windows_NT') { $comparison = [StringComparison]::OrdinalIgnoreCase }
+    if (-not $absolute.StartsWith($boundary + [IO.Path]::DirectorySeparatorChar, $comparison)) {
+        throw "Refusing cleanup outside build directory: $absolute"
+    }
+    $cursor = $absolute
+    while ($cursor.Length -ge $boundary.Length) {
+        if (Test-Path -LiteralPath $cursor) {
+            $entry = Get-Item -LiteralPath $cursor -Force
+            if (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "Refusing cleanup through a linked build path: $cursor"
+            }
+        }
+        $cursor = [IO.Path]::GetDirectoryName($cursor)
+    }
+    if (Test-Path -LiteralPath $absolute) { Remove-Item -LiteralPath $absolute -Recurse:$Recurse -Force }
+}
+
 function Require-Command([string]$Name) {
     $cmd = Get-Command $Name -ErrorAction SilentlyContinue
     if ($null -eq $cmd) {
@@ -34,7 +56,7 @@ function Invoke-Checked([string]$Command, [object[]]$Arguments) {
 function Repack-WithLauncher([string]$Archive, [string]$Label) {
     if (-not (Test-Path -LiteralPath $Archive)) { throw "Missing $Label archive: $Archive" }
     $temp = Join-Path $nativeDir ($Label + '-repack')
-    if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
+    Remove-BuildItem -Path $temp -Recurse
     New-Item -ItemType Directory -Path $temp -Force | Out-Null
     try {
         Expand-Archive -LiteralPath $Archive -DestinationPath $temp -Force
@@ -42,18 +64,18 @@ function Repack-WithLauncher([string]$Archive, [string]$Label) {
 
         $legacyExe = Join-Path $temp 'LicenseRecoverGUI-legacy.exe'
         if (Test-Path -LiteralPath $legacyExe) {
-            Remove-Item -LiteralPath $legacyExe -Force
+            Remove-BuildItem -Path $legacyExe
         }
 
         $rootBatFiles = @(Get-ChildItem -LiteralPath $temp -Filter '*.bat' -File)
         if ($Label -eq 'portable') {
             foreach ($bat in $rootBatFiles) {
-                Remove-Item -LiteralPath $bat.FullName -Force
+                Remove-BuildItem -Path $bat.FullName
             }
         } elseif ($Label -eq 'update') {
             foreach ($bat in $rootBatFiles) {
                 if ($bat.Name -ne 'run_gui.bat') {
-                    Remove-Item -LiteralPath $bat.FullName -Force
+                    Remove-BuildItem -Path $bat.FullName
                 }
             }
             if (-not (Test-Path -LiteralPath (Join-Path $temp 'run_gui.bat'))) {
@@ -63,10 +85,10 @@ function Repack-WithLauncher([string]$Archive, [string]$Label) {
             throw "Unknown archive label: $Label"
         }
 
-        Remove-Item -LiteralPath $Archive -Force
+        Remove-BuildItem -Path $Archive
         Compress-Archive -Path (Join-Path $temp '*') -DestinationPath $Archive -CompressionLevel Optimal -Force
     } finally {
-        if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Recurse -Force }
+        Remove-BuildItem -Path $temp -Recurse
     }
 }
 
@@ -84,7 +106,7 @@ $windres = Require-Command 'x86_64-w64-mingw32-windres'
 $objdump = Require-Command 'x86_64-w64-mingw32-objdump'
 $strings = Require-Command 'x86_64-w64-mingw32-strings'
 
-if (Test-Path -LiteralPath $nativeDir) { Remove-Item -LiteralPath $nativeDir -Recurse -Force }
+Remove-BuildItem -Path $nativeDir -Recurse
 New-Item -ItemType Directory -Path $nativeDir -Force | Out-Null
 
 Write-Host '== Build Windows native GUI launcher =='
@@ -171,7 +193,7 @@ foreach ($dir in @($portableCheck, $updateCheck)) {
     )
     # Exercise behavior against each extracted archive as well as class linkage.
     # These tests create only synthetic fixtures in a separate temporary tree.
-    foreach ($test in @('LicenseRecoverLicenseStateTest', 'LicenseRecoverReadOnlyInspectionTest', 'LicenseRecoverReadOnlyPeMetadataTest', 'LicenseRecoverJavaPlanReadOnlyTest', 'LicenseRecoverBatchEvidenceTableTest', 'LicenseRecoverReadOnlyMachineIdentityTest', 'LicenseRecoverReadOnlyJavaVerifierTest', 'LicenseRecoverReadOnlyDotNetVerifierTest')) {
+    foreach ($test in @('LicenseRecoverLicenseStateTest', 'LicenseRecoverReadOnlyInspectionTest', 'LicenseRecoverReadOnlyPeMetadataTest', 'LicenseRecoverJavaPlanReadOnlyTest', 'LicenseRecoverBatchEvidenceTableTest', 'LicenseRecoverReadOnlyMachineIdentityTest', 'LicenseRecoverReadOnlyJavaVerifierTest', 'LicenseRecoverReadOnlyDotNetVerifierTest', 'LicenseRecoverLocalObservationTest', 'LicenseRecoverReadOnlyJavaMachineIdentityTest', 'LicenseRecoverReadOnlyJavaLocalVerifierTest', 'LicenseRecoverReadOnlyJavaAlternateVerifierTest', 'LicenseRecoverReadOnlyDotNetExtendedVerifierTest')) {
         Invoke-Checked $runtimeJava @(
             '-cp', ($jarFirst + [IO.Path]::PathSeparator + $guiJar + [IO.Path]::PathSeparator + $smokeClasses), $test
         )

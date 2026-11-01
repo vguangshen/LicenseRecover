@@ -33,7 +33,9 @@ import java.util.regex.Pattern;
  */
 public final class LicenseRecoverModernGUI {
     private static final long PROCESS_TIMEOUT_SECONDS = 600L;
-    private static final long BATCH_SCAN_DIRECTORY_TIMEOUT_MILLIS = 5000L;
+    // Audited Java decisions re-hash the complete class/JAR sets twice. Keep a
+    // finite budget without turning a complete read-only audit into a timeout.
+    private static final long BATCH_SCAN_DIRECTORY_TIMEOUT_MILLIS = 30000L;
     // Bound orphaned metadata-read threads if Windows/native I/O ignores interruption.
     private static final Semaphore BATCH_SCAN_INSPECTION_PERMITS = new Semaphore(4);
     private static final AtomicInteger BATCH_SCAN_THREAD_IDS = new AtomicInteger();
@@ -92,10 +94,15 @@ public final class LicenseRecoverModernGUI {
                 meaning = "当前授权入口判定通过，未区分激活与 Patch；不证明原生许可证有效或所有业务功能可用";
             else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID)
                 meaning = "独立原生校验明确返回授权无效";
+            else if (visual == LicenseRecoverLicenseState.VisualStatus.AUTHORIZATION_REJECTED)
+                meaning = "已审核当前授权入口的完整拒绝条件，已排除该分支的接受后备；这是独立判定，没有执行厂商代码";
             else if (visual == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR)
                 meaning = "扫描异常或超时；不能判断当前授权是否有效";
+            else if(state.startsWith("本地")||state.startsWith("无本地"))
+                meaning = "已确认当前本地分支的具体情况；联网、硬件狗或其他授权路径尚未得出最终结论";
             else meaning = "当前证据不足；未验证不代表未激活";
-            return meaning + "；检测原因：" + reason;
+            String tooltip=meaning+"；检测原因："+reason;
+            return "<html><div style='width:680px'>"+tooltip.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")+"</div></html>";
         }
     };
     private final List<BatchTarget> batchTargets = new ArrayList<BatchTarget>();
@@ -154,7 +161,7 @@ public final class LicenseRecoverModernGUI {
         static BatchScanInspection failed(File child, String reason) {
             return new BatchScanInspection(BatchTarget.skipped(child.getName()),
                     new Object[]{child.getName(), "检测未完成", "—", "—", "—", "—", "—",
-                            "检测失败", "—", reason, child.getAbsolutePath()}, 0, 0, 1, reason);
+                            "检测失败", reason, "—", child.getAbsolutePath()}, 0, 0, 1, reason);
         }
     }
 
@@ -490,7 +497,7 @@ public final class LicenseRecoverModernGUI {
         });
         JPanel results = new JPanel(new BorderLayout(0, 5));
         results.add(new JScrollPane(batchTable), BorderLayout.CENTER);
-        JLabel legend = new JLabel("绿色=授权检查通过 / 原生激活 / 确认 Patch   白色=原生校验无效   灰色=证据不足   红色=检测失败");
+        JLabel legend = new JLabel("绿色=授权检查通过 / 确认 Patch   白色=授权入口明确拒绝   灰色=局部结果或证据不足   红色=检测失败");
         legend.setFont(legend.getFont().deriveFont(11f));
         legend.setBorder(new EmptyBorder(3, 7, 3, 7));
         results.add(legend, BorderLayout.SOUTH);
@@ -516,7 +523,8 @@ public final class LicenseRecoverModernGUI {
                 || visual == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE) {
             background = new Color(205, 239, 210);
             foreground = new Color(20, 75, 37);
-        } else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID) {
+        } else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID
+                || visual == LicenseRecoverLicenseState.VisualStatus.AUTHORIZATION_REJECTED) {
             background = Color.WHITE;
             foreground = Color.BLACK;
         } else if (visual == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR) {
@@ -866,7 +874,8 @@ public final class LicenseRecoverModernGUI {
                         break;
                     } catch (TimeoutException ex) {
                         inspection = BatchScanInspection.failed(child,
-                                "检测超时（5 秒），已跳过该目录的深入识别；其他目录继续扫描");
+                                "检测超时（" + (BATCH_SCAN_DIRECTORY_TIMEOUT_MILLIS / 1000L)
+                                + " 秒），本目录未产生授权结论；其他目录继续扫描");
                     } catch (Exception ex) {
                         String msg = ex.getMessage();
                         inspection = BatchScanInspection.failed(child,

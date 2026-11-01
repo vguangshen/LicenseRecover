@@ -27,17 +27,17 @@
 | --- | ---: | --- | --- |
 | 全部应用 class，递归读取，跳过 `.svn` | 329 | `WEB-INF/classes` | `c541462d172101b1b4359006aadc99b91c8882da01dd1b09ec5b8ef8cc01187d` |
 | `WEB-INF/lib` 直接包含的全部 JAR | 145 | `WEB-INF/lib` | `172eff9cdf258f709aae5c2c898a5f545ead3a3226c1a1e073a4e66541d915e3` |
-| `WEB-INF/web.xml` 与 classes 中的全部 `struts*.xml` / `struts*.properties` | 9 | 应用根目录 | `0df89907d9b0362ce950a96e69bbfa5b51dfb6b6da818990f846b6b200ae5070` |
+| `WEB-INF/web.xml`、classes 中全部非 class 资源、根 `META-INF` 与存在的 `systemConfig.yml` | 61 | 应用根目录 | `41a1c8c9b76a8de426d893f18fa6f572543638169a4a3b07ecbe223b62f9b027` |
 
 `WEB-INF/web.xml` 的原始字节 SHA-256 为 `23a521e1f90a8126d8406502a48f082678e192dd180b3d17ea199369e01f9ee2`，大小 2951 字节。
 
-配置摘要只绑定已经审核的启动和 Struts wiring。注册载荷、数据库密码等未被此门槛消费的配置不作为接受条件；其存在或变化不会产生授权接受证据。代码、依赖和 wiring 均需两次完整读取一致，并检查单文件元数据/身份是否在读取期间变化。这仍不是原子文件系统快照。
+2026-11-02 将原先仅 9 个 Struts/web 资源的范围扩大到 61 个资源，补上容器配置与新增非 Struts 启动资源的边界。资源摘要只用于限定已审核的部署，不公开其内容；配置存在不能产生接受证据。新增或改变 classpath 资源会撤销证明，根注册载荷不影响这条静态授权门槛。代码、依赖和资源均需两次完整读取一致，并检查单文件元数据/身份是否在读取期间变化。这仍不是原子文件系统快照，也不读取运行中 JVM 的外部参数或共享类路径。
 
 ## 验证与适用限制
 
-`LicenseRecoverReadOnlyJavaVerifierTest` 仅使用合成文件，覆盖完整审核凭据接受、未审核构建、授权/数据库配置无关性、新增或改动 class/JAR/provider、wiring 变动、输入缺失、损坏 class、损坏审核记录及输入快照变化。测试同时断言接受不会伪装成原生有效或可信 Patch 状态。
+`LicenseRecoverReadOnlyJavaVerifierTest` 仅使用合成文件，覆盖完整审核凭据接受、未审核构建、根注册记录不作为证据、新增或改动 class/JAR/provider/任意 classpath 资源、容器 META-INF 变动、输入缺失、损坏 class、损坏审核记录及输入快照变化。测试同时断言接受不会伪装成原生有效或可信 Patch 状态。
 
-私有原始扫描输入副本实测匹配此构建并返回 `VERIFIED_USABLE`，一次完整双读约 1.6 秒；厂商文件与配置没有加入测试夹具或提交仓库。其他 15 个 Java 构建尚未匹配此证明，保持未验证。有限计次、机器绑定、产品模式及网络/HASP 后备等本地原生谓词仍需分别审核，不能从此静态放行证明推断其他版本可用。
+私有扫描输入副本实测匹配此构建并返回 `VERIFIED_USABLE`；厂商文件与配置没有加入测试夹具或提交仓库。其他 15 个 Java 构建不使用此静态放行证明，本轮其中 10 项通过另外的本地谓词检查，见 JavaLocal/Alternate 审核与逐项报告。有限计次、机器绑定、产品模式及网络/HASP 后备不能从 DS24 静态放行证明推广到其他版本。
 
 ## 审计执行事故
 

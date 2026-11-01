@@ -96,22 +96,23 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
             return unknown("接受条件检查期间配置或代码发生变化");
         return LicenseRecoverLicenseState.authorizationAcceptance(state.evidence
                 +"；site-root/config.xml SHA-256="+sha(before)
-                +"；website SHA-256="+build.web+"；registration SHA-256="+build.registration);
+                +"；website SHA-256="+build.web+"；registration SHA-256="+build.registration,
+                LicenseRecoverLicenseState.LocalCondition.SATISFIED);
     }
 
     /** Synthetic fixtures can exercise the real predicate without adding trusted production builds. */
     static LicenseRecoverLicenseState predicate(byte[] xml,String product,
             LicenseRecoverReadOnlyMachineIdentity.Snapshot identity,Instant now,ZoneId zone) {
         try {
-            if(identity==null||!identity.complete)return unknown("独立本机身份快照不完整");
-            if(!asciiIdentity(identity))return unknown("本机身份包含未审核的非 ASCII 规范");
+            if(identity==null||!identity.complete)return local(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,"独立本机身份快照不完整");
+            if(!asciiIdentity(identity))return local(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,"本机身份包含未审核的非 ASCII 规范");
             Document config=parseXml(xml);
             // In the supported cold-start branch, local is first and succeeds before network/HASP.
-            if(!"1".equals(element(config,"reg","regType")))return unknown("当前注册分派尚未证明本地优先接受");
+            if(!"1".equals(element(config,"reg","regType")))return local(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,"当前注册分派尚未证明本地优先接受");
             String version=element(config,"SystemSoft","SoftVersionID");
             if(!version.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,79}"))return unknown("网站当前产品/模式标识不明确");
             String encrypted=element(config,"reg","regName");
-            if(encrypted.isEmpty())return unknown("缺少可验证的本地授权载荷；其他授权方式未判断");
+            if(encrypted.isEmpty())return local(LicenseRecoverLicenseState.LocalCondition.NO_RECORD,"缺少可验证的本地授权载荷；其他授权方式未判断");
             String decrypted=decrypt(encrypted,"*ITMC"+product+"OK*");
             if(decrypted.length()<12||!decrypted.matches("[\\x20-\\x7e\\r\\n\\t]*"))
                 return unknown("本地载荷未匹配审核的 ASCII 结构");
@@ -123,22 +124,27 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
                     &&!("endDate".equals(key)&&info.get(key) instanceof Long))
                 return unknown("日期字段大小写未匹配审核结构");
             // ProName is an additional conservative binding, beyond CheckLocalReg's machine check.
-            if(!product.equals(info.get("ProName")))return unknown("本地载荷未证明当前审核产品身份");
+            if(!product.equals(info.get("ProName")))return local(LicenseRecoverLicenseState.LocalCondition.PRODUCT_MISMATCH,"本地载荷未匹配当前审核产品身份；其他授权方式未判断");
             String machine=machine(config,identity);
-            if(machine==null||machine.isEmpty()||!(info.get("RegID") instanceof String)
-                    ||!((String)info.get("RegID")).matches("[\\x20-\\x7e]{1,256}")||!machine.equals(info.get("RegID")))
-                return unknown("本地载荷与当前独立本机身份未匹配；其他授权方式未判断");
+            if(machine==null||machine.isEmpty())return local(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,
+                    "本机覆盖号或身份规则尚未形成独立证明；未判机器不匹配");
+            if(!(info.get("RegID") instanceof String)||!((String)info.get("RegID")).matches("[\\x20-\\x7e]{1,256}"))
+                return local(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,"授权载荷机器字段类型尚未匹配审核结构；未判机器不匹配");
+            if(!machine.equals(info.get("RegID")))
+                return local(LicenseRecoverLicenseState.LocalCondition.MACHINE_MISMATCH,"本地载荷与当前独立本机身份未匹配；其他授权方式未判断");
             LocalDate end=endDate(info.get("EndDate"),zone);
-            if(end.isBefore(now.atZone(zone).toLocalDate()))return unknown("本地正向日期条件未满足；其他授权方式未判断");
+            if(end.isBefore(now.atZone(zone).toLocalDate()))return local(LicenseRecoverLicenseState.LocalCondition.EXPIRED,"本地正向日期条件未满足；其他授权方式未判断");
             // Finite counters mutate during target verification. They require a separate audit.
-            if(!Long.valueOf(-1).equals(info.get("TotalTimes")))return unknown("有限计次或缺失计次载荷尚未完成正向审计");
+            if(!Long.valueOf(-1).equals(info.get("TotalTimes")))return local(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,"有限计次或缺失计次载荷尚未完成正向审计");
             Object reg=info.get("RegStr");
-            if(!(reg instanceof String)||!((String)reg).matches("[A-Za-z0-9,._-]{1,4096}")
-                    ||!((String)reg).toLowerCase(Locale.ROOT).contains(version.toLowerCase(Locale.ROOT)))
-                return unknown("本地载荷未覆盖网站当前模式；兼容/父版本路径未判断");
+            if(!(reg instanceof String)||!((String)reg).matches("[A-Za-z0-9,._-]{1,4096}"))
+                return local(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,"授权产品字段格式尚未匹配审核结构；未判当前产品缺失");
+            if(!((String)reg).toLowerCase(Locale.ROOT).contains(version.toLowerCase(Locale.ROOT)))
+                return local(LicenseRecoverLicenseState.LocalCondition.PRODUCT_MISMATCH,"本地载荷未覆盖网站当前模式；兼容/父版本路径未判断");
             return LicenseRecoverLicenseState.authorizationAcceptance(
                     "审核 .NET 当前构建的独立本地正向谓词通过：产品绑定、本机绑定、日期、无限计次及网站当前模式均匹配；"
-                    +"未执行厂商程序集；激活与 Patch 来源未区分；见 docs/DOTNET_READ_ONLY_ACCEPTANCE.md");
+                    +"未执行厂商程序集；激活与 Patch 来源未区分；见 docs/DOTNET_READ_ONLY_ACCEPTANCE.md",
+                    LicenseRecoverLicenseState.LocalCondition.SATISFIED);
         } catch(Exception e) {return unknown("载荷/身份/日期未匹配审核的正向接受条件；其他授权方式未判断");}
     }
 
@@ -262,6 +268,9 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
     private static String sha(byte[] bytes) throws Exception {return hex(MessageDigest.getInstance("SHA-256").digest(bytes));}
     private static String hex(byte[] bytes){StringBuilder b=new StringBuilder();for(byte v:bytes)b.append(String.format(Locale.ROOT,"%02x",v&255));return b.toString();}
     private static LicenseRecoverLicenseState unknown(String reason){return LicenseRecoverLicenseState.unverified(reason);}
+    private static LicenseRecoverLicenseState local(LicenseRecoverLicenseState.LocalCondition condition,String reason){
+        return LicenseRecoverLicenseState.localObservation(condition,reason);
+    }
 
     /** Strict flat license JSON: duplicate keys and nested/unsupported structures fail closed. */
     private static final class Json {

@@ -29,10 +29,14 @@ public final class LicenseRecoverReadOnlyInspection {
                List<Artifact> artifacts, String reason) {
             this.name = root.getName(); this.version = canonicalVersion(version);
             this.runtime = runtime; this.state = state;
-            this.method = state.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE
-                    ? ("DOTNET".equals(runtime) ? "audited-local-positive-predicate" : "audited-static-authorization-gate")
-                    : "file-only-sha256+format+reviewed-pair+audited-acceptance";
-            this.evidenceSource = state.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE
+            this.method = state.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_REJECTED
+                    ? "audited-authorization-rejection" : state.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE
+                    ? ("DOTNET".equals(runtime) ? "audited-local-positive-predicate"
+                        : (state.localCondition==LicenseRecoverLicenseState.LocalCondition.SATISFIED
+                            ? "audited-java-local-positive-predicate" : "audited-static-authorization-gate"))
+                    : (state.localCondition==LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED
+                        ? "file-only-sha256+format+reviewed-pair+audited-acceptance" : "audited-local-diagnostic");
+            this.evidenceSource = state.acceptance != LicenseRecoverLicenseState.Acceptance.UNVERIFIED
                     ? "audited-current-code; current-inputs; independent-read-only-predicate"
                     : "current-files; compiled-reviewed-registry; audited-acceptance-profiles";
             this.reason = reason;
@@ -41,7 +45,8 @@ public final class LicenseRecoverReadOnlyInspection {
         }
         public String summary() {
             return reason + "；方法=" + method + "；组件=" + artifacts.size()
-                    + "；独立只读判定=" + (state.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE ? "通过" : "未确认")
+                    + "；独立只读判定=" + (state.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE ? "通过"
+                        : state.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_REJECTED ? "明确拒绝" : "未确认")
                     + "；未执行目标原生代码；" + nativeVerifierSafety;
         }
         public String toJson() {
@@ -51,6 +56,7 @@ public final class LicenseRecoverReadOnlyInspection {
             pair(b,"status",state.visualStatus().name()); pair(b,"label",state.display());
             pair(b,"authorization",state.authorization.name()); pair(b,"codeIntegrity",state.codeIntegrity.name());
             pair(b,"acceptance",state.acceptance.name());
+            pair(b,"localCondition",state.localCondition.name());
             pair(b,"method",method); pair(b,"evidenceSource",evidenceSource); pair(b,"reason",reason);
             pair(b,"nativeVerifierSafety",nativeVerifierSafety);
             b.append("\"inspectionReadOnlyAudited\":true,\"nativeVerifierReadOnlyAudited\":false,\"acceptanceVerifierReadOnlyAudited\":true,\"artifacts\":[");
@@ -136,10 +142,9 @@ public final class LicenseRecoverReadOnlyInspection {
             reason=state.evidence; // Never expose paths, configuration or exception messages.
         }
         if(!state.isScanError()) {
-            LicenseRecoverLicenseState accepted = runtime == LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA
-                    ? LicenseRecoverReadOnlyJavaVerifier.verify(root) : LicenseRecoverReadOnlyDotNetVerifier.verify(root);
+            LicenseRecoverLicenseState accepted = inspectAuthorization(root,runtime);
             if(accepted.isScanError()) {state=accepted;reason=accepted.evidence;}
-            else if(accepted.acceptance==LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE) {
+            else if(accepted.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED) {
                 try {
                     // Bind the accepted result back to the same observed registration artifacts.
                     for(Artifact first:artifacts) {
@@ -154,14 +159,36 @@ public final class LicenseRecoverReadOnlyInspection {
                 } catch(IOException | java.security.GeneralSecurityException | SecurityException ex) {
                     state=LicenseRecoverLicenseState.scanError("接受条件最终文件复核失败: "+ex.getClass().getSimpleName());reason=state.evidence;
                 }
+            } else if(accepted.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED) {
+                state=LicenseRecoverLicenseState.combineLocalObservation(accepted,state);
+                reason=accepted.evidence;
             } else reason=accepted.evidence+"；"+reason;
         }
         return new Result(root,version,runtime.name(),state,artifacts,reason);
     }
 
+    private static LicenseRecoverLicenseState inspectAuthorization(File root,LicenseRecoverReadOnlyPatchScanner.Runtime runtime) {
+        if(runtime==LicenseRecoverReadOnlyPatchScanner.Runtime.DOTNET) {
+            LicenseRecoverLicenseState primary=LicenseRecoverReadOnlyDotNetVerifier.verify(root);
+            if(primary.isScanError()||primary.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED)return primary;
+            LicenseRecoverLicenseState extended=LicenseRecoverReadOnlyDotNetExtendedVerifier.verify(root);
+            return extended.isScanError()||extended.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED
+                    ?extended:primary;
+        }
+        LicenseRecoverLicenseState gate=LicenseRecoverReadOnlyJavaVerifier.verify(root);
+        if(gate.isScanError()||gate.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED)return gate;
+        LicenseRecoverLicenseState local=LicenseRecoverReadOnlyJavaLocalVerifier.verify(root);
+        if(local.isScanError()||local.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED)return local;
+        LicenseRecoverLicenseState alternate=LicenseRecoverReadOnlyJavaAlternateVerifier.verify(root);
+        if(alternate.isScanError()||alternate.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED
+                ||alternate.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED)return alternate;
+        return local.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED?local:gate;
+    }
+
     static boolean sameCodeEvidence(LicenseRecoverLicenseState first,LicenseRecoverLicenseState last) {
         return first.authorization==last.authorization && first.codeIntegrity==last.codeIntegrity
                 && first.acceptance==last.acceptance
+                && first.localCondition==last.localCondition
                 && first.source.equals(last.source) && first.evidence.equals(last.evidence);
     }
 

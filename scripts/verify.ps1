@@ -29,6 +29,29 @@ $guiRuntimeJar = Join-Path $repoRoot 'LicenseRecoverGUI.jar'
 $versionFile = Join-Path $repoRoot 'VERSION.txt'
 $classpathSeparator = [IO.Path]::PathSeparator
 
+function Remove-BuildItem {
+    param([Parameter(Mandatory = $true)][string]$Path, [switch]$Recurse)
+    $absolute = [IO.Path]::GetFullPath($Path)
+    $boundary = [IO.Path]::GetFullPath($buildRoot).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+    $comparison = [StringComparison]::Ordinal
+    if ($env:OS -eq 'Windows_NT') { $comparison = [StringComparison]::OrdinalIgnoreCase }
+    if (-not $absolute.StartsWith($boundary + [IO.Path]::DirectorySeparatorChar, $comparison)) {
+        throw "Refusing cleanup outside build directory: $absolute"
+    }
+    # Lexical containment alone does not protect against a junction/symlink.
+    $cursor = $absolute
+    while ($cursor.Length -ge $boundary.Length) {
+        if (Test-Path -LiteralPath $cursor) {
+            $entry = Get-Item -LiteralPath $cursor -Force
+            if (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw "Refusing cleanup through a linked build path: $cursor"
+            }
+        }
+        $cursor = [IO.Path]::GetDirectoryName($cursor)
+    }
+    if (Test-Path -LiteralPath $absolute) { Remove-Item -LiteralPath $absolute -Recurse:$Recurse -Force }
+}
+
 function Invoke-External {
     param(
         [Parameter(Mandatory = $true)][string]$Command,
@@ -61,9 +84,7 @@ function Ensure-EmbeddedJre {
         return
     }
 
-    if (Test-Path -LiteralPath $runtimeCacheDir) {
-        Remove-Item -LiteralPath $runtimeCacheDir -Recurse -Force
-    }
+    Remove-BuildItem -Path $runtimeCacheDir -Recurse
     New-Item -ItemType Directory -Path $runtimeCacheDir -Force | Out-Null
 
     $gh = Get-Command gh -ErrorAction SilentlyContinue
@@ -156,15 +177,11 @@ if (-not (Test-Path -LiteralPath $smokeTest)) {
 Ensure-EmbeddedJre
 
 foreach ($dir in @($verifyDir, $testDir, $overlayDir, $distDir, $portableDistDir)) {
-    if (Test-Path -LiteralPath $dir) {
-        Remove-Item -LiteralPath $dir -Recurse -Force
-    }
+    Remove-BuildItem -Path $dir -Recurse
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
 }
 foreach ($generated in @($archive, $updateArchive, $checksumFile, $overlayJar)) {
-    if (Test-Path -LiteralPath $generated) {
-        Remove-Item -LiteralPath $generated -Force
-    }
+    Remove-BuildItem -Path $generated
 }
 
 Write-Host "Compiling $($mainSources.Count) Java source files with Java 8-compatible sources..."
@@ -192,7 +209,12 @@ $evidenceTableTest = Join-Path $testSourceDir 'LicenseRecoverBatchEvidenceTableT
 $machineIdentityTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyMachineIdentityTest.java'
 $javaVerifierTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyJavaVerifierTest.java'
 $dotNetVerifierTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyDotNetVerifierTest.java'
-Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $inspectionTest, $peMetadataTest, $realSampleTest, $readOnlyPlanTest, $evidenceTableTest, $machineIdentityTest, $javaVerifierTest, $dotNetVerifierTest)
+$localObservationTest = Join-Path $testSourceDir 'LicenseRecoverLocalObservationTest.java'
+$javaMachineIdentityTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyJavaMachineIdentityTest.java'
+$javaLocalVerifierTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyJavaLocalVerifierTest.java'
+$javaAlternateVerifierTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyJavaAlternateVerifierTest.java'
+$dotNetExtendedVerifierTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyDotNetExtendedVerifierTest.java'
+Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $inspectionTest, $peMetadataTest, $realSampleTest, $readOnlyPlanTest, $evidenceTableTest, $machineIdentityTest, $javaVerifierTest, $dotNetVerifierTest, $localObservationTest, $javaMachineIdentityTest, $javaLocalVerifierTest, $javaAlternateVerifierTest, $dotNetExtendedVerifierTest)
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyInspectionTest')
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyPeMetadataTest')
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverJavaPlanReadOnlyTest')
@@ -200,6 +222,9 @@ Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'Licen
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyMachineIdentityTest')
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyJavaVerifierTest')
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyDotNetVerifierTest')
+foreach ($test in @('LicenseRecoverLocalObservationTest', 'LicenseRecoverReadOnlyJavaMachineIdentityTest', 'LicenseRecoverReadOnlyJavaLocalVerifierTest', 'LicenseRecoverReadOnlyJavaAlternateVerifierTest', 'LicenseRecoverReadOnlyDotNetExtendedVerifierTest')) {
+    Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, $test)
+}
 
 $netRemoverScanTest = Join-Path $repoRoot 'src/test/java/NetRemoverReadOnlyScanTest.java'
 Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $netRemoverScanTest)
