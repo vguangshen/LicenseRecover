@@ -27,7 +27,7 @@ public final class LicenseRecoverBatchEvidenceTableTest {
             try { inspectTable(args); }
             catch (Exception failure) { throw new RuntimeException(failure); }
         });
-        System.out.println("PASS: evidence columns lead the view; sorted rows, tooltips and unified green preserve evidence semantics");
+        System.out.println("PASS: evidence columns, sorted rows, tooltips and distinct native/Patch/entry colors");
     }
 
     private static void inspectTable(String[] args) throws Exception {
@@ -42,6 +42,15 @@ public final class LicenseRecoverBatchEvidenceTableTest {
         Method create = LicenseRecoverModernGUI.class.getDeclaredMethod("buildBatchPanel");
         create.setAccessible(true);
         JPanel panel = (JPanel) create.invoke(gui);
+        JPanel results = (JPanel) ((java.awt.BorderLayout) panel.getLayout())
+                .getLayoutComponent(java.awt.BorderLayout.CENTER);
+        javax.swing.JLabel legend = (javax.swing.JLabel) results.getComponent(1);
+        check(legend.getText().contains("深绿=原生有效")
+                        && legend.getText().contains("浅绿=确认 Patch")
+                        && legend.getText().contains("蓝色=当前入口通过")
+                        && legend.getText().contains("白色=原生无效")
+                        && legend.getText().contains("琥珀=入口拒绝"),
+                "visible legend must agree with independent evidence categories");
         Field field = LicenseRecoverModernGUI.class.getDeclaredField("batchTable");
         field.setAccessible(true);
         JTable table = (JTable) field.get(gui);
@@ -60,9 +69,11 @@ public final class LicenseRecoverBatchEvidenceTableTest {
             LicenseRecoverLicenseState.codeComparison(true, "synthetic reviewed pair").display(),
             LicenseRecoverLicenseState.nativeVerification(false, "synthetic native invalid").display(),
             LicenseRecoverLicenseState.unverified("configuration exists").display(),
-            LicenseRecoverLicenseState.scanError("synthetic read error").display()
+            LicenseRecoverLicenseState.scanError("synthetic read error").display(),
+            LicenseRecoverLicenseState.authorizationRejection("synthetic audited complete entry rejection",
+                    LicenseRecoverLicenseState.LocalCondition.NO_RECORD).display()
         };
-        String[] names = {"Z-native", "A-entry", "B-patch", "C-invalid", "D-unknown", "E-error"};
+        String[] names = {"Z-native", "A-entry", "B-patch", "C-invalid", "D-unknown", "E-error", "F-entry-rejected"};
         for (int i = 0; i < statuses.length; i++) {
             Object[] row = new Object[12];
             java.util.Arrays.fill(row, "—");
@@ -74,17 +85,22 @@ public final class LicenseRecoverBatchEvidenceTableTest {
         table.setSize(1120, 300);
         table.doLayout();
         Color nativeGreen = color(table, 0, 2);
-        check(nativeGreen.equals(color(table, 1, 2)) && nativeGreen.equals(color(table, 2, 2)),
-                "native activation, current entry acceptance and reviewed Patch share one green");
+        Color acceptedBlue = color(table, 1, 2);
+        Color patchGreen = color(table, 2, 2);
+        check(new Color(22, 94, 58).equals(nativeGreen), "native valid must be dark green");
+        check(new Color(205, 239, 210).equals(patchGreen), "reviewed Patch must be light green");
+        check(new Color(220, 235, 252).equals(acceptedBlue), "audited entry acceptance must be blue");
+        check(!nativeGreen.equals(patchGreen) && !nativeGreen.equals(acceptedBlue)
+                        && !patchGreen.equals(acceptedBlue), "distinct evidence must not share one green");
         check(Color.WHITE.equals(color(table, 3, 2)), "verified native invalid remains white");
-        check(!nativeGreen.equals(color(table, 4, 2)) && !Color.WHITE.equals(color(table, 4, 2)),
-                "unknown evidence remains gray rather than white or green");
-        check(!nativeGreen.equals(color(table, 5, 2)) && !Color.WHITE.equals(color(table, 5, 2)),
-                "read error remains distinct from a license verdict");
-        check(nativeGreen.equals(color(table, 1, 0)), "checkbox uses the sorted row's evidence color");
+        check(new Color(241, 243, 246).equals(color(table, 4, 2)), "unknown evidence remains gray");
+        check(new Color(165, 45, 45).equals(color(table, 5, 2)), "read error remains red");
+        check(new Color(255, 244, 214).equals(color(table, 6, 2)),
+                "audited entry rejection is amber, not native-invalid white");
+        check(acceptedBlue.equals(color(table, 1, 0)), "checkbox uses the sorted row's evidence color");
         int acceptedViewRow = table.convertRowIndexToView(1);
         table.setRowSelectionInterval(acceptedViewRow, acceptedViewRow);
-        check(nativeGreen.equals(color(table, 1, 2)), "selection must not conceal evidence colors");
+        check(acceptedBlue.equals(color(table, 1, 2)), "selection must not conceal evidence colors");
         java.awt.Rectangle cell = table.getCellRect(acceptedViewRow, 2, true);
         check(cell.x < 250, "authorization state starts inside the first viewport");
         String tooltip = table.getToolTipText(new MouseEvent(table, MouseEvent.MOUSE_MOVED,

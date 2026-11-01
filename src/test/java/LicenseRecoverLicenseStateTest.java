@@ -19,8 +19,8 @@ public final class LicenseRecoverLicenseStateTest {
                 "audited entry acceptance has an independent evidence channel");
         check(accepted.visualStatus() == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE,
                 "accepted entry has its own visual category");
-        check("授权检查通过（激活或 Patch）".equals(accepted.display()),
-                "entry label must describe the check without claiming native activation or all business functionality");
+        check("当前入口条件通过（来源未确认）".equals(accepted.display()),
+                "entry label must not claim native activation or Patch origin");
         check(LicenseRecoverLicenseState.visualStatus(accepted.display()) == accepted.visualStatus(),
                 "typed and textual acceptance agree");
         check(!accepted.selectedByDefault() && !LicenseRecoverLicenseState.selectedByDefault(accepted.display()),
@@ -60,10 +60,22 @@ public final class LicenseRecoverLicenseStateTest {
         check(acceptedPatched.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE
                         && acceptedPatched.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED,
                 "accepted Patch retains independent entry and Patch evidence");
-        check(acceptedPatched.visualStatus() == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE
+        check(acceptedPatched.visualStatus() == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED
                         && acceptedPatched.display().contains("代码已 Patch")
                         && LicenseRecoverLicenseState.visualStatus(acceptedPatched.display()) == acceptedPatched.visualStatus(),
                 "accepted Patch display must retain current entry acceptance and the confirmed code fact");
+        check(valid.visualStatus() == LicenseRecoverLicenseState.VisualStatus.NATIVE_VALID,
+                "native verification keeps its own dark-green category");
+        check(accepted.visualStatus() == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE,
+                "independent entry acceptance must not become native-valid or patched");
+        check(LicenseRecoverLicenseState.visualStatus("授权检查通过（代码已 Patch）")
+                        == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED,
+                "reviewed Patch takes precedence over accepted entry in table labels");
+        LicenseRecoverLicenseState rejectedEntry = LicenseRecoverLicenseState.authorizationRejection(
+                "audited complete current entry", LicenseRecoverLicenseState.LocalCondition.NO_RECORD);
+        check(rejectedEntry.authorization == LicenseRecoverLicenseState.Authorization.UNVERIFIED
+                        && rejectedEntry.visualStatus() == LicenseRecoverLicenseState.VisualStatus.AUTHORIZATION_REJECTED,
+                "entry rejection is not native invalid and must keep its separate visual status");
         check(acceptedPatched.evidence.contains(accepted.evidence) && acceptedPatched.evidence.contains(patched.evidence),
                 "both independent evidence descriptions survive the merge");
         check(LicenseRecoverLicenseState.combineAcceptance(accepted, unknown).acceptance
