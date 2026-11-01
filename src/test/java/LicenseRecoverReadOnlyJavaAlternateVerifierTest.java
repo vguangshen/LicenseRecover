@@ -28,10 +28,22 @@ public final class LicenseRecoverReadOnlyJavaAlternateVerifierTest {
             put(root,"WEB-INF/lib/support.jar","synthetic-code-receipt");
             put(root,"WEB-INF/classes/application.properties","spring.datasource.password=PRIVATE_DB_SECRET\nspring.main.sources=fixture.Gate\n");
             LicenseRecoverReadOnlyJavaAlternateVerifier.Profile missing=profile(root,LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.DEFAULT_LIBRARY);
+            put(root,"WEB-INF/classes/build-marker.txt","synthetic second build with the same entry class");
+            LicenseRecoverReadOnlyJavaAlternateVerifier.Profile second=profile(root,LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.DEFAULT_LIBRARY);
+            check(LicenseRecoverReadOnlyJavaAlternateVerifier.verifyAnchored(root.toFile(),
+                    new LicenseRecoverReadOnlyJavaAlternateVerifier.Profile[]{missing,second})
+                    .localCondition==LicenseRecoverLicenseState.LocalCondition.NO_RECORD,
+                    "a first anchor match with a different full build cannot hide a later reviewed build");
+            Files.delete(root.resolve("WEB-INF/classes/build-marker.txt"));
             LicenseRecoverLicenseState noRecord=inspect(root,missing,null,null);
             check(noRecord.localCondition==LicenseRecoverLicenseState.LocalCondition.NO_RECORD,"missing effective library record is explicit local evidence");
             check(noRecord.authorization==LicenseRecoverLicenseState.Authorization.UNVERIFIED
                     &&noRecord.acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED,"missing record cannot exclude network or hardware fallback");
+            put(root,"Register.xml","<root>PRIVATE_MACHINE_LOG_SENTINEL</root>");
+            check(inspect(root,missing,null,null).localCondition==LicenseRecoverLicenseState.LocalCondition.NO_RECORD,
+                    "a machine log named Register.xml cannot substitute for the effective authorization record");
+            check(!inspect(root,missing,null,null).evidence.contains("PRIVATE_MACHINE_LOG_SENTINEL"),
+                    "machine log contents never appear in evidence");
             put(root,"WEB-INF/classes/config.xml","<root><reg><regType>1</regType><regName>UNUSED_SECRET</regName></reg></root>");
             check(inspect(root,missing,null,null).localCondition==LicenseRecoverLicenseState.LocalCondition.NO_RECORD,
                     "a populated wrong-directory record must not stand in for the effective file");

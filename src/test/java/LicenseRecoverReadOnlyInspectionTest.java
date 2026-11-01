@@ -26,6 +26,8 @@ public final class LicenseRecoverReadOnlyInspectionTest {
             check(r.artifacts.size()==1&&r.artifacts.get(0).sha256.matches("[0-9a-f]{64}"),"current hash evidence");
             check(r.artifacts.get(0).format.contains("minimum-Java=8"),"bytecode minimum is not deployed JVM version");
             check(r.inspectionReadOnlyAudited&&!r.nativeVerifierReadOnlyAudited,"two distinct safety scopes");
+            check(r.reason.contains("静态门槛〔")&&r.reason.contains("本地谓词〔")&&r.reason.contains("备用入口〔"),
+                    "unknown Java inspection must retain all attempted strategy reasons");
             check(!r.toJson().contains("PRIVATE_SENTINEL")&&!r.toJson().contains(root.toString()),"no license values or absolute paths");
             check(Arrays.equals(before,Files.readAllBytes(artifact)),"read-only artifact");
             jar(artifact,false);
@@ -56,6 +58,32 @@ public final class LicenseRecoverReadOnlyInspectionTest {
                     LicenseRecoverLicenseState.codeComparison(true,"new hash")),"same state with changed evidence must not survive");
             check(!LicenseRecoverReadOnlyInspection.sameCodeEvidence(
                     LicenseRecoverLicenseState.codeComparison(true,"hash"),unknown),"changed code state must not survive");
+            LicenseRecoverLicenseState unresolved=LicenseRecoverReadOnlyInspection.unverifiedJavaEvidence(
+                    LicenseRecoverLicenseState.unverified("static entry not reviewed"),
+                    LicenseRecoverLicenseState.unverified("local build version unsupported"),
+                    LicenseRecoverLicenseState.unverified("bootstrap resource set differs from reviewed receipt"));
+            LicenseRecoverReadOnlyInspection.Result applicability=new LicenseRecoverReadOnlyInspection.Result(
+                    app.toFile(),"TEST01","JAVA",unresolved,Collections.<LicenseRecoverReadOnlyInspection.Artifact>emptyList(),unresolved.evidence);
+            check(applicability.toJson().contains("local build version unsupported")
+                    &&applicability.toJson().contains("bootstrap resource set differs from reviewed receipt"),
+                    "specific version and resource mismatch diagnostics must not be discarded for a generic gate reason");
+            check(unresolved.visualStatus()==LicenseRecoverLicenseState.VisualStatus.UNVERIFIED
+                    &&unresolved.authorization==LicenseRecoverLicenseState.Authorization.UNVERIFIED
+                    &&unresolved.codeIntegrity==LicenseRecoverLicenseState.CodeIntegrity.UNKNOWN
+                    &&unresolved.acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED
+                    &&unresolved.localCondition==LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED,
+                    "retaining applicability reasons cannot invent authorization or Patch evidence");
+            for(LicenseRecoverLicenseState verdict:new LicenseRecoverLicenseState[]{
+                    LicenseRecoverLicenseState.authorizationAcceptance("synthetic independently audited acceptance"),
+                    LicenseRecoverLicenseState.scanError("synthetic read error"),
+                    LicenseRecoverLicenseState.localObservation(LicenseRecoverLicenseState.LocalCondition.NO_RECORD,"synthetic local observation"),
+                    LicenseRecoverLicenseState.nativeVerification(false,"synthetic native rejection"),
+                    LicenseRecoverLicenseState.codeComparison(true,"synthetic reviewed comparison")}) {
+                boolean refused=false;
+                try {LicenseRecoverReadOnlyInspection.unverifiedJavaEvidence(unknown,verdict,unknown);}
+                catch(IllegalArgumentException expected){refused=true;}
+                check(refused,"applicability aggregation must not downgrade stronger evidence or errors");
+            }
             java.util.List<LicenseRecoverReadOnlyInspection.Artifact> observed=java.util.Collections.singletonList(
                     new LicenseRecoverReadOnlyInspection.Artifact("ITMCReg.jar",
                     "ef00e4751fcbc5ea6c100e4bbaf73f60094310d26c1894ca3906e70c73f45cfa","JAR",1));

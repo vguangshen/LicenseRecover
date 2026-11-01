@@ -1,6 +1,6 @@
 # Java 备用入口的只读审核
 
-`LicenseRecoverReadOnlyJavaAlternateVerifier` 覆盖六个 Java 扫描样本中的五组精确构建。目录标识仅用于报告，检测依据是 anchor、完整应用 class、全部直接依赖 JAR、启动资源和本次动态输入，不按目录名套用结论。产品发布版本来源尚未证明，不能将产品码、组件文件名或 Manifest 的开发版字符串当作正式产品版本。
+`LicenseRecoverReadOnlyJavaAlternateVerifier` 覆盖七个 Java 扫描样本中的六组精确构建（含新增 YT00123）。目录标识仅用于报告，检测依据是 anchor、完整应用 class、全部直接依赖 JAR、启动资源和本次动态输入，不按目录名套用结论。产品发布版本来源尚未证明，不能将产品码、组件文件名或 Manifest 的开发版字符串当作正式产品版本。
 
 这里只计算当前磁盘条件下已审核的授权谓词，不执行目标监听器、构造器、`writeRegisterUser`、注册检查或 Patch。观察指纹用于限定语义，不证明原版/Patch 来源；返回接受时 `authorization` 仍为 `UNVERIFIED`，`codeIntegrity` 仍为 `UNKNOWN`。
 
@@ -14,6 +14,7 @@
 | XMT0106 | `RegisterListener.checkReInfoNew` | 根 `config.xml` | 构造参数来自 Servlet 根，包含注册用户与后备调用；未接入正向本地谓词 |
 | XMT0107 | `RegisterListener.run → checkReInfoNew` | 根 `config.xml` | 构造产品来自 classes `SystemSoft/SoftVersionID`；产品集合为该节 `regInfo` 加系统 `VersionID`；已审核本地优先模式才允许计算正向条件 |
 | YT00138 | `SysParamInit → RegisterUtil` | 根 `config.xml` | 启动还读取数据库产品，再尝试产品映射、`data/system.json` 和通用产品后备；局部缺失不能证明全局拒绝 |
+| YT00123 | 同一启动/注册链；两处业务 class 与 YT00138 不同，独立绑定完整构建 | 根 `config.xml` | 新安装对照也没有此记录；`Register.xml` 是日志用途，网络/HASP/产品后备和进程缓存尚不能否定 |
 
 QT100101 的默认路径还依赖 URL 路径替换规则；空格、编码或路径名导致不能证明与已审核规则等价时，返回不适用，不寻找其他“看起来有效”的注册文件。
 
@@ -38,6 +39,9 @@ XMT0107 的旧 `checkReInfo()` 虽固定设置注册标志，实际 `run()` 却�
 | XMT-legacy-entry-20261031 | 225 | 107 | 15 | `9b21ce15dfdb401126debc8e6ed91085542dbd5e7d54c75b4c2bdc7fd90b775a` |
 | XMT-any-mode-entry-20261031 | 259 | 154 | 35 | `b2587c8088d33f6cf8775effa3145c0922341b22bbd7bb9155c845b0a4dac7bf` |
 | YT-product-chain-entry-20261031 | 664 | 278 | 94 | `79c7a275996e7ab045d0d67ed6052a231e27e9dd3d15252d30b5617a46ebaa40` |
+| YT-product-chain-entry-20261102 | 664 | 278 | 94 | `485300fc386d6fcdedc03b05381fe3e0406fc155c6baf0679efd62c97ffbfe83` |
+
+入口 anchor 只筛选候选，不能选定整个构建。YT00123 与 YT00138 的入口 class 完全相同，因此必须收集全部匹配 anchor 的审核记录，再匹配完整 class/JAR/资源集合；首个候选失配不能阻断后面的已审构建。
 
 完整 class/JAR 摘要及 anchor 固定在源码 profile。wiring 包含 classes 下的非 class 资源及实际/缺失 `WEB-INF/web.xml` 证据，以及根 `META-INF` 的全部常规资源。新增 `WEB-INF/tomcat-web.xml` 也进入集合，使未审核容器覆盖失配。classes 根 `config.xml` 作为动态产品输入单独读取。QT100101 存在 classes 根 `license.xml`，已纳入普通 wiring；其余五个副本没有该文件，新增时同样导致指纹失配。不能因文件存在或名字像授权文件就认定有效。
 

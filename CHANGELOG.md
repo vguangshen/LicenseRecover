@@ -1,6 +1,7 @@
 ## 1.2.70 - 2026-11-02
 
 ### Audited local conditions and concrete diagnostics
+- Add the user-provided fresh inactive YT00123 installation as an independent read-only baseline. Select all reviewed builds sharing an anchor, retain detailed inapplicability reasons, and report missing effective local records without inventing a native-invalid or trusted-Patch verdict.
 - Extend Java coverage to nine J1 local-first applications and the XMT any-product-mode entry, using independent current-machine identity, expiry, unlimited counters and actual product selection, bound to exact audited code and startup inputs.
 - Add local-condition evidence independently of the overall authorization verdict: missing record, machine mismatch, expired, quota exhausted, product mismatch, unsupported protocol and unavailable machine identity. Never treat a local failure as proof that network/HASP fallback rejects.
 - Add a separate complete-entry rejection result for the narrowly audited DS28 product rejection branch; it does not fabricate a target-native verification result.
