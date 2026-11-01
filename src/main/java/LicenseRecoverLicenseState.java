@@ -195,7 +195,8 @@ public final class LicenseRecoverLicenseState {
                 || "授权入口拒绝（代码已 Patch）".equals(label))
             return VisualStatus.PATCHED_UNVERIFIED;
         if ("已验证激活".equals(label)) return VisualStatus.NATIVE_VALID;
-        if ("授权检查通过（激活或 Patch）".equals(label)) return VisualStatus.VERIFIED_USABLE;
+        if ("当前入口条件通过（来源未确认）".equals(label)
+                || "授权检查通过（激活或 Patch）".equals(label)) return VisualStatus.VERIFIED_USABLE;
         if ("已验证未激活".equals(label)) return VisualStatus.NATIVE_INVALID;
         if ("授权入口明确拒绝（未激活）".equals(label)) return VisualStatus.AUTHORIZATION_REJECTED;
         return VisualStatus.UNVERIFIED;
@@ -221,7 +222,7 @@ public final class LicenseRecoverLicenseState {
         if (isScanError()) return "检测失败";
         if (acceptance == Acceptance.VERIFIED_USABLE)
             return codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED
-                    ? "授权检查通过（代码已 Patch）" : "授权检查通过（激活或 Patch）";
+                    ? "授权检查通过（代码已 Patch）" : "当前入口条件通过（来源未确认）";
         if (acceptance == Acceptance.VERIFIED_REJECTED)
             return codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED
                     ? "授权入口拒绝（代码已 Patch）" : "授权入口明确拒绝（未激活）";
