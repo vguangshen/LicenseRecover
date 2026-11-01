@@ -19,8 +19,8 @@ public final class LicenseRecoverLicenseStateTest {
                 "audited entry acceptance has an independent evidence channel");
         check(accepted.visualStatus() == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE,
                 "accepted entry has its own visual category");
-        check("授权检查通过（激活或 Patch）".equals(accepted.display()),
-                "entry label must describe the check without claiming native activation or all business functionality");
+        check("当前入口条件通过（来源未确认）".equals(accepted.display()),
+                "entry label must not claim native activation or Patch origin");
         check(LicenseRecoverLicenseState.visualStatus(accepted.display()) == accepted.visualStatus(),
                 "typed and textual acceptance agree");
         check(!accepted.selectedByDefault() && !LicenseRecoverLicenseState.selectedByDefault(accepted.display()),
