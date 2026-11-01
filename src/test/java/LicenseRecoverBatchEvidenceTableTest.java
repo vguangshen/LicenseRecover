@@ -42,6 +42,15 @@ public final class LicenseRecoverBatchEvidenceTableTest {
         Method create = LicenseRecoverModernGUI.class.getDeclaredMethod("buildBatchPanel");
         create.setAccessible(true);
         JPanel panel = (JPanel) create.invoke(gui);
+        JPanel results = (JPanel) ((java.awt.BorderLayout) panel.getLayout())
+                .getLayoutComponent(java.awt.BorderLayout.CENTER);
+        javax.swing.JLabel legend = (javax.swing.JLabel) results.getComponent(1);
+        check(legend.getText().contains("深绿=原生有效")
+                        && legend.getText().contains("浅绿=确认 Patch")
+                        && legend.getText().contains("蓝色=当前入口通过")
+                        && legend.getText().contains("白色=原生无效")
+                        && legend.getText().contains("琥珀=入口拒绝"),
+                "visible legend must agree with independent evidence categories");
         Field field = LicenseRecoverModernGUI.class.getDeclaredField("batchTable");
         field.setAccessible(true);
         JTable table = (JTable) field.get(gui);
