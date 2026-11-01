@@ -518,15 +518,23 @@ public final class LicenseRecoverModernGUI {
         Color background;
         Color foreground;
         LicenseRecoverLicenseState.VisualStatus visual = LicenseRecoverLicenseState.visualStatus(state);
-        if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_VALID
-                || visual == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED
-                || visual == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE) {
+        if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_VALID) {
+            background = new Color(22, 94, 58);
+            foreground = Color.WHITE;
+        } else if (visual == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED) {
             background = new Color(205, 239, 210);
             foreground = new Color(20, 75, 37);
-        } else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID
-                || visual == LicenseRecoverLicenseState.VisualStatus.AUTHORIZATION_REJECTED) {
+        } else if (visual == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE) {
+            // Entry acceptance alone cannot be rendered as native-valid or confirmed Patch.
+            background = new Color(220, 235, 252);
+            foreground = new Color(24, 62, 112);
+        } else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID) {
             background = Color.WHITE;
             foreground = Color.BLACK;
+        } else if (visual == LicenseRecoverLicenseState.VisualStatus.AUTHORIZATION_REJECTED) {
+            // Current-entry rejection is not a target-native invalid license result.
+            background = new Color(255, 244, 214);
+            foreground = new Color(117, 79, 22);
         } else if (visual == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR) {
             background = new Color(165, 45, 45);
             foreground = Color.WHITE;
