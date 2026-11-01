@@ -497,7 +497,7 @@ public final class LicenseRecoverModernGUI {
         });
         JPanel results = new JPanel(new BorderLayout(0, 5));
         results.add(new JScrollPane(batchTable), BorderLayout.CENTER);
-        JLabel legend = new JLabel("绿色=授权检查通过 / 确认 Patch   白色=授权入口明确拒绝   灰色=局部结果或证据不足   红色=检测失败");
+        JLabel legend = new JLabel("深绿=原生有效   浅绿=确认 Patch   蓝色=当前入口通过   白色=原生无效   琥珀=入口拒绝   灰色=未验证   红色=检测错误");
         legend.setFont(legend.getFont().deriveFont(11f));
         legend.setBorder(new EmptyBorder(3, 7, 3, 7));
         results.add(legend, BorderLayout.SOUTH);
