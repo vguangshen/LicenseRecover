@@ -182,7 +182,22 @@ public final class LicenseRecoverReadOnlyInspection {
         LicenseRecoverLicenseState alternate=LicenseRecoverReadOnlyJavaAlternateVerifier.verify(root);
         if(alternate.isScanError()||alternate.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED
                 ||alternate.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED)return alternate;
-        return local.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED?local:gate;
+        return local.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED?local
+                :unverifiedJavaEvidence(gate,local,alternate);
+    }
+
+    /** Retain each attempted strategy's applicability reason without creating a verdict. */
+    static LicenseRecoverLicenseState unverifiedJavaEvidence(LicenseRecoverLicenseState gate,
+            LicenseRecoverLicenseState local,LicenseRecoverLicenseState alternate) {
+        for(LicenseRecoverLicenseState state:new LicenseRecoverLicenseState[]{gate,local,alternate}) {
+            if(state==null||state.authorization!=LicenseRecoverLicenseState.Authorization.UNVERIFIED
+                    ||state.codeIntegrity!=LicenseRecoverLicenseState.CodeIntegrity.UNKNOWN
+                    ||state.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED
+                    ||state.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED)
+                throw new IllegalArgumentException("only unresolved applicability evidence may be combined");
+        }
+        return LicenseRecoverLicenseState.unverified("Java 只读规则适用性：静态门槛〔"+gate.evidence
+                +"〕；本地谓词〔"+local.evidence+"〕；备用入口〔"+alternate.evidence+"〕");
     }
 
     static boolean sameCodeEvidence(LicenseRecoverLicenseState first,LicenseRecoverLicenseState last) {

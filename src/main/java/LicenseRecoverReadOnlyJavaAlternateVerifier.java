@@ -54,7 +54,12 @@ public final class LicenseRecoverReadOnlyJavaAlternateVerifier {
                 "3a376103f2200bdf9dea33be43b8d0e907877701968d1cfc7ec4c8fe8ff9874b",664,
                 "a4e9ed3e5410e095cebf07c5d9aba6db5ff911d4f18269bd7f17166424d25192",278,
                 "db7e6ddf97496f6a485d923265d5ca440ab78079376bc34c4add846eb8ae672c",
-                "79c7a275996e7ab045d0d67ed6052a231e27e9dd3d15252d30b5617a46ebaa40",Layout.DATABASE_PRODUCT_CHAIN)
+                "79c7a275996e7ab045d0d67ed6052a231e27e9dd3d15252d30b5617a46ebaa40",Layout.DATABASE_PRODUCT_CHAIN),
+        new Profile("YT-product-chain-entry-20261102","com/common/sys/configuration/SysParamInit.class",
+                "3a376103f2200bdf9dea33be43b8d0e907877701968d1cfc7ec4c8fe8ff9874b",664,
+                "62eb86c5f351f12430961958f595566baa5a011018092bee74ae2312a35064d6",278,
+                "db7e6ddf97496f6a485d923265d5ca440ab78079376bc34c4add846eb8ae672c",
+                "485300fc386d6fcdedc03b05381fe3e0406fc155c6baf0679efd62c97ffbfe83",Layout.DATABASE_PRODUCT_CHAIN)
     };
     private static final String[] INPUTS={"config.xml","WEB-INF/classes/config.xml","data/config.xml",
             "data/system.json","systemConfig.yml","WEB-INF/lib/config.xml","WEB-INF/web.xml"};
@@ -63,15 +68,25 @@ public final class LicenseRecoverReadOnlyJavaAlternateVerifier {
             "spring.datasource.druid.url","spring.datasource.druid.username","spring.datasource.druid.password"));
 
     public static LicenseRecoverLicenseState verify(File appRoot) {
+        return verifyAnchored(appRoot,REVIEWED);
+    }
+
+    /** An unchanged anchor can belong to several complete builds. It is only a candidate filter. */
+    static LicenseRecoverLicenseState verifyAnchored(File appRoot,Profile[] profiles) {
         if(appRoot==null)return LicenseRecoverLicenseState.unverified("缺少 Java 应用目录");
         try {
-            for(Profile profile:REVIEWED) {
+            List<Profile> candidates=new ArrayList<Profile>();
+            Map<Path,Item> anchors=new HashMap<Path,Item>();
+            for(Profile profile:profiles) {
+                if(!valid(profile))return LicenseRecoverLicenseState.scanError("Java 备用入口审核凭据损坏");
                 Path anchor=appRoot.toPath().resolve("WEB-INF/classes").resolve(profile.anchor);
-                Item item=optional(anchor,false,false);
+                if(!anchors.containsKey(anchor))anchors.put(anchor,optional(anchor,false,false));
+                Item item=anchors.get(anchor);
                 if(item!=null && profile.anchorHash.equals(item.sha))
-                    return verifyReviewed(appRoot,new Profile[]{profile},null,System.currentTimeMillis(),null,null);
+                    candidates.add(profile);
             }
-            return LicenseRecoverLicenseState.unverified("Java 备用授权入口未匹配已审核的完整构建");
+            return candidates.isEmpty()?LicenseRecoverLicenseState.unverified("Java 备用授权入口未匹配已审核的入口锚点")
+                    :verifyReviewed(appRoot,candidates.toArray(new Profile[candidates.size()]),null,System.currentTimeMillis(),null,null);
         }catch(LinkedInput|Changed e){return LicenseRecoverLicenseState.unverified("Java 备用入口链接布局或读取期间变化");}
         catch(IOException|SecurityException e){return LicenseRecoverLicenseState.scanError("Java 备用入口读取失败: "+e.getClass().getSimpleName());}
     }
