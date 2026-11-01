@@ -51,8 +51,8 @@ public final class LicenseRecoverReadOnlyJavaVerifier {
     private static final Profile[] REVIEWED = {
         new Profile("DS24-static-gate-20261030", 329,
                 "c541462d172101b1b4359006aadc99b91c8882da01dd1b09ec5b8ef8cc01187d", 145,
-                "172eff9cdf258f709aae5c2c898a5f545ead3a3226c1a1e073a4e66541d915e3", 9,
-                "0df89907d9b0362ce950a96e69bbfa5b51dfb6b6da818990f846b6b200ae5070")
+                "172eff9cdf258f709aae5c2c898a5f545ead3a3226c1a1e073a4e66541d915e3", 61,
+                "41a1c8c9b76a8de426d893f18fa6f572543638169a4a3b07ecbe223b62f9b027")
     };
 
     public static LicenseRecoverLicenseState verify(File appRoot) {
@@ -168,7 +168,7 @@ public final class LicenseRecoverReadOnlyJavaVerifier {
                 String name = file.getFileName().toString().toLowerCase(Locale.ROOT);
                 if (name.endsWith(".class"))
                     out.classes.items.put(relative(classes, file), read(file, true));
-                else if (configuration(name))
+                else
                     out.configurations.items.put(relative(root, file), read(file, false));
                 return FileVisitResult.CONTINUE;
             }
@@ -185,13 +185,26 @@ public final class LicenseRecoverReadOnlyJavaVerifier {
         }
         Path web = root.resolve("WEB-INF/web.xml");
         out.configurations.items.put(relative(root, web), read(web, false));
+        Path tomcatWeb = root.resolve("WEB-INF/tomcat-web.xml");
+        if (Files.exists(tomcatWeb,LinkOption.NOFOLLOW_LINKS))
+            out.configurations.items.put(relative(root,tomcatWeb),read(tomcatWeb,false));
+        Path meta = root.resolve("META-INF");
+        if (Files.exists(meta, LinkOption.NOFOLLOW_LINKS)) {
+            Files.walkFileTree(meta, new SimpleFileVisitor<Path>() {
+                @Override public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes a) throws IOException {
+                    checkPath(dir);
+                    return dir.getFileName().toString().equals(".svn") ? FileVisitResult.SKIP_SUBTREE : FileVisitResult.CONTINUE;
+                }
+                @Override public FileVisitResult visitFile(Path file, BasicFileAttributes a) throws IOException {
+                    out.configurations.items.put(relative(root,file), read(file,false));
+                    return FileVisitResult.CONTINUE;
+                }
+            });
+        }
+        Path properties = root.resolve("systemConfig.yml");
+        if (Files.exists(properties, LinkOption.NOFOLLOW_LINKS))
+            out.configurations.items.put(relative(root,properties),read(properties,false));
         return out;
-    }
-
-    private static boolean configuration(String n) {
-        // The audited gate ignores DB credentials and registration XML. Bind only
-        // Struts providers/interceptor wiring here, plus WEB-INF/web.xml below.
-        return n.startsWith("struts") && (n.endsWith(".xml") || n.endsWith(".properties"));
     }
     private static String relative(Path root, Path file) {
         return root.relativize(file.toAbsolutePath().normalize()).toString().replace('\\', '/');

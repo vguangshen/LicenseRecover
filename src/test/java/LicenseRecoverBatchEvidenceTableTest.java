@@ -31,6 +31,13 @@ public final class LicenseRecoverBatchEvidenceTableTest {
     }
 
     private static void inspectTable(String[] args) throws Exception {
+        Class<?> failedRow=Class.forName("LicenseRecoverModernGUI$BatchScanInspection");
+        Method failed=failedRow.getDeclaredMethod("failed",File.class,String.class);failed.setAccessible(true);
+        Object failure=failed.invoke(null,new File("synthetic-timeout"),"synthetic timeout; no authorization verdict");
+        Field failedCells=failedRow.getDeclaredField("cells");failedCells.setAccessible(true);
+        Object[] diagnosticCells=(Object[])failedCells.get(failure);
+        check("检测失败".equals(diagnosticCells[7]) && String.valueOf(diagnosticCells[8]).contains("no authorization verdict"),
+                "timeout and error reason must occupy the visible evidence column");
         Object gui = LicenseRecoverModernGUI.class.getDeclaredConstructor().newInstance();
         Method create = LicenseRecoverModernGUI.class.getDeclaredMethod("buildBatchPanel");
         create.setAccessible(true);

@@ -1,3 +1,12 @@
+## 1.2.70 - 2026-11-02
+
+### Audited local conditions and concrete diagnostics
+- Extend Java coverage to nine J1 local-first applications and the XMT any-product-mode entry, using independent current-machine identity, expiry, unlimited counters and actual product selection, bound to exact audited code and startup inputs.
+- Add local-condition evidence independently of the overall authorization verdict: missing record, machine mismatch, expired, quota exhausted, product mismatch, unsupported protocol and unavailable machine identity. Never treat a local failure as proof that network/HASP fallback rejects.
+- Add a separate complete-entry rejection result for the narrowly audited DS28 product rejection branch; it does not fabricate a target-native verification result.
+- Audit the remaining .NET legacy/dual-registration variants, expose specific local findings, and show wrapped reasons directly in the GUI. Increase the bounded per-directory budget to 30 seconds for complete double hashing.
+- Validate source behavior, every shipped class and both final ZIP runtimes. The local 26-copy oracle includes per-application local conditions: 18 accepted entries and 8 scoped diagnostics, with no claim of original/Patch provenance.
+
 ## 1.2.69 - 2026-10-30
 
 ### Current authorization conditions

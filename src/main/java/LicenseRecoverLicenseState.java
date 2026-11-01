@@ -8,11 +8,15 @@ public final class LicenseRecoverLicenseState {
     public enum Authorization { VERIFIED_VALID, VERIFIED_INVALID, UNVERIFIED, ERROR }
     public enum CodeIntegrity { CONFIRMED_PATCHED, CONFIRMED_ORIGINAL, UNKNOWN, ERROR }
     /** Current authorization-entry acceptance does not identify activation versus a Patch. */
-    public enum Acceptance { VERIFIED_USABLE, UNVERIFIED }
+    public enum Acceptance { VERIFIED_USABLE, VERIFIED_REJECTED, UNVERIFIED }
+    /** Local evidence is not a verdict on network/HASP or the whole authorization chain. */
+    public enum LocalCondition { NOT_CHECKED, SATISFIED, NO_RECORD, MACHINE_MISMATCH, EXPIRED,
+        QUOTA_EXCEEDED, PRODUCT_MISMATCH, MALFORMED, UNSUPPORTED, IDENTITY_UNAVAILABLE }
 
     public final Authorization authorization;
     public final CodeIntegrity codeIntegrity;
     public final Acceptance acceptance;
+    public final LocalCondition localCondition;
     public final String evidence;
     public final String source;
 
@@ -23,11 +27,18 @@ public final class LicenseRecoverLicenseState {
 
     private LicenseRecoverLicenseState(Authorization authorization, CodeIntegrity codeIntegrity,
                                        Acceptance acceptance, String evidence, String source) {
+        this(authorization,codeIntegrity,acceptance,LocalCondition.NOT_CHECKED,evidence,source);
+    }
+
+    private LicenseRecoverLicenseState(Authorization authorization, CodeIntegrity codeIntegrity,
+                                       Acceptance acceptance, LocalCondition localCondition, String evidence, String source) {
         if (authorization == null || codeIntegrity == null || acceptance == null)
             throw new IllegalArgumentException("missing state");
         this.authorization = authorization;
         this.codeIntegrity = codeIntegrity;
         this.acceptance = acceptance;
+        if(localCondition==null)throw new IllegalArgumentException("missing local condition");
+        this.localCondition=localCondition;
         this.evidence = evidence == null ? "" : evidence;
         this.source = source == null ? "" : source;
     }
@@ -61,10 +72,48 @@ public final class LicenseRecoverLicenseState {
      * The caller must bind its evidence to current files and all audited dependencies.
      */
     public static LicenseRecoverLicenseState authorizationAcceptance(String auditedEvidence) {
+        return authorizationAcceptance(auditedEvidence,LocalCondition.NOT_CHECKED);
+    }
+
+    public static LicenseRecoverLicenseState authorizationAcceptance(String auditedEvidence,LocalCondition localCondition) {
         if (auditedEvidence == null || auditedEvidence.trim().isEmpty())
             throw new IllegalArgumentException("current authorization-entry acceptance requires audited evidence");
+        if(localCondition!=LocalCondition.NOT_CHECKED&&localCondition!=LocalCondition.SATISFIED)
+            throw new IllegalArgumentException("accepted local condition must be satisfied or not independently split");
         return new LicenseRecoverLicenseState(Authorization.UNVERIFIED, CodeIntegrity.UNKNOWN,
-                Acceptance.VERIFIED_USABLE, auditedEvidence, "audited-current-authorization-entry");
+                Acceptance.VERIFIED_USABLE,localCondition,auditedEvidence, "audited-current-authorization-entry");
+    }
+
+    /** A proven local finding never asserts that all fallback authorization methods reject. */
+    public static LicenseRecoverLicenseState localObservation(LocalCondition condition,String auditedEvidence) {
+        if(condition==null||condition==LocalCondition.NOT_CHECKED||auditedEvidence==null||auditedEvidence.trim().isEmpty())
+            throw new IllegalArgumentException("local observations require a condition and audited evidence");
+        return new LicenseRecoverLicenseState(Authorization.UNVERIFIED,CodeIntegrity.UNKNOWN,Acceptance.UNVERIFIED,
+                condition,auditedEvidence,"audited-local-authorization-observation");
+    }
+
+    /** Only a complete, current, audited entry rejection with no accepting fallback may call this. */
+    public static LicenseRecoverLicenseState authorizationRejection(String auditedEvidence,LocalCondition condition) {
+        if(auditedEvidence==null||auditedEvidence.trim().isEmpty()||condition==null
+                ||condition==LocalCondition.NOT_CHECKED||condition==LocalCondition.SATISFIED
+                ||condition==LocalCondition.UNSUPPORTED||condition==LocalCondition.IDENTITY_UNAVAILABLE)
+            throw new IllegalArgumentException("complete audited rejection evidence required");
+        return new LicenseRecoverLicenseState(Authorization.UNVERIFIED,CodeIntegrity.UNKNOWN,
+                Acceptance.VERIFIED_REJECTED,condition,auditedEvidence,"audited-current-authorization-entry");
+    }
+
+    public static LicenseRecoverLicenseState combineLocalObservation(LicenseRecoverLicenseState localState,
+                                                                    LicenseRecoverLicenseState codeState) {
+        if(localState==null||codeState==null)throw new IllegalArgumentException("both evidence channels required");
+        if(localState.isScanError()||codeState.isScanError())return scanError(localState.evidence+"; "+codeState.evidence);
+        if(!"audited-local-authorization-observation".equals(localState.source)
+                ||localState.localCondition==LocalCondition.NOT_CHECKED
+                ||localState.acceptance!=Acceptance.UNVERIFIED)
+            throw new IllegalArgumentException("local evidence source invalid");
+        if(!"none".equals(codeState.source)&&!"versioned-code-comparison".equals(codeState.source))
+            throw new IllegalArgumentException("invalid code channel");
+        return new LicenseRecoverLicenseState(Authorization.UNVERIFIED,codeState.codeIntegrity,Acceptance.UNVERIFIED,
+                localState.localCondition,localState.evidence+"; code: "+codeState.evidence,localState.source+"+"+codeState.source);
     }
 
     /** Patch status requires a known original version and verified bytecode evidence. */
@@ -100,17 +149,17 @@ public final class LicenseRecoverLicenseState {
             throw new IllegalArgumentException("both evidence channels are required");
         String evidence = "acceptance: " + acceptedState.evidence + "; code: " + codeState.evidence;
         if (acceptedState.isScanError() || codeState.isScanError()) return scanError(evidence);
-        if (acceptedState.acceptance != Acceptance.VERIFIED_USABLE
+        if (acceptedState.acceptance == Acceptance.UNVERIFIED
                 || !"audited-current-authorization-entry".equals(acceptedState.source))
             throw new IllegalArgumentException("acceptance must come from the audited current-entry predicate");
         if (!"versioned-code-comparison".equals(codeState.source) && !"none".equals(codeState.source))
             throw new IllegalArgumentException("code evidence must come from versioned comparison or remain unknown");
         return new LicenseRecoverLicenseState(Authorization.UNVERIFIED, codeState.codeIntegrity,
-                Acceptance.VERIFIED_USABLE, evidence, acceptedState.source + "+" + codeState.source);
+                acceptedState.acceptance,acceptedState.localCondition,evidence,acceptedState.source + "+" + codeState.source);
     }
 
     public enum VisualStatus {
-        NATIVE_VALID, PATCHED_UNVERIFIED, NATIVE_INVALID, SCAN_ERROR, UNVERIFIED, VERIFIED_USABLE
+        NATIVE_VALID, PATCHED_UNVERIFIED, NATIVE_INVALID, SCAN_ERROR, UNVERIFIED, VERIFIED_USABLE, AUTHORIZATION_REJECTED
     }
 
     /** A failed evidence channel is an inspection error, not a license verdict. */
@@ -123,6 +172,7 @@ public final class LicenseRecoverLicenseState {
         if (isScanError()) return VisualStatus.SCAN_ERROR;
         if (acceptance == Acceptance.VERIFIED_USABLE) return VisualStatus.VERIFIED_USABLE;
         if (codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED) return VisualStatus.PATCHED_UNVERIFIED;
+        if (acceptance == Acceptance.VERIFIED_REJECTED) return VisualStatus.AUTHORIZATION_REJECTED;
         if (authorization == Authorization.VERIFIED_VALID) return VisualStatus.NATIVE_VALID;
         if (authorization == Authorization.VERIFIED_INVALID) return VisualStatus.NATIVE_INVALID;
         return VisualStatus.UNVERIFIED;
@@ -144,6 +194,8 @@ public final class LicenseRecoverLicenseState {
         if ("授权检查通过（激活或 Patch）".equals(label)
                 || "授权检查通过（代码已 Patch）".equals(label)) return VisualStatus.VERIFIED_USABLE;
         if ("已验证未激活".equals(label)) return VisualStatus.NATIVE_INVALID;
+        if ("授权入口明确拒绝（未激活）".equals(label)) return VisualStatus.AUTHORIZATION_REJECTED;
+        if ("授权入口拒绝（代码已 Patch）".equals(label)) return VisualStatus.PATCHED_UNVERIFIED;
         return VisualStatus.UNVERIFIED;
     }
 
@@ -168,6 +220,9 @@ public final class LicenseRecoverLicenseState {
         if (acceptance == Acceptance.VERIFIED_USABLE)
             return codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED
                     ? "授权检查通过（代码已 Patch）" : "授权检查通过（激活或 Patch）";
+        if (acceptance == Acceptance.VERIFIED_REJECTED)
+            return codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED
+                    ? "授权入口拒绝（代码已 Patch）" : "授权入口明确拒绝（未激活）";
         if (authorization == Authorization.VERIFIED_VALID && codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED)
             return "已验证激活（代码已 Patch）";
         if (authorization == Authorization.VERIFIED_VALID) return "已验证激活";
@@ -175,6 +230,18 @@ public final class LicenseRecoverLicenseState {
             return "已验证未激活（代码已 Patch）";
         if (authorization == Authorization.VERIFIED_INVALID) return "已验证未激活";
         if (codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED) return "已确认 Patch（授权未验证）";
+        switch(localCondition) {
+            case SATISFIED: return "本地条件通过（整体待核）";
+            case NO_RECORD: return "无本地授权（其他方式待核）";
+            case MACHINE_MISMATCH: return "本地机器不符（其他方式待核）";
+            case EXPIRED: return "本地已过期（其他方式待核）";
+            case QUOTA_EXCEEDED: return "本地次数不足（其他方式待核）";
+            case PRODUCT_MISMATCH: return "本地产品不符（其他方式待核）";
+            case MALFORMED: return "本地格式未通过（其余待核）";
+            case UNSUPPORTED: return "验证协议待支持";
+            case IDENTITY_UNAVAILABLE: return "本机标识未确认（整体待核）";
+            default: break;
+        }
         if (codeIntegrity == CodeIntegrity.CONFIRMED_ORIGINAL) return "原始代码（授权未验证）";
         return "未验证";
     }

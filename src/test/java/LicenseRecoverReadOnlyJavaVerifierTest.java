@@ -41,8 +41,14 @@ public final class LicenseRecoverReadOnlyJavaVerifierTest {
 
             Files.write(app.resolve("config.xml"), "PRIVATE_SENTINEL license payload".getBytes(StandardCharsets.UTF_8));
             Files.write(classes.resolve("database.properties"), "PRIVATE_SENTINEL password".getBytes(StandardCharsets.UTF_8));
-            check(accepted(inspect(app, proof)), "unconsumed license and DB credentials do not control audited static gate");
+            check(!accepted(inspect(app, proof)), "new classpath resource cannot inherit an audited bootstrap proof");
             check(!inspect(app, proof).evidence.contains("PRIVATE_SENTINEL"), "no configuration values exposed");
+            Files.delete(classes.resolve("database.properties"));
+            check(accepted(inspect(app,proof)),"unconsumed root registration does not control the static gate");
+            Path container=app.resolve("META-INF/context.xml");Files.createDirectories(container.getParent());
+            Files.write(container,"<Context/>".getBytes(StandardCharsets.UTF_8));
+            check(!accepted(inspect(app,proof)),"container context can change the loading environment and invalidates proof");
+            Files.delete(container);
 
             Files.write(classes.resolve("Added.class"), code);
             check(!accepted(inspect(app, proof)), "new application code invalidates proof");
