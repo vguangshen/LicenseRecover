@@ -76,6 +76,14 @@ public final class LicenseRecoverLicenseStateTest {
         check(rejectedEntry.authorization == LicenseRecoverLicenseState.Authorization.UNVERIFIED
                         && rejectedEntry.visualStatus() == LicenseRecoverLicenseState.VisualStatus.AUTHORIZATION_REJECTED,
                 "entry rejection is not native invalid and must keep its separate visual status");
+        check("当前入口条件拒绝（原生状态待核）".equals(rejectedEntry.display())
+                        && !rejectedEntry.display().contains("未激活"),
+                "entry rejection label must not imply native invalidity");
+        check(LicenseRecoverLicenseState.visualStatus(rejectedEntry.display())
+                        == LicenseRecoverLicenseState.VisualStatus.AUTHORIZATION_REJECTED
+                        && LicenseRecoverLicenseState.visualStatus("授权入口明确拒绝（未激活）")
+                        == LicenseRecoverLicenseState.VisualStatus.AUTHORIZATION_REJECTED,
+                "new and legacy entry rejection labels must remain amber, never native-invalid white");
         check(acceptedPatched.evidence.contains(accepted.evidence) && acceptedPatched.evidence.contains(patched.evidence),
                 "both independent evidence descriptions survive the merge");
         check(LicenseRecoverLicenseState.combineAcceptance(accepted, unknown).acceptance
