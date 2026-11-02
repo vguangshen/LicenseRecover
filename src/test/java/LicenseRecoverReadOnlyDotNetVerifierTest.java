@@ -106,6 +106,20 @@ public final class LicenseRecoverReadOnlyDotNetVerifierTest {
         unknown(run(("<!DOCTYPE ROOT [<!ENTITY x SYSTEM 'file:///NONEXISTENT_SYNTHETIC'>]>"+xml).getBytes("UTF-8"),hardware()),"external entities never resolved");
         accepted(run(config(payload().replace("DS0101,DS0109","ds0109"),"1",""),hardware()),"reviewed case-insensitive website mode constraint");
         if(run(valid,hardware()).evidence.contains(MACHINE)||run(valid,hardware()).evidence.contains("SYNTHETIC_ONLY"))throw new AssertionError("sensitive values in evidence");checks++;
+        LicenseRecoverLicenseState mismatched=run(config(payload().replace(MACHINE,"SYNTHETIC_OTHER"),"1",""),hardware());
+        if(mismatched.localCondition!=LicenseRecoverLicenseState.LocalCondition.MACHINE_MISMATCH)
+            throw new AssertionError("synthetic mismatch fixture must produce a scoped local observation");checks++;
+        if(LicenseRecoverReadOnlyDotNetVerifier.retainIfStable(mismatched,true)!=mismatched)
+            throw new AssertionError("stable local evidence must remain unchanged");checks++;
+        LicenseRecoverLicenseState revokedLocal=LicenseRecoverReadOnlyDotNetVerifier.retainIfStable(mismatched,false);
+        unknown(revokedLocal,"changed audited bytes revoke a previously observed local mismatch");
+        if(revokedLocal.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED
+                ||!revokedLocal.evidence.contains("发生变化"))
+            throw new AssertionError("stale local observation was not fully revoked");checks++;
+        LicenseRecoverLicenseState revokedPositive=LicenseRecoverReadOnlyDotNetVerifier.retainIfStable(run(valid,hardware()),false);
+        unknown(revokedPositive,"changed audited bytes revoke a previously accepted entry");
+        if(revokedPositive.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED)
+            throw new AssertionError("stale positive observation was not fully revoked");checks++;
         System.out.println("LicenseRecoverReadOnlyDotNetVerifierTest: "+checks+" checks passed");
     }
 }
