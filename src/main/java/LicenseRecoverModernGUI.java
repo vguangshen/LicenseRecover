@@ -497,7 +497,7 @@ public final class LicenseRecoverModernGUI {
         });
         JPanel results = new JPanel(new BorderLayout(0, 5));
         results.add(new JScrollPane(batchTable), BorderLayout.CENTER);
-        JLabel legend = new JLabel("绿色=授权检查通过 / 确认 Patch   白色=授权入口明确拒绝   灰色=局部结果或证据不足   红色=检测失败");
+        JLabel legend = new JLabel("深绿=原生有效   浅绿=确认 Patch   蓝色=当前入口通过   白色=原生无效   琥珀=入口拒绝   灰色=未验证   红色=检测错误");
         legend.setFont(legend.getFont().deriveFont(11f));
         legend.setBorder(new EmptyBorder(3, 7, 3, 7));
         results.add(legend, BorderLayout.SOUTH);
@@ -518,15 +518,22 @@ public final class LicenseRecoverModernGUI {
         Color background;
         Color foreground;
         LicenseRecoverLicenseState.VisualStatus visual = LicenseRecoverLicenseState.visualStatus(state);
-        if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_VALID
-                || visual == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED
-                || visual == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE) {
+        if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_VALID) {
+            background = new Color(22, 94, 58);
+            foreground = Color.WHITE;
+        } else if (visual == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED) {
             background = new Color(205, 239, 210);
             foreground = new Color(20, 75, 37);
-        } else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID
-                || visual == LicenseRecoverLicenseState.VisualStatus.AUTHORIZATION_REJECTED) {
+        } else if (visual == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE) {
+            // Scoped entry acceptance cannot be rendered as native-valid or confirmed Patch.
+            background = new Color(220, 235, 252);
+            foreground = new Color(24, 62, 112);
+        } else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID) {
             background = Color.WHITE;
             foreground = Color.BLACK;
+        } else if (visual == LicenseRecoverLicenseState.VisualStatus.AUTHORIZATION_REJECTED) {
+            background = new Color(255, 244, 214);
+            foreground = new Color(117, 79, 22);
         } else if (visual == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR) {
             background = new Color(165, 45, 45);
             foreground = Color.WHITE;
