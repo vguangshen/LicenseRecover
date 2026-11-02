@@ -93,15 +93,22 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
         LicenseRecoverReadOnlyWmicCpuIdentity.Identity cpu=null;
         if(!element(parseXml(before),"reg","WebSerSoftNo").isEmpty())cpu=LicenseRecoverReadOnlyWmicCpuIdentity.current();
         LicenseRecoverLicenseState state=predicate(before,build.product,identity,Instant.now(),ZoneId.systemDefault(),cpu);
-        if(state.acceptance!=LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE)return state;
-        if(!Arrays.equals(before,read(config,MAX_CONFIG))||currentBuild(root)!=build)
-            return unknown("接受条件检查期间配置或代码发生变化");
+        // A negative/unsupported local observation also depends on the current bytes.
+        // Revoke it if the config or any audited assembly changed during inspection.
+        boolean stable=Arrays.equals(before,read(config,MAX_CONFIG))&&currentBuild(root)==build;
+        state=retainIfStable(state,stable);
+        if(!stable||state.acceptance!=LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE)return state;
         state=predicate(before,build.product,identity,Instant.now(),ZoneId.systemDefault(),cpu);
         if(state.acceptance!=LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE)return state;
         return LicenseRecoverLicenseState.authorizationAcceptance(state.evidence
                 +"；site-root/config.xml SHA-256="+sha(before)
                 +"；website SHA-256="+build.web+"；registration SHA-256="+build.registration,
                 LicenseRecoverLicenseState.LocalCondition.SATISFIED);
+    }
+
+    /** All current-state observations, not just positive acceptance, require stable inputs. */
+    static LicenseRecoverLicenseState retainIfStable(LicenseRecoverLicenseState observed,boolean stable) {
+        return stable?observed:unknown("只读核验期间配置或代码发生变化；已撤销局部及入口结论");
     }
 
     /** Synthetic fixtures can exercise the real predicate without adding trusted production builds. */
