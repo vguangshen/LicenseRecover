@@ -1,5 +1,6 @@
 ## 1.2.71 - 2026-11-02
 
+- Preserve evidence categories in the .NET diagnostic candidate: native-valid dark green, confirmed Patch light green, scoped entry acceptance blue, native-invalid white, entry rejection amber, unverified gray and scan error red. Restore UI regression tests from the earlier color-separation branch.
 ### Scoped .NET machine and registration-source evidence
 - Read the audited physical 32-bit YunClient source twice without loading target assemblies, importing registration or reading CRM credentials; retain source presence separately from authorization acceptance.
 - Add a bounded independent WMIC text/environment reader for the reviewed machine-override branch. A WMI CPU row cannot substitute for this protocol; unknown encoding, resolution and command context stay unverified.
