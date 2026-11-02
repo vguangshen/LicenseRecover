@@ -82,8 +82,9 @@ public final class LicenseRecoverReadOnlyWmicCpuIdentity {
             requireExecutable(wmic);
             stage="WMIC 文本查询";
             Captured result=run(Arrays.asList(wmic.toString(),"cpu","get","processorId"),cwd,deadline,remainingOutput);
-            // Native reads stdout only; stderr is drained and bounded separately.
-            return parse(result.stdout);
+            // A failed/ambiguous WMIC invocation cannot establish even the native "unknow" fallback.
+            // Native stdout text semantics apply only after successful process completion.
+            return parseQueryResult(result.stdout,result.exit,result.stderrSize);
         }catch(InterruptedException e){Thread.currentThread().interrupt();return unknown("WMIC 只读身份查询已取消");}
         catch(Exception e){return unknown("WMIC 只读身份未完成（"+stage+"），未猜测原生身份");}
     }
@@ -145,6 +146,12 @@ public final class LicenseRecoverReadOnlyWmicCpuIdentity {
         if(bytes==null||bytes.length>LIMIT)return null;
         for(byte b:bytes){int v=b&255;if(v>126||(v<32&&v!=9&&v!=10&&v!=13))return null;}
         return new String(bytes,StandardCharsets.US_ASCII);
+    }
+    /** Fail closed on process failure before interpreting the native stdout text rule. */
+    static Identity parseQueryResult(byte[] stdout,int exit,int stderrSize) {
+        if(exit!=0||stderrSize!=0)
+            return unknown("WMIC 查询未成功完成，未猜测本机身份");
+        return parse(stdout);
     }
     /** Pure exact Windows Getid text predicate; caller first proves executable/environment. */
     static Identity parse(byte[] bytes) {
