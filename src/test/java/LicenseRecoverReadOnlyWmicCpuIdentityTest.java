@@ -19,6 +19,15 @@ public final class LicenseRecoverReadOnlyWmicCpuIdentityTest {
         check("unknow".equals(parse("ProcessorId\r\nFIRST\r\nProcessorId\r\n").value),"trailing header takes native exception fallback");
         check("unknow".equals(parse("ProcessorId\nVALUE\n").value),"bare LF is not normalized into native Windows CRLF");
         check("unknow".equals(parse("").value),"proven completed empty stdout has native unknow result");
+        byte[] completed="ProcessorId\r\nSYNTHETIC_CPU_SENTINEL\r\n".getBytes(StandardCharsets.US_ASCII);
+        check(LicenseRecoverReadOnlyWmicCpuIdentity.parseQueryResult(completed,0,0).complete,
+                "successful WMIC invocation permits native stdout interpretation");
+        check(!LicenseRecoverReadOnlyWmicCpuIdentity.parseQueryResult(completed,1,0).complete,
+                "failed WMIC exit cannot establish identity even with plausible stdout");
+        check(!LicenseRecoverReadOnlyWmicCpuIdentity.parseQueryResult(completed,0,1).complete,
+                "WMIC stderr makes stdout interpretation ambiguous");
+        check(!LicenseRecoverReadOnlyWmicCpuIdentity.parseQueryResult(new byte[0],1,0).complete,
+                "failed empty WMIC query cannot become proven native unknow fallback");
         check(!LicenseRecoverReadOnlyWmicCpuIdentity.parse(new byte[32769]).complete,"bounded stdout");
         check(!LicenseRecoverReadOnlyWmicCpuIdentity.parse("ProcessorId\r\nVALUE\r\n".getBytes(StandardCharsets.UTF_16LE)).complete,"no heuristic UTF16 decoding");
         check(!LicenseRecoverReadOnlyWmicCpuIdentity.parse(new byte[]{(byte)0xef,(byte)0xbb,(byte)0xbf,80}).complete,"UTF8 BOM not silently stripped");
