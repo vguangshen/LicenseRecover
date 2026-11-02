@@ -32,13 +32,25 @@ public final class LicenseRecoverReadOnlyWmicCpuIdentity {
         if(cached!=null&&directory.equals(cachedDirectory)&&now-cachedAt<TimeUnit.SECONDS.toNanos(5))return cached;
         cached=read();cachedAt=System.nanoTime();cachedDirectory=directory;return cached;
     }
+    /** Fail closed if an environment override points outside a standard local Windows root. */
+    static boolean trustedWindowsRoot(String root) {
+        if(root==null)return false;
+        String value=root.replace('/', '\\');
+        if(value.endsWith("\\"))value=value.substring(0,value.length()-1);
+        if(value.length()<4||value.charAt(1)!=':'||value.charAt(2)!='\\')return false;
+        char drive=value.charAt(0);
+        if(!((drive>='A'&&drive<='Z')||(drive>='a'&&drive<='z')))return false;
+        String directory=value.substring(3);
+        return "Windows".equalsIgnoreCase(directory)||"WINNT".equalsIgnoreCase(directory);
+    }
     private static Identity read() {
         if(!System.getProperty("os.name","").toLowerCase(Locale.ROOT).startsWith("windows"))
             return unknown("当前平台未审核 WMIC 文本身份规则");
         long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(3);int remainingOutput=LIMIT;String stage="系统路径核对";
         try {
             String systemRoot=System.getenv("SystemRoot"),path=System.getenv("PATH"),extensions=System.getenv("PATHEXT");
-            if(systemRoot==null||path==null||extensions==null||!extensions.toUpperCase(Locale.ROOT).contains(".EXE"))
+            if(!trustedWindowsRoot(systemRoot))return unknown("系统目录未通过可信路径核验，未执行候选程序");
+            if(path==null||extensions==null||!extensions.toUpperCase(Locale.ROOT).contains(".EXE"))
                 return unknown("命令搜索环境不完整，未猜测 CPU 身份");
             Path cwd=Paths.get(System.getProperty("user.dir","")).toAbsolutePath().normalize();
             List<Path> search=new ArrayList<Path>();search.add(cwd);

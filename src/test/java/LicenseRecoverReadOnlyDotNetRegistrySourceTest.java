@@ -1,4 +1,6 @@
 import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import java.io.IOException;
 import java.util.Base64;
 
 /** No registry writes or real license values; framing, privacy and source-only semantics. */
@@ -37,6 +39,13 @@ public final class LicenseRecoverReadOnlyDotNetRegistrySourceTest {
         check(!decorated.state.evidence.contains("PRIVATE_"),"combined diagnostic private");
         check(LicenseRecoverReadOnlyDotNetExtendedVerifier.withRegistryContext(local,override,candidate).state.evidence.contains("未完成一致"),"changed context is withdrawn");
         check(!LicenseRecoverReadOnlyDotNetExtendedVerifier.withRegistryContext(local,override,candidate).state.evidence.contains("发现本机"),"stale context presence is not retained");
+        try {
+            Path temporary=Files.createTempFile("licenserecover-registry-readonly-", ".tmp");
+            try {
+                check(LicenseRecoverReadOnlyDotNetRegistrySource.unlinkedRegularFile(temporary),"existing unlinked regular file passes path check");
+                check(!LicenseRecoverReadOnlyDotNetRegistrySource.unlinkedRegularFile(temporary.resolve("missing")),"nonexistent nested reader fails closed");
+            } finally { Files.deleteIfExists(temporary); }
+        } catch(IOException e) { throw new AssertionError("synthetic reader path fixture",e); }
         System.out.println("PASS: optional registry source privacy, framing, changes and no fabricated authorization ("+checks+" checks)");
     }
 }

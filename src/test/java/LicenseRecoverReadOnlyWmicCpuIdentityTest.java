@@ -47,6 +47,14 @@ public final class LicenseRecoverReadOnlyWmicCpuIdentityTest {
         check(LicenseRecoverReadOnlyWmicCpuIdentity.policyProblem("LRW1-PATH\r\n".getBytes(StandardCharsets.US_ASCII),0,0)!=null,"remote or unaudited path policy cannot pass");
         check(LicenseRecoverReadOnlyWmicCpuIdentity.policyProblem("LRW1-CLEAR\r\n".getBytes(StandardCharsets.US_ASCII),1,0)!=null,"policy execution failure cannot pass");
         check(LicenseRecoverReadOnlyWmicCpuIdentity.policyProblem("LRW1-CLEAR\r\n".getBytes(StandardCharsets.US_ASCII),0,1)!=null,"policy stderr prevents an ambiguous clear");
+        check(LicenseRecoverReadOnlyWmicCpuIdentity.trustedWindowsRoot("C:\\Windows"),"standard system root accepted");
+        check(LicenseRecoverReadOnlyWmicCpuIdentity.trustedWindowsRoot("d:\\WINNT\\"),"legacy root and trailing separator accepted");
+        check(LicenseRecoverReadOnlyWmicCpuIdentity.trustedWindowsRoot("c:/windows"),"normalized system root accepted");
+        check(!LicenseRecoverReadOnlyWmicCpuIdentity.trustedWindowsRoot("C:\\Users\\Public\\Windows"),"environment path spoof rejected");
+        check(!LicenseRecoverReadOnlyWmicCpuIdentity.trustedWindowsRoot("C:\\Windows\\..\\Fake"),"traversal rejected");
+        check(!LicenseRecoverReadOnlyWmicCpuIdentity.trustedWindowsRoot("\\\\server\\share\\Windows"),"UNC root rejected");
+        check(!LicenseRecoverReadOnlyWmicCpuIdentity.trustedWindowsRoot("%SystemRoot%"),"unexpanded environment root rejected");
+        check(!LicenseRecoverReadOnlyWmicCpuIdentity.trustedWindowsRoot(null),"missing root rejected");
         System.out.println("PASS: independent WMIC parser/resolver, exact native text boundaries and identity privacy ("+checks+" checks)");
     }
 }

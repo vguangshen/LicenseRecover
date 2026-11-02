@@ -1,4 +1,6 @@
 import java.io.*;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -37,9 +39,10 @@ public final class LicenseRecoverReadOnlyDotNetRegistrySource {
         if(!System.getProperty("os.name","").toLowerCase(Locale.ROOT).startsWith("windows"))
             return unavailable("当前平台未审核注册表视图");
         String root=System.getenv("SystemRoot");
-        if(root==null)return unavailable("本机系统目录不可用");
+        if(!LicenseRecoverReadOnlyWmicCpuIdentity.trustedWindowsRoot(root))
+            return unavailable("系统目录未通过可信路径核验，未执行外部读取器");
         File executable=new File(root,"System32/WindowsPowerShell/v1.0/powershell.exe");
-        if(!executable.isFile())return unavailable("系统只读读取器不可用");
+        if(!unlinkedRegularFile(executable.toPath()))return unavailable("系统只读读取器路径不可验证");
         // Fixed path and two relevant values only. No CRM user/password, vendor code,
         // registry expansion, writable key, temporary script or network request.
         String script="$ErrorActionPreference='Stop';$b=[Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine,[Microsoft.Win32.RegistryView]::Registry32);"
@@ -66,6 +69,19 @@ public final class LicenseRecoverReadOnlyDotNetRegistrySource {
         }catch(InterruptedException e){Thread.currentThread().interrupt();return unavailable("组合注册来源读取已取消");}
         catch(IOException|SecurityException e){return unavailable("组合注册来源读取不可用");}
         finally{if(process!=null&&process.isAlive())process.destroyForcibly();}
+    }
+    /** Reject symlinks/junctions along the executable path before starting any process. */
+    static boolean unlinkedRegularFile(Path executable) {
+        try {
+            Path p=executable.toAbsolutePath().normalize(),cursor=p.getRoot();
+            if(cursor==null||p.toString().startsWith("\\\\"))return false;
+            for(Path part:p) {
+                cursor=cursor.resolve(part);
+                BasicFileAttributes a=Files.readAttributes(cursor,BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS);
+                if(a.isSymbolicLink()||a.isOther())return false;
+            }
+            return Files.readAttributes(p,BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS).isRegularFile();
+        }catch(IOException|SecurityException e){return false;}
     }
     static Snapshot parse(byte[] bytes) {
         if(bytes==null||bytes.length>LIMIT)return unavailable("组合注册来源输出超限");
