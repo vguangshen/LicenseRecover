@@ -24,38 +24,13 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
     private static final int MAX_CONFIG = 4 * 1024 * 1024;
     private LicenseRecoverReadOnlyDotNetVerifier() { }
 
-    private static final class Build {
-        final String web, registration, product, cryptoFile, cryptoHash, jsonHash, logHash;
-        Build(String web, String registration, String product) {
-            this.web=web; this.registration=registration; this.product=product;
-            boolean ds="itmcIEC".equals(product);
-            cryptoFile=ds?"ItmcBtoB.DBUtility.dll":"ITMC.DBUtility.dll";
-            cryptoHash=ds?(web.startsWith("16b13b")?
-                    "9430693eea94e18077fb1fa0e187a0d4cb6c4bf472eca4cdd075366e9b8eb92c":
-                    "7d880b03364e4c31c39c47a053144345b5b02804ac7a0e80a87ebf24096fd999"):
-                    "f8c2ff0b28b03bfc33ce61e32f63d8b179c0c213a4ccab8ba748aa4dd73d5c22";
-            jsonHash=ds?"78bedd9fce877a71a8d8ff9a813662d8248361e46705c4ef7afc61d440ff2eeb":
-                    "9eca2c5ed187b5e1319c359aabf8382992131efe1854b899c23a93fe227496e3";
-            logHash=ds?"af5610c515d2244db98c662636264c8177e89b1afe407f88fd18a41d66f6e7e2":
-                    "124b4cd7d62656698d43d5adc3645eab88199717bb99497549d2c74a26c68e1d";
-        }
-    }
-    // Exact current builds whose native local and website positive path were audited.
-    private static final Build[] BUILDS = {
-        new Build("16b13b547893b160ef928fd6f06568770da1fdd2326a1dfdd4bc5c54e047562c",
-                "735a7f868825111cd437cb5093eaa79f0a977330a79121fb2d18885290da743f", "itmcIEC"),
-        new Build("21464d180e30ed1f10c0c6b20e56381191ecd70aab06595f07a27dc4d559961a",
-                "25b6b2939534b8266d843f7bd7b942d9ee87fd48296c8ed05828ffc3de76c0d8", "itmcIEC"),
-        new Build("57fa95aa72a15bfd569834374860f29dbef22a48294f7010e94846023a94ce35",
-                "f5a2c38dee0f694c33fdac2c5570c2431b955c594e244e87596f120c0eb07f99", "YX0303")
-    };
-
     public static LicenseRecoverLicenseState verify(File appRoot) {
         try {
-            Build build = currentBuild(appRoot);
+            LicenseRecoverReadOnlyDotNetCatalog.UpperBinding build = currentBuild(appRoot);
             if(build==null)return unknown("当前网站/注册程序集组合没有完成正向接受谓词审计");
             return verifyBuild(appRoot, build, LicenseRecoverReadOnlyMachineIdentity.current());
         } catch (NoSuchFileException missing) { return unknown("缺少当前配置或审核组件"); }
+        catch (LicenseRecoverReadOnlyDotNetCatalog.Changed e) { return unknown("协议组件读取期间变化"); }
         catch (IOException | SecurityException e) { return LicenseRecoverLicenseState.scanError("独立 .NET 谓词读取失败: "+e.getClass().getSimpleName()); }
         catch (Exception e) { return unknown("独立本机身份或接受条件暂不能确认"); }
     }
@@ -63,41 +38,37 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
     /** Shared identity snapshot supplied by the batch scanner; no machine values are emitted. */
     static LicenseRecoverLicenseState verify(File appRoot, LicenseRecoverReadOnlyMachineIdentity.Snapshot identity) {
         try {
-            Build build=currentBuild(appRoot);
+            LicenseRecoverReadOnlyDotNetCatalog.UpperBinding build=currentBuild(appRoot);
             return build==null?unknown("当前网站/注册程序集组合没有完成正向接受谓词审计")
                     : verifyBuild(appRoot,build,identity);
         } catch (NoSuchFileException missing) { return unknown("缺少当前配置或审核组件"); }
+        catch (LicenseRecoverReadOnlyDotNetCatalog.Changed e) { return unknown("协议组件读取期间变化"); }
         catch (IOException | SecurityException e) { return LicenseRecoverLicenseState.scanError("独立 .NET 谓词读取失败: "+e.getClass().getSimpleName()); }
         catch (Exception e) { return unknown("本地正向接受条件未获完整证明；其他授权方式未判断"); }
     }
 
-    private static Build currentBuild(File root) throws Exception {
-        if(root==null)return null;
-        Path app=root.toPath().toAbsolutePath().normalize();
-        String web=sha(read(app.resolve("bin/ITMC.Web.dll"),128*1024*1024));
-        String reg=sha(read(app.resolve("bin/ITMC.Regedit.dll"),128*1024*1024));
-        for(Build b:BUILDS)if(b.web.equals(web)&&b.registration.equals(reg)) {
-            if(!b.cryptoHash.equals(sha(read(app.resolve("bin/"+b.cryptoFile),128*1024*1024)))
-                    ||!b.jsonHash.equals(sha(read(app.resolve("bin/Newtonsoft.Json.dll"),128*1024*1024)))
-                    ||!b.logHash.equals(sha(read(app.resolve("bin/log4net.dll"),128*1024*1024)))
-                    ||!"4091c455a882e3e44c8dc0c4034e6b2536f180ce019695769ef72497a90467ec".equals(
-                            sha(read(app.resolve("bin/LiteDB.dll"),128*1024*1024))))return null;
-            return b;
-        }
-        return null;
+    private static LicenseRecoverReadOnlyDotNetCatalog.UpperBinding currentBuild(File root) throws Exception {
+        return LicenseRecoverReadOnlyDotNetCatalog.assess(root,false).upper;
     }
-    private static LicenseRecoverLicenseState verifyBuild(File root,Build build,
+    /** Unified .NET pipeline has already identified the audited protocol binding. */
+    static LicenseRecoverLicenseState verifyMatched(File root,LicenseRecoverReadOnlyDotNetCatalog.UpperBinding binding) {
+        if(binding==null)return unknown("当前入口没有可复用的已审核现代协议证据");
+        try{return verifyBuild(root,binding,LicenseRecoverReadOnlyMachineIdentity.current());}
+        catch(NoSuchFileException e){return unknown("缺少当前配置或审核组件");}
+        catch(LicenseRecoverReadOnlyDotNetCatalog.Changed e){return unknown("协议组件读取期间变化");}
+        catch(IOException|SecurityException e){return LicenseRecoverLicenseState.scanError("现代协议读取失败: "+e.getClass().getSimpleName());}
+        catch(Exception e){return unknown("当前本地接受条件尚不能确认，其他来源未被否定");}
+    }
+    private static LicenseRecoverLicenseState verifyBuild(File root,LicenseRecoverReadOnlyDotNetCatalog.UpperBinding build,
             LicenseRecoverReadOnlyMachineIdentity.Snapshot identity) throws Exception {
         Path config=root.toPath().resolve("config.xml");
         byte[] before=read(config,MAX_CONFIG);
         LicenseRecoverReadOnlyWmicCpuIdentity.Identity cpu=null;
         if(!element(parseXml(before),"reg","WebSerSoftNo").isEmpty())cpu=LicenseRecoverReadOnlyWmicCpuIdentity.current();
         LicenseRecoverLicenseState state=predicate(before,build.product,identity,Instant.now(),ZoneId.systemDefault(),cpu);
-        // A negative/unsupported local observation also depends on the current bytes.
-        // Revoke it if the config or any audited assembly changed during inspection.
         boolean stable=Arrays.equals(before,read(config,MAX_CONFIG))&&currentBuild(root)==build;
         state=retainIfStable(state,stable);
-        if(!stable||state.acceptance!=LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE)return state;
+        if(!stable)return state;
         state=predicate(before,build.product,identity,Instant.now(),ZoneId.systemDefault(),cpu);
         if(state.acceptance!=LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE)return state;
         return LicenseRecoverLicenseState.authorizationAcceptance(state.evidence

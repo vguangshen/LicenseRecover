@@ -216,7 +216,10 @@ $javaAlternateVerifierTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyJav
 $dotNetExtendedVerifierTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyDotNetExtendedVerifierTest.java'
 $dotNetRegistrySourceTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyDotNetRegistrySourceTest.java'
 $wmicCpuIdentityTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyWmicCpuIdentityTest.java'
-Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $inspectionTest, $peMetadataTest, $realSampleTest, $readOnlyPlanTest, $evidenceTableTest, $machineIdentityTest, $javaVerifierTest, $dotNetVerifierTest, $localObservationTest, $javaMachineIdentityTest, $javaLocalVerifierTest, $javaAlternateVerifierTest, $dotNetExtendedVerifierTest, $dotNetRegistrySourceTest, $wmicCpuIdentityTest)
+$javaScannerTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyJavaScannerTest.java'
+$dotNetScannerTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyDotNetScannerTest.java'
+$metadataBudgetTest = Join-Path $testSourceDir 'LicenseRecoverMetadataReadBudgetTest.java'
+Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $inspectionTest, $peMetadataTest, $realSampleTest, $readOnlyPlanTest, $evidenceTableTest, $machineIdentityTest, $javaVerifierTest, $dotNetVerifierTest, $localObservationTest, $javaMachineIdentityTest, $javaLocalVerifierTest, $javaAlternateVerifierTest, $dotNetExtendedVerifierTest, $dotNetRegistrySourceTest, $wmicCpuIdentityTest, $javaScannerTest, $dotNetScannerTest, $metadataBudgetTest)
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyInspectionTest')
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyPeMetadataTest')
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverJavaPlanReadOnlyTest')
@@ -224,7 +227,7 @@ Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'Licen
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyMachineIdentityTest')
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyJavaVerifierTest')
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyDotNetVerifierTest')
-foreach ($test in @('LicenseRecoverLocalObservationTest', 'LicenseRecoverReadOnlyJavaMachineIdentityTest', 'LicenseRecoverReadOnlyJavaLocalVerifierTest', 'LicenseRecoverReadOnlyJavaAlternateVerifierTest', 'LicenseRecoverReadOnlyDotNetExtendedVerifierTest', 'LicenseRecoverReadOnlyDotNetRegistrySourceTest', 'LicenseRecoverReadOnlyWmicCpuIdentityTest')) {
+foreach ($test in @('LicenseRecoverLocalObservationTest', 'LicenseRecoverReadOnlyJavaMachineIdentityTest', 'LicenseRecoverReadOnlyJavaLocalVerifierTest', 'LicenseRecoverReadOnlyJavaAlternateVerifierTest', 'LicenseRecoverReadOnlyDotNetExtendedVerifierTest', 'LicenseRecoverReadOnlyDotNetRegistrySourceTest', 'LicenseRecoverReadOnlyWmicCpuIdentityTest', 'LicenseRecoverReadOnlyJavaScannerTest', 'LicenseRecoverReadOnlyDotNetScannerTest', 'LicenseRecoverMetadataReadBudgetTest')) {
     Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, $test)
 }
 

@@ -20,6 +20,11 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     static final String USER_ID = "fwq";
     static final String BLOCK_ENDPOINT = "http://127.0.0.1:9/Service.asmx";
     private static final Random RNG = new Random();
+    static final int MAX_METADATA_BINARY_BYTES = 64 * 1024 * 1024;
+    static final int MAX_METADATA_DATABASE_BYTES = 16 * 1024 * 1024;
+    private static final int MAX_METADATA_RUN_CHARS = 16 * 1024;
+    private static final int MAX_METADATA_TEXT_CHARS = 8 * 1024 * 1024;
+    private static final int MAX_METADATA_STRINGS = 100000;
     private static final Pattern SOFT_VERSION = Pattern.compile("(?is)<SoftVersionID\\b[^>]*>\\s*([^<]+?)\\s*</SoftVersionID\\s*>");
     private static final Pattern WEB_SOFT_NO = Pattern.compile("(?is)<WebSerSoftNo\\b[^>]*>\\s*([^<]*?)\\s*</WebSerSoftNo\\s*>");
 
@@ -66,8 +71,8 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (bin != null) {
             File root = "bin".equalsIgnoreCase(bin.getName()) && bin.getParentFile()!=null ? bin.getParentFile() : bin;
             String version = readVersion(root, bin);
-            // DS01xx is a known legacy protocol. Do not parse modern registration
-            // assemblies on the Swing event thread for an unsupported write-back.
+            // DS01xx registration-page exchange/write-back compatibility has a
+            // legacy format. This does not classify its runtime local records.
             // The dedicated old-code registration page can still inspect product
             // metadata separately when explicitly used.
             if (LegacyDotNetProtocol.isLegacyVersion(version)) {
@@ -81,8 +86,8 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             String assemblyProduct = detectProduct(webDll, version);
             String product = selectDotNetRegistrationProduct(version, configuredProduct, assemblyProduct);
             // DS01xx uses the legacy funpublic protocol. Some deployments also carry an
-            // uppercase ITMC.Regedit.dll compatibility assembly, which is not proof of the
-            // modern JSON/DoRegistry protocol and must not override the version evidence.
+            // uppercase ITMC.Regedit.dll may also accept modern JSON local records.
+            // Recovery compatibility is separate from the shared read-only state pipeline.
             File targetRegedit = selectDotNetRegeditAssembly(bin);
             Kind k = LegacyDotNetProtocol.isLegacyVersion(version)
                     ? Kind.DOTNET_LEGACY
@@ -1299,7 +1304,9 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     private static String readVersion(File root,File bin) { String x=readVersionFile(new File(root,"config.xml")); return x!=null?x:readVersionFile(new File(bin,"config.xml")); }
     private static String readJavaVersion(File root) {
         if(root==null)return null; File y=new File(root,"systemConfig.yml");
-        try{if(y.isFile())for(String s:Files.readAllLines(y.toPath(),StandardCharsets.UTF_8)){String t=s.trim();if(t.toLowerCase(Locale.ROOT).contains("versionid")){int i=t.indexOf(':');if(i<0)i=t.indexOf('=');if(i>=0&&!blank(t.substring(i+1)))return t.substring(i+1).trim();}}}catch(Exception ignore){}
+        try{if(y.isFile())try(BufferedReader lines=new BufferedReader(new StringReader(StandardCharsets.UTF_8.newDecoder().decode(
+                java.nio.ByteBuffer.wrap(AppDetector.readMetadataBytes(y,AppDetector.MAX_PROPERTIES_BYTES))).toString()))){
+            String s;while((s=lines.readLine())!=null){String t=s.trim();if(t.toLowerCase(Locale.ROOT).contains("versionid")){int i=t.indexOf(':');if(i<0)i=t.indexOf('=');if(i>=0&&!blank(t.substring(i+1)))return t.substring(i+1).trim();}}}}catch(Exception ignore){}
         String dataVersion=readVersionFile(new File(root,"data"+File.separator+"config.xml"));
         if(dataVersion!=null)return dataVersion;
         // XMT classes/config.xml fallback
@@ -1418,7 +1425,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                 "GetProVersion", "CheckSoftVersionID")) return null;
         try {
             List<EncryptedRegisterVersionRow> encryptedRows = scanRegisterVersionRows(
-                    Files.readAllBytes(db.toPath()));
+                    AppDetector.readMetadataBytes(db, MAX_METADATA_DATABASE_BYTES));
             if (encryptedRows.isEmpty()) return null;
 
             LinkedHashSet<String> keyCandidates = new LinkedHashSet<String>();
@@ -1553,7 +1560,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     private static boolean targetContainsAll(File file, String... tokens) {
         if (file == null || !file.isFile() || tokens == null) return false;
         try {
-            byte[] data = Files.readAllBytes(file.toPath());
+            byte[] data = AppDetector.readMetadataBytes(file, MAX_METADATA_BINARY_BYTES);
             for (String token : tokens) {
                 if (blank(token)) return false;
                 byte[] ascii = token.getBytes(StandardCharsets.US_ASCII);
@@ -1737,40 +1744,56 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         LinkedHashSet<String> out = new LinkedHashSet<String>();
         if (f == null || !f.isFile()) return out;
         try {
-            byte[] b = Files.readAllBytes(f.toPath());
+            byte[] b = AppDetector.readMetadataBytes(f, MAX_METADATA_BINARY_BYTES);
+            int[] textChars = {0};
             // .NET #US strings are commonly UTF-16LE.
             for (int parity = 0; parity < 2; parity++) {
                 StringBuilder s = new StringBuilder();
                 for (int i = parity; i + 1 < b.length; i += 2) {
                     int c = b[i] & 255, z = b[i + 1] & 255;
-                    if (z == 0 && c >= 32 && c <= 126) s.append((char) c);
-                    else { if (s.length() >= 4) raw.add(s.toString()); s.setLength(0); }
+                    if (z == 0 && c >= 32 && c <= 126) appendMetadataChar(s, c);
+                    else { collectMetadataString(raw, s, textChars); s.setLength(0); }
                 }
-                if (s.length() >= 4) raw.add(s.toString());
+                collectMetadataString(raw, s, textChars);
             }
             // Metadata/string heaps can also expose plain ASCII/UTF-8 runs.
             StringBuilder ascii = new StringBuilder();
             for (byte value : b) {
                 int c = value & 255;
-                if (c >= 32 && c <= 126) ascii.append((char) c);
-                else { if (ascii.length() >= 4) raw.add(ascii.toString()); ascii.setLength(0); }
+                if (c >= 32 && c <= 126) appendMetadataChar(ascii, c);
+                else { collectMetadataString(raw, ascii, textChars); ascii.setLength(0); }
             }
-            if (ascii.length() >= 4) raw.add(ascii.toString());
+            collectMetadataString(raw, ascii, textChars);
         } catch (Exception ignore) { return out; }
 
         Pattern token = Pattern.compile("(?i)(?<![A-Z0-9])(itmcIEC|DS\\d{4}|YX\\d{4}(?:\\d{2})?|GM\\d{3}(?:\\d{2})?)(?![A-Z0-9])");
         for (String text : raw) {
             out.add(text);
+            if (out.size() > MAX_METADATA_STRINGS) return Collections.emptySet();
             Matcher m = token.matcher(text);
             while (m.find()) {
                 String x = m.group(1);
                 out.add("itmcIEC".equalsIgnoreCase(x) ? "itmcIEC" : x.toUpperCase(Locale.ROOT));
+                if (out.size() > MAX_METADATA_STRINGS) return Collections.emptySet();
             }
         }
         return out;
     }
+    private static void appendMetadataChar(StringBuilder text, int value) throws IOException {
+        if (text.length() >= MAX_METADATA_RUN_CHARS) throw new IOException("metadata-text-limit");
+        text.append((char)value);
+    }
+    private static void collectMetadataString(Set<String> strings, StringBuilder text, int[] total) throws IOException {
+        if (text.length() < 4) return;
+        String value = text.toString();
+        if (strings.add(value)) {
+            total[0] += value.length();
+            if (strings.size() > MAX_METADATA_STRINGS || total[0] > MAX_METADATA_TEXT_CHARS)
+                throw new IOException("metadata-text-limit");
+        }
+    }
     private static boolean containsAscii(File f,String text) {
-        try{byte[]b=Files.readAllBytes(f.toPath()),n=text.getBytes(StandardCharsets.US_ASCII);outer:for(int i=0;i+n.length<=b.length;i++){for(int j=0;j<n.length;j++)if(b[i+j]!=n[j])continue outer;return true;}}catch(Exception ignore){}return false;
+        try{byte[]b=AppDetector.readMetadataBytes(f,MAX_METADATA_BINARY_BYTES),n=text.getBytes(StandardCharsets.US_ASCII);outer:for(int i=0;i+n.length<=b.length;i++){for(int j=0;j<n.length;j++)if(b[i+j]!=n[j])continue outer;return true;}}catch(Exception ignore){}return false;
     }
 
     private static void blockSidecars(Detection d,boolean backup,boolean dryRun,Consumer<String>log)throws Exception{
@@ -1828,7 +1851,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     }
     private static String firstElement(String xml,String name){Matcher m=Pattern.compile("(?is)<"+Pattern.quote(name)+"\\b[^>]*>\\s*([^<]*?)\\s*</"+Pattern.quote(name)+"\\s*>").matcher(xml);return m.find()?unxml(m.group(1).trim()):null;}
     private static void validateXml(String xml)throws Exception{DocumentBuilderFactory f=DocumentBuilderFactory.newInstance();try{f.setFeature("http://apache.org/xml/features/disallow-doctype-decl",true);}catch(Exception ignore){}f.setExpandEntityReferences(false);f.setXIncludeAware(false);f.newDocumentBuilder().parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));}
-    private static String readUtf8(File f)throws IOException{return new String(Files.readAllBytes(f.toPath()),StandardCharsets.UTF_8);} private static String match(Pattern p,String s){Matcher m=p.matcher(s==null?"":s);return m.find()?m.group(1).trim():null;}
+    private static String readUtf8(File f)throws IOException{return new String(AppDetector.readMetadataBytes(f,AppDetector.MAX_CONFIG_BYTES),StandardCharsets.UTF_8);} private static String match(Pattern p,String s){Matcher m=p.matcher(s==null?"":s);return m.find()?m.group(1).trim():null;}
     private static File uniqueBackup(File f){String t=new SimpleDateFormat("yyyyMMddHHmmss").format(new Date());File b=new File(f.getParentFile(),f.getName()+"."+t+".preoneclick.bak");int i=1;while(b.exists())b=new File(f.getParentFile(),f.getName()+"."+t+"-"+(i++)+".preoneclick.bak");return b;}
     private static String randomDigits(int n){int min=1;for(int i=1;i<n;i++)min*=10;return String.valueOf(min+RNG.nextInt(min*9));}
     private static byte[] unhex(String s){s=s.trim();if((s.length()&1)!=0)throw new IllegalArgumentException("odd hex length");byte[]b=new byte[s.length()/2];for(int i=0;i<b.length;i++)b[i]=(byte)Integer.parseInt(s.substring(i*2,i*2+2),16);return b;}

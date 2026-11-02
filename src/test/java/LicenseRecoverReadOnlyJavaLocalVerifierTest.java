@@ -61,6 +61,18 @@ public final class LicenseRecoverReadOnlyJavaLocalVerifierTest {
         byte[] record=config(payload(ID,System.currentTimeMillis()+86400000L*5,-1,0,MODE),"1");Files.write(root.resolve("config.xml"),record);
         LicenseRecoverReadOnlyJavaLocalVerifier.Profile profile=LicenseRecoverReadOnlyJavaLocalVerifier.fixture(root.toFile(),PRODUCT,"config.xml","data/config.xml",false,true);
         require(evaluate(root,profile,null).acceptance==LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE,"complete synthetic input accepted");
+        Files.write(classes.resolve("Business.class"),new byte[]{7,8,9});
+        LicenseRecoverReadOnlyJavaLocalVerifier.Profile nextBuild=LicenseRecoverReadOnlyJavaLocalVerifier.fixture(root.toFile(),PRODUCT,"config.xml","data/config.xml",false,true);
+        require(LicenseRecoverReadOnlyJavaLocalVerifier.evaluateReviewed(root.toFile(),MACHINE,
+                new LicenseRecoverReadOnlyJavaLocalVerifier.Profile[]{profile,nextBuild},null).state.acceptance==LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE,
+                "an unchanged entry class must not let the first complete-build mismatch hide the next reviewed build");
+        require(LicenseRecoverReadOnlyJavaLocalVerifier.evaluateReviewed(root.toFile(),MACHINE,
+                new LicenseRecoverReadOnlyJavaLocalVerifier.Profile[]{nextBuild,profile},null).state.acceptance==LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE,
+                "candidate table order cannot determine which full build is accepted");
+        requireUnknown(LicenseRecoverReadOnlyJavaLocalVerifier.evaluateReviewed(root.toFile(),MACHINE,
+                new LicenseRecoverReadOnlyJavaLocalVerifier.Profile[]{nextBuild,nextBuild},null).state,
+                "ambiguous complete-build audit records cannot choose favorable parameters");
+        Files.delete(classes.resolve("Business.class"));
         Files.write(root.resolve("WEB-INF/web.xml"),"<web-app/>".getBytes(StandardCharsets.UTF_8));
         requireUnknown(evaluate(root,profile,null),"new web.xml cannot reuse absent bootstrap proof");Files.delete(root.resolve("WEB-INF/web.xml"));
         Files.write(classes.resolve("new-spring.xml"),"<beans/>".getBytes(StandardCharsets.UTF_8));

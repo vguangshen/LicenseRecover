@@ -1,9 +1,10 @@
-import java.io.ByteArrayOutputStream;
+import java.io.BufferedReader;
 import java.io.DataInputStream;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.jar.JarEntry;
@@ -22,6 +23,7 @@ import java.util.regex.Pattern;
  * compatibility path. Passive previews and batch scans must use inspectReadOnly().
  */
 public final class LicenseRecoverModernGUIJavaPlan {
+    private static final int MAX_CLASS_BYTES = 16 * 1024 * 1024;
     private static final Pattern XML_ELEMENT_TEMPLATE = Pattern.compile("a");
 
     public final boolean detected;
@@ -296,21 +298,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
 
     private static String readSoftId(File root) {
         if (root == null) return null;
-        try {
-            File yml = new File(root, "systemConfig.yml");
-            if (yml.isFile()) {
-                for (String raw : Files.readAllLines(yml.toPath(), StandardCharsets.UTF_8)) {
-                    String line = raw.trim();
-                    if (!line.toLowerCase(Locale.ROOT).contains("versionid")) continue;
-                    int split = line.indexOf(':');
-                    if (split < 0) split = line.indexOf('=');
-                    if (split > 0) {
-                        String value = line.substring(split + 1).trim();
-                        if (!value.isEmpty()) return value;
-                    }
-                }
-            }
-        } catch (Exception ignore) { }
+        String configured = readSystemConfigVersionId(root);
+        if (!blank(configured)) return configured;
 
         String data = readElement(new File(root, "data" + File.separator + "config.xml"), "SoftVersionID");
         if (!blank(data)) return data.trim();
@@ -351,7 +340,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
     static boolean hasEnumeratedClassesFamily(File config, String family, String concrete) {
         if (config == null || !config.isFile() || blank(family) || blank(concrete)) return false;
         try {
-            String text = new String(Files.readAllBytes(config.toPath()), StandardCharsets.UTF_8);
+            String text = readConfigText(config);
             Pattern pattern = Pattern.compile(
                     "(?is)<System\\b[^>]*\\bid\\s*=\\s*([\"'])([^\"']+)\\1");
             Matcher matcher = pattern.matcher(text);
@@ -478,7 +467,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
         String family = readElement(config1, "SoftVersionID");
         if (blank(family) || !"QT401".equalsIgnoreCase(family.trim())) return null;
         try {
-            String text = new String(Files.readAllBytes(config1.toPath()), StandardCharsets.UTF_8);
+            String text = readConfigText(config1);
             if (!text.contains("id=\"" + concrete + "\"") && !text.contains("id='" + concrete + "'")) return null;
         } catch (Exception ex) { return null; }
         File systemInfo = new File(classes, "com" + File.separator + "ruoyi" + File.separator + "web"
@@ -654,8 +643,9 @@ public final class LicenseRecoverModernGUIJavaPlan {
         if (root == null) return null;
         File yml = new File(root, "systemConfig.yml");
         if (!yml.isFile()) return null;
-        try {
-            for (String raw : Files.readAllLines(yml.toPath(), StandardCharsets.UTF_8)) {
+        try (BufferedReader lines = new BufferedReader(new StringReader(readConfigText(yml)))) {
+            String raw;
+            while ((raw = lines.readLine()) != null) {
                 String line = raw.trim();
                 if (!line.toLowerCase(Locale.ROOT).contains("versionid")) continue;
                 int split = line.indexOf(':');
@@ -823,7 +813,7 @@ static String confirmedDs501FamilyRuntime(File root, String softId,
             JarEntry entry = jf.getJarEntry("itmc/regedit/RegisterMain.class");
             if (entry == null) return false;
             byte[] bytes;
-            try (InputStream in = jf.getInputStream(entry)) { bytes = readAll(in); }
+            bytes = readJarClass(jf, entry);
             if (containsAscii(bytes, "SenseShield") || containsAscii(bytes, "Virbox")) return true;
             if (bytes.length < 16) return false;
             int magic = ((bytes[0] & 0xff) << 24) | ((bytes[1] & 0xff) << 16)
@@ -859,7 +849,7 @@ static String confirmedDs501FamilyRuntime(File root, String softId,
                 String n = f.getName().toLowerCase(Locale.ROOT);
                 if (!n.endsWith(".class")) continue;
                 try {
-                    byte[] bytes = Files.readAllBytes(f.toPath());
+                    byte[] bytes = AppDetector.readMetadataBytes(f, MAX_CLASS_BYTES);
                     if (containsAscii(bytes, needle)) return true;
                 } catch (Exception ignore) { }
             }
@@ -874,15 +864,17 @@ static String confirmedDs501FamilyRuntime(File root, String softId,
         for (File f : files) {
             if (!f.isFile() || !f.getName().toLowerCase(Locale.ROOT).endsWith(".jar")) continue;
             try (JarFile jf = new JarFile(f)) {
+                boolean found = false;
                 java.util.Enumeration<JarEntry> entries = jf.entries();
                 while (entries.hasMoreElements()) {
                     JarEntry entry = entries.nextElement();
                     if (entry.isDirectory() || !entry.getName().endsWith(".class")) continue;
-                    try (InputStream in = jf.getInputStream(entry)) {
-                        byte[] bytes = readAll(in);
-                        if (containsAscii(bytes, needle)) return true;
-                    }
+                    byte[] bytes = readJarClass(jf, entry);
+                    if (containsAscii(bytes, needle)) found = true;
                 }
+                // A token from an earlier entry is only evidence after the entire
+                // JAR candidate has passed its class-entry resource checks.
+                if (found) return true;
             } catch (Exception ignore) { }
         }
         return false;
@@ -891,7 +883,7 @@ static String confirmedDs501FamilyRuntime(File root, String softId,
     private static boolean classFileContainsAll(File file, String... tokens) {
         if (file == null || !file.isFile()) return false;
         try {
-            byte[] bytes = Files.readAllBytes(file.toPath());
+            byte[] bytes = AppDetector.readMetadataBytes(file, MAX_CLASS_BYTES);
             for (String token : tokens) {
                 if (!containsAscii(bytes, token)) return false;
             }
@@ -919,7 +911,7 @@ static String confirmedDs501FamilyRuntime(File root, String softId,
     private static String readElement(File file, String tag) {
         if (file == null || !file.isFile()) return null;
         try {
-            String text = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            String text = readConfigText(file);
             Pattern p = Pattern.compile("(?is)<" + Pattern.quote(tag) + "\\b[^>]*>(.*?)</" + Pattern.quote(tag) + ">");
             Matcher m = p.matcher(text);
             if (!m.find()) return null;
@@ -950,12 +942,27 @@ static String confirmedDs501FamilyRuntime(File root, String softId,
                 null, "—", null, null, null, "—", "—", false, false, false, false, "未识别");
     }
 
-    private static byte[] readAll(InputStream in) throws Exception {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        byte[] buf = new byte[8192];
-        int n;
-        while ((n = in.read(buf)) >= 0) out.write(buf, 0, n);
-        return out.toByteArray();
+    private static String readConfigText(File file) throws IOException {
+        return new String(AppDetector.readMetadataBytes(file, AppDetector.MAX_CONFIG_BYTES),
+                StandardCharsets.UTF_8);
+    }
+
+    private static byte[] readJarClass(JarFile jar, JarEntry entry) throws IOException {
+        long size = entry.getSize();
+        if (size < 0 || size > MAX_CLASS_BYTES) throw new IOException("java-plan-class-input-limit");
+        byte[] bytes = new byte[(int) size];
+        try (InputStream input = jar.getInputStream(entry)) {
+            int offset = 0;
+            while (offset < bytes.length) {
+                int count = input.read(bytes, offset, bytes.length - offset);
+                if (count < 0) throw new IOException("java-plan-class-input-changed");
+                offset += count;
+            }
+            // Check the actual stream too: a small advertised size must never
+            // permit a truncated or over-limit candidate to supply a token.
+            if (input.read() != -1) throw new IOException("java-plan-class-input-changed");
+        }
+        return bytes;
     }
 
     private static LinkedHashSet<String> constantPoolUtf8(byte[] bytes) throws Exception {

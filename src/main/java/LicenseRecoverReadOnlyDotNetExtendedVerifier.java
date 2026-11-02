@@ -44,51 +44,41 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
             dispatch="unknown";upperLocal="unknown";lowerLocal="unknown";
         }
     }
-    private static final class Build {
-        final String web,upper,lower,crypto;
-        final boolean legacy;
-        Build(String web,String upper,String lower,String crypto,boolean legacy) {
-            this.web=web;this.upper=upper;this.lower=lower;this.crypto=crypto;this.legacy=legacy;
-        }
-    }
-    private static final Build[] BUILDS={
-        new Build("1790526c91b0dc51aa914d80604e600175cfb3d8899c8299bb3b2c85684b9b20",
-                "c942c3c21466979e63eee1ffadbfe7273c83c2dc0a455f324c9da7e187953f46",
-                "36f58b8657bce75a19356796f21c135104e28f5abc4bc9007f0d4ec517f479df",
-                "236cfe610b87fb7a4f6589cb2a9e319a048b8a8e2a1b79d3028d4d7e1b5fcb6b",true),
-        new Build("929d67295961ed453202e4ea44bbeb2614543b7212c50717d58a455558067be4",
-                "222df2d024efb4b30510af9bf5f552646e4e2f75ea9b3795daa7a279d8a6f725",
-                "35e40be423f9ea8493edc29bbdfd406a030309241d6ec8c2f1ae3975ef7e5b5f",
-                "dc7e1806270ae5dc54c073f417949f7a3b1f24731e70925d16027e645ce150bc",false),
-        new Build("07183f09c19b69c5c4ddcdcb43ad4b8d91cf56f629f6a3d7d675dfc84f761079",
-                "222df2d024efb4b30510af9bf5f552646e4e2f75ea9b3795daa7a279d8a6f725",
-                "35e40be423f9ea8493edc29bbdfd406a030309241d6ec8c2f1ae3975ef7e5b5f",
-                "dc7e1806270ae5dc54c073f417949f7a3b1f24731e70925d16027e645ce150bc",false)
-    };
     public static LicenseRecoverLicenseState verify(File root) {return inspect(root).state;}
     public static Result inspect(File root) {
         try {
-            Build b=build(root);
+            LicenseRecoverReadOnlyDotNetCatalog.ExtendedBinding b=build(root);
             if(b==null)return result(false,LocalStatus.NOT_APPLICABLE,"未匹配本次审核的 legacy/VM 构建组合","unknown","unknown","unknown");
             // VM/format diagnostics do not use machine identity; avoid a needless OS query.
-            return inspect(root,b.legacy?LicenseRecoverReadOnlyMachineIdentity.current():null);
+            return inspect(root,b.legacy()?LicenseRecoverReadOnlyMachineIdentity.current():null);
         }catch(NoSuchFileException missing){return result(false,LocalStatus.NOT_APPLICABLE,"缺少该协议的审核组件或根配置","unknown","unknown","unknown");}
+        catch(LicenseRecoverReadOnlyDotNetCatalog.Changed e){return result(true,LocalStatus.INPUT_CHANGED,"协议组件读取期间变化","unknown","unknown","unknown");}
         catch(IOException|SecurityException e){return new Result(LicenseRecoverLicenseState.scanError("只读 legacy/VM 组件检查失败: "+e.getClass().getSimpleName()));}
         catch(Exception e){return result(false,LocalStatus.NOT_APPLICABLE,"当前构建尚不能应用此局部诊断","unknown","unknown","unknown");}
     }
     static Result inspect(File root,LicenseRecoverReadOnlyMachineIdentity.Snapshot identity) {
         try {
-            Build b=build(root);
+            LicenseRecoverReadOnlyDotNetCatalog.ExtendedBinding b=build(root);
             if(b==null)return result(false,LocalStatus.NOT_APPLICABLE,"未匹配本次审核的 legacy/VM 构建组合","unknown","unknown","unknown");
+            return inspectMatched(root,b,identity);
+        } catch(LicenseRecoverReadOnlyDotNetCatalog.Changed e){return result(true,LocalStatus.INPUT_CHANGED,"协议组件读取期间变化","unknown","unknown","unknown");}
+        catch(IOException|SecurityException e) {
+            return new Result(LicenseRecoverLicenseState.scanError("兼容协议读取失败: "+e.getClass().getSimpleName()));
+        } catch(Exception e) {return result(false,LocalStatus.NOT_APPLICABLE,"当前兼容协议未获得审核证据","unknown","unknown","unknown");}
+    }
+    static Result inspectMatched(File root,LicenseRecoverReadOnlyDotNetCatalog.ExtendedBinding b,
+            LicenseRecoverReadOnlyMachineIdentity.Snapshot identity) {
+        try {
             Path cfg=root.toPath().resolve("config.xml");byte[] before=read(cfg,MAX_CONFIG);
             LicenseRecoverReadOnlyDotNetRegistrySource.Snapshot registryBefore=LicenseRecoverReadOnlyDotNetRegistrySource.readCurrent();
-            Result observed=diagnose(before,b.legacy,identity,LocalDate.now());
+            Result observed=diagnose(before,b.legacy(),identity,LocalDate.now());
             boolean stable=Arrays.equals(before,read(cfg,MAX_CONFIG))&&build(root)==b;
             LicenseRecoverReadOnlyDotNetRegistrySource.Snapshot registryAfter=LicenseRecoverReadOnlyDotNetRegistrySource.readCurrent();
             return withRegistryContext(retainIfStable(observed,stable),registryBefore,registryAfter);
         } catch(NoSuchFileException missing) {
             return result(false,LocalStatus.NOT_APPLICABLE,"缺少该协议的审核组件或根配置","unknown","unknown","unknown");
-        } catch(IOException|SecurityException e) {
+        } catch(LicenseRecoverReadOnlyDotNetCatalog.Changed e){return result(true,LocalStatus.INPUT_CHANGED,"协议组件读取期间变化","unknown","unknown","unknown");}
+        catch(IOException|SecurityException e) {
             return new Result(LicenseRecoverLicenseState.scanError("只读 legacy/VM 组件检查失败: "+e.getClass().getSimpleName()));
         } catch(Exception e) {
             return result(true,LocalStatus.LEGACY_FORMAT_UNSUPPORTED,"根配置或局部协议结构无法核实；未判全套授权无效","unknown","unknown","unknown");
@@ -108,14 +98,8 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
         return result(observed.applies,observed.localStatus,observed.state.evidence+"；"+context,
                 observed.dispatch,observed.upperLocal,observed.lowerLocal);
     }
-    private static Build build(File root) throws Exception {
-        if(root==null)return null;
-        Path bin=root.toPath().resolve("bin");
-        String web=hash(read(bin.resolve("ITMC.Web.dll"),MAX_BINARY)),upper=hash(read(bin.resolve("ITMC.Regedit.dll"),MAX_BINARY));
-        for(Build b:BUILDS)if(b.web.equals(web)&&b.upper.equals(upper)
-                &&b.lower.equals(hash(read(bin.resolve("itmcRegedit.dll"),MAX_BINARY)))
-                &&b.crypto.equals(hash(read(bin.resolve("ITMC.DBUtility.dll"),MAX_BINARY))))return b;
-        return null;
+    private static LicenseRecoverReadOnlyDotNetCatalog.ExtendedBinding build(File root) throws Exception {
+        return LicenseRecoverReadOnlyDotNetCatalog.assess(root,false).extended;
     }
 
     /** Fixtures exercise the actual local predicates without adding synthetic trusted hashes. */

@@ -1,7 +1,11 @@
 import java.io.File;
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.StringReader;
+import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -10,6 +14,8 @@ import java.util.regex.Pattern;
  * 这里只负责识别，不执行授权写入/补丁，便于 GUI、CLI 和批量模式复用。
  */
 public final class AppDetector {
+    static final int MAX_CONFIG_BYTES = 4 * 1024 * 1024;
+    static final int MAX_PROPERTIES_BYTES = 1024 * 1024;
     private static final Pattern SOFT_VERSION = Pattern.compile(
             "(?is)<SoftVersionID\\b[^>]*>\\s*([^<]+?)\\s*</SoftVersionID\\s*>");
 
@@ -157,13 +163,17 @@ public final class AppDetector {
         try {
             File yml = new File(appRoot, "systemConfig.yml");
             if (yml.isFile()) {
-                List<String> lines = Files.readAllLines(yml.toPath(), StandardCharsets.UTF_8);
-                for (String raw : lines) {
-                    String line = raw.trim();
-                    if (!line.toLowerCase().contains("versionid")) continue;
-                    int split = line.indexOf(':');
-                    if (split < 0) split = line.indexOf('=');
-                    if (split > 0) return emptyToNull(line.substring(split + 1).trim());
+                String text = StandardCharsets.UTF_8.newDecoder().decode(
+                        ByteBuffer.wrap(readMetadataBytes(yml, MAX_PROPERTIES_BYTES))).toString();
+                try (BufferedReader lines = new BufferedReader(new StringReader(text))) {
+                    String raw;
+                    while ((raw = lines.readLine()) != null) {
+                        String line = raw.trim();
+                        if (!line.toLowerCase().contains("versionid")) continue;
+                        int split = line.indexOf(':');
+                        if (split < 0) split = line.indexOf('=');
+                        if (split > 0) return emptyToNull(line.substring(split + 1).trim());
+                    }
                 }
             }
         } catch (Exception ignore) { }
@@ -187,12 +197,33 @@ public final class AppDetector {
     static String readSoftVersionXml(File file) {
         if (file == null || !file.isFile()) return null;
         try {
-            String text = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            String text = new String(readMetadataBytes(file, MAX_CONFIG_BYTES), StandardCharsets.UTF_8);
             Matcher matcher = SOFT_VERSION.matcher(text);
             return matcher.find() ? emptyToNull(matcher.group(1).trim()) : null;
         } catch (Exception ignore) {
             return null;
         }
+    }
+
+    /** Metadata discovery must not allocate from an unbounded file before the audited scanner runs. */
+    static byte[] readMetadataBytes(File file, int limit) throws IOException {
+        if (file == null || limit < 1 || !Files.isRegularFile(file.toPath()))
+            throw new IOException("metadata-input-limit");
+        long size = Files.size(file.toPath());
+        if (size > limit) throw new IOException("metadata-input-limit");
+        // Allocate once from the bounded observation, never a growing buffer
+        // plus a full toByteArray copy. A changed length revokes discovery.
+        byte[] bytes = new byte[(int)size];
+        try (InputStream input = Files.newInputStream(file.toPath())) {
+            int offset = 0;
+            while (offset < bytes.length) {
+                int count = input.read(bytes, offset, bytes.length - offset);
+                if (count < 0) throw new IOException("metadata-input-changed");
+                offset += count;
+            }
+            if (input.read() != -1) throw new IOException("metadata-input-changed");
+        }
+        return bytes;
     }
 
     private static String emptyToNull(String value) {

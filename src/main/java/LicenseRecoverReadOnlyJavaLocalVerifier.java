@@ -89,20 +89,35 @@ public final class LicenseRecoverReadOnlyJavaLocalVerifier {
         try {
             if(appRoot==null)return unknown("缺少 Java 应用目录");
             Path root=appRoot.toPath().toAbsolutePath().normalize();
-            Profile profile=null;
+            List<Profile> candidates=new ArrayList<Profile>();
+            Map<Path,String> anchors=new HashMap<Path,String>();
             for(Profile p:profiles) {
                 Path anchor=root.resolve("WEB-INF/classes").resolve(p.anchor);
-                try { if(hash(read(anchor,16*1024*1024)).equals(p.anchorHash)){profile=p;break;} }
-                catch(NoSuchFileException absent){ }
+                if(!anchors.containsKey(anchor)) {
+                    try {anchors.put(anchor,hash(read(anchor,16*1024*1024)));}
+                    catch(NoSuchFileException absent){anchors.put(anchor,null);}
+                }
+                if(p.anchorHash.equals(anchors.get(anchor)))candidates.add(p);
             }
-            if(profile==null)return unknown("当前 Java 本地校验入口不在已审核构建范围");
+            if(candidates.isEmpty())return unknown("当前 Java 本地校验入口不在已审核构建范围");
+            // An entry class is only a candidate filter. Business classes or
+            // startup resources may differ while this one class stays unchanged.
+            Profile profile=null;Code observedCode=null;boolean unsupportedPath=false;
+            Map<Boolean,Code> observations=new HashMap<Boolean,Code>();
+            for(Profile p:candidates) {
+                // The reviewed default constructor uses URL.getPath().replace
+                // without decoding. Another reviewed layout may use the root.
+                if(!p.config.equals("config.xml")&&(!root.toString().matches("[A-Za-z0-9_:/\\\\.\\-]+")
+                        ||root.toString().toLowerCase(Locale.ROOT).contains("classes"))) {unsupportedPath=true;continue;}
+                Code candidate=observations.get(p.dynamicFamily);
+                if(candidate==null){candidate=code(root,p.dynamicFamily);observations.put(p.dynamicFamily,candidate);}
+                if(!candidate.matches(p))continue;
+                if(profile!=null)return unknown("同一完整 Java 构建匹配多份本地审核记录，适用规则存在歧义");
+                profile=p;observedCode=candidate;
+            }
+            if(profile==null)return unknown(unsupportedPath?"当前路径未满足已审核的 J1 CodeSource 配置路径规则"
+                    :"应用完整 class/JAR 或启动资源集合不匹配审核指纹，不能复用 Java 本地校验语义");
             registrationPath=root.resolve(profile.config);
-            // J1 uses URL.getPath().replace("classes","lib"). No URL decoding.
-            if(!profile.config.equals("config.xml") && (!root.toString().matches("[A-Za-z0-9_:/\\\\.\\-]+")
-                    ||root.toString().toLowerCase(Locale.ROOT).contains("classes")))
-                return unknown("当前路径未满足已审核的 J1 CodeSource 配置路径规则");
-            Code observedCode=code(root,profile.dynamicFamily);
-            if(!observedCode.matches(profile))return unknown("应用完整 class/JAR 或启动资源集合不匹配审核指纹，不能复用 Java 本地校验语义");
             codeAudited=true;
             if(!hash(read(root.resolve("WEB-INF/lib/ITMCReg.jar"),128*1024*1024)).equals(profile.registrationHash))
                 return unknown("注册组件不是已审核 J1 构建");
