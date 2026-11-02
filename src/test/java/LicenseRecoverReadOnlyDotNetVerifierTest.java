@@ -76,6 +76,30 @@ public final class LicenseRecoverReadOnlyDotNetVerifierTest {
         LicenseRecoverReadOnlyMachineIdentity.Snapshot multiple=new LicenseRecoverReadOnlyMachineIdentity.Snapshot(
                 Arrays.asList("OTHER_CPU",hardware().cpuIds.get(0)),hardware().disks,hardware().boards,hardware().hostname);
         unknown(run(config(payload(),"1",soft),multiple),"ambiguous WMIC software-number binding remains unknown");
+        String cpuToken="SYNTHETIC_WMIC_FIRST_CPU",override="PRIVATE_OVERRIDE_MACHINE";
+        String boundSoft=encrypt(override,cpuToken);
+        LicenseRecoverReadOnlyWmicCpuIdentity.Identity auditedCpu=new LicenseRecoverReadOnlyWmicCpuIdentity.Identity(
+                true,cpuToken,"synthetic audited WMIC framing");
+        byte[] overrideConfig=config(payload().replace(MACHINE,override),"1",boundSoft);
+        accepted(LicenseRecoverReadOnlyDotNetVerifier.predicate(overrideConfig,PRODUCT,multiple,NOW,ZONE,auditedCpu),
+                "audited WMIC token selects the override independently of the WMI last row");
+        unknown(LicenseRecoverReadOnlyDotNetVerifier.predicate(overrideConfig,PRODUCT,hardware(),NOW,ZONE,
+                new LicenseRecoverReadOnlyWmicCpuIdentity.Identity(false,cpuToken,"synthetic incomplete")),
+                "incomplete WMIC evidence never selects an override");
+        unknown(LicenseRecoverReadOnlyDotNetVerifier.predicate(overrideConfig,PRODUCT,hardware(),NOW,ZONE,
+                new LicenseRecoverReadOnlyWmicCpuIdentity.Identity(true,"WRONG_WMIC_TOKEN","synthetic")),
+                "wrong override binding cannot create acceptance");
+        accepted(LicenseRecoverReadOnlyDotNetVerifier.predicate(config(payload(),"1","NOT_HEX"),PRODUCT,hardware(),NOW,ZONE,auditedCpu),
+                "audited failed override decryption follows the native normal-machine fallback");
+        accepted(LicenseRecoverReadOnlyDotNetVerifier.predicate(config(payload(),"1",encrypt("   ",cpuToken)),PRODUCT,hardware(),NOW,ZONE,auditedCpu),
+                "empty override follows the native fallback");
+        unknown(LicenseRecoverReadOnlyDotNetVerifier.predicate(config(payload().replace(MACHINE,override).replace("\"TotalTimes\":-1","\"TotalTimes\":2"),"1",boundSoft),PRODUCT,hardware(),NOW,ZONE,auditedCpu),
+                "a valid override does not bypass finite counters");
+        unknown(LicenseRecoverReadOnlyDotNetVerifier.predicate(config(payload().replace(MACHINE,override).replace("DS0101,DS0109","OTHER"),"1",boundSoft),PRODUCT,hardware(),NOW,ZONE,auditedCpu),
+                "a valid override does not bypass product coverage");
+        LicenseRecoverLicenseState privateEvidence=LicenseRecoverReadOnlyDotNetVerifier.predicate(overrideConfig,PRODUCT,hardware(),NOW,ZONE,auditedCpu);
+        if(privateEvidence.evidence.contains(override)||privateEvidence.evidence.contains(cpuToken)||privateEvidence.evidence.contains(boundSoft))
+            throw new AssertionError("override and CPU values leaked in diagnostics");checks++;
         String xml=new String(valid,StandardCharsets.UTF_8);
         unknown(run(xml.replace("</reg>","<regName>duplicate</regName></reg>").getBytes("UTF-8"),hardware()),"duplicate XML critical value fails closed");
         unknown(run(xml.replace("<reg>","<!--synthetic comment before reg--><reg>").getBytes("UTF-8"),hardware()),"vendor XML cast semantics fail closed");

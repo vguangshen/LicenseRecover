@@ -233,12 +233,12 @@ public final class LicenseRecoverLicenseState {
         switch(localCondition) {
             case SATISFIED: return "本地条件通过（整体待核）";
             case NO_RECORD: return "无本地授权（其他方式待核）";
-            case MACHINE_MISMATCH: return "本地机器不符（其他方式待核）";
+            case MACHINE_MISMATCH: return "本地记录标识未匹配（站点待核）";
             case EXPIRED: return "本地已过期（其他方式待核）";
             case QUOTA_EXCEEDED: return "本地次数不足（其他方式待核）";
             case PRODUCT_MISMATCH: return "本地产品不符（其他方式待核）";
             case MALFORMED: return "本地格式未通过（其余待核）";
-            case UNSUPPORTED: return "验证协议待支持";
+            case UNSUPPORTED: return "本地验证未覆盖（其他方式待核）";
             case IDENTITY_UNAVAILABLE: return "本机标识未确认（整体待核）";
             default: break;
         }

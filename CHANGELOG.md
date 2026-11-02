@@ -1,3 +1,11 @@
+## 1.2.71 - 2026-11-02
+
+### Scoped .NET machine and registration-source evidence
+- Read the audited physical 32-bit YunClient source twice without loading target assemblies, importing registration or reading CRM credentials; retain source presence separately from authorization acceptance.
+- Add a bounded independent WMIC text/environment reader for the reviewed machine-override branch. A WMI CPU row cannot substitute for this protocol; unknown encoding, resolution and command context stay unverified.
+- Clarify local-record identity mismatch versus the IIS runtime context and other accepting paths; retain native/global uncertainty and remove implementation identifiers from user-facing reasons.
+- Cover registry framing/type/privacy/change boundaries and override acceptance/fallback/product/counter checks. DS0101 remains accepted in fresh v1.2.70 CLI/GUI reproduction; no DS0102 directory was present.
+
 ## 1.2.70 - 2026-11-02
 
 ### Audited local conditions and concrete diagnostics

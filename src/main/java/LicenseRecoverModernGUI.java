@@ -1091,8 +1091,8 @@ public final class LicenseRecoverModernGUI {
                         String msg = ex.getMessage();
                         String reason = ex.getClass().getSimpleName()
                                 + (msg == null || msg.trim().isEmpty() ? "" : ": " + msg.trim());
-                        cells = new Object[]{child.getName(), "检测异常", "—", "—", "—", "—", "—", "检测失败", "—",
-                                reason, child.getAbsolutePath()};
+                        cells = new Object[]{child.getName(), "检测异常", "—", "—", "—", "—", "—", "检测失败", reason,
+                                "检测异常", child.getAbsolutePath()};
                         diagnostic = reason;
                     }
         return new BatchScanInspection(target, cells, detectedCount, skippedCount, errorCount, diagnostic);
