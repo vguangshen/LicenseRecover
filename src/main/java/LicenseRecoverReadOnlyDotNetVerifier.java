@@ -90,19 +90,35 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
             LicenseRecoverReadOnlyMachineIdentity.Snapshot identity) throws Exception {
         Path config=root.toPath().resolve("config.xml");
         byte[] before=read(config,MAX_CONFIG);
-        LicenseRecoverLicenseState state=predicate(before,build.product,identity,Instant.now(),ZoneId.systemDefault());
+        LicenseRecoverReadOnlyWmicCpuIdentity.Identity cpu=null;
+        if(!element(parseXml(before),"reg","WebSerSoftNo").isEmpty())cpu=LicenseRecoverReadOnlyWmicCpuIdentity.current();
+        LicenseRecoverLicenseState state=predicate(before,build.product,identity,Instant.now(),ZoneId.systemDefault(),cpu);
+        // A negative/unsupported local observation also depends on the current bytes.
+        // Revoke it if the config or any audited assembly changed during inspection.
+        boolean stable=Arrays.equals(before,read(config,MAX_CONFIG))&&currentBuild(root)==build;
+        state=retainIfStable(state,stable);
+        if(!stable||state.acceptance!=LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE)return state;
+        state=predicate(before,build.product,identity,Instant.now(),ZoneId.systemDefault(),cpu);
         if(state.acceptance!=LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE)return state;
-        if(!Arrays.equals(before,read(config,MAX_CONFIG))||currentBuild(root)!=build)
-            return unknown("接受条件检查期间配置或代码发生变化");
         return LicenseRecoverLicenseState.authorizationAcceptance(state.evidence
                 +"；site-root/config.xml SHA-256="+sha(before)
                 +"；website SHA-256="+build.web+"；registration SHA-256="+build.registration,
                 LicenseRecoverLicenseState.LocalCondition.SATISFIED);
     }
 
+    /** All current-state observations, not just positive acceptance, require stable inputs. */
+    static LicenseRecoverLicenseState retainIfStable(LicenseRecoverLicenseState observed,boolean stable) {
+        return stable?observed:unknown("只读核验期间配置或代码发生变化；已撤销局部及入口结论");
+    }
+
     /** Synthetic fixtures can exercise the real predicate without adding trusted production builds. */
     static LicenseRecoverLicenseState predicate(byte[] xml,String product,
             LicenseRecoverReadOnlyMachineIdentity.Snapshot identity,Instant now,ZoneId zone) {
+        return predicate(xml,product,identity,now,zone,null);
+    }
+    static LicenseRecoverLicenseState predicate(byte[] xml,String product,
+            LicenseRecoverReadOnlyMachineIdentity.Snapshot identity,Instant now,ZoneId zone,
+            LicenseRecoverReadOnlyWmicCpuIdentity.Identity cpu) {
         try {
             if(identity==null||!identity.complete)return local(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,"独立本机身份快照不完整");
             if(!asciiIdentity(identity))return local(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,"本机身份包含未审核的非 ASCII 规范");
@@ -125,9 +141,10 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
                 return unknown("日期字段大小写未匹配审核结构");
             // ProName is an additional conservative binding, beyond CheckLocalReg's machine check.
             if(!product.equals(info.get("ProName")))return local(LicenseRecoverLicenseState.LocalCondition.PRODUCT_MISMATCH,"本地载荷未匹配当前审核产品身份；其他授权方式未判断");
-            String machine=machine(config,identity);
+            String machine=machine(config,identity,cpu);
             if(machine==null||machine.isEmpty())return local(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,
-                    "本机覆盖号或身份规则尚未形成独立证明；未判机器不匹配");
+                    "本机覆盖号或身份规则尚未形成独立证明；未判机器不匹配"
+                    +(cpu!=null&&!cpu.complete?"；"+cpu.reason:""));
             if(!(info.get("RegID") instanceof String)||!((String)info.get("RegID")).matches("[\\x20-\\x7e]{1,256}"))
                 return local(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,"授权载荷机器字段类型尚未匹配审核结构；未判机器不匹配");
             if(!machine.equals(info.get("RegID")))
@@ -143,19 +160,26 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
                 return local(LicenseRecoverLicenseState.LocalCondition.PRODUCT_MISMATCH,"本地载荷未覆盖网站当前模式；兼容/父版本路径未判断");
             return LicenseRecoverLicenseState.authorizationAcceptance(
                     "审核 .NET 当前构建的独立本地正向谓词通过：产品绑定、本机绑定、日期、无限计次及网站当前模式均匹配；"
-                    +"未执行厂商程序集；激活与 Patch 来源未区分；见 docs/DOTNET_READ_ONLY_ACCEPTANCE.md",
+                    +"未执行厂商程序集；"+(!element(config,"reg","WebSerSoftNo").isEmpty()?"已按审核的只读 WMIC 覆盖号/回退规则核验；":"")
+                    +"激活与 Patch 来源未区分；见 docs/DOTNET_READ_ONLY_ACCEPTANCE.md",
                     LicenseRecoverLicenseState.LocalCondition.SATISFIED);
         } catch(Exception e) {return unknown("载荷/身份/日期未匹配审核的正向接受条件；其他授权方式未判断");}
     }
 
-    private static String machine(Document config,LicenseRecoverReadOnlyMachineIdentity.Snapshot s) throws Exception {
+    private static String machine(Document config,LicenseRecoverReadOnlyMachineIdentity.Snapshot s,
+            LicenseRecoverReadOnlyWmicCpuIdentity.Identity wmic) throws Exception {
         if(s==null)return null;
         String soft=element(config,"reg","WebSerSoftNo");
         if(!soft.isEmpty()) {
-            // The target first executes cmd/WMIC; independent WMI success does not
-            // establish that WMIC exists or that its text parser succeeds. Until
-            // that exact branch is separately audited, do not substitute a CPU ID.
-            return null;
+            // A WMI CPU row is not a substitute for the target's WMIC text rule.
+            // Only the separately audited system reader may establish its token.
+            if(wmic==null||!wmic.complete||wmic.value==null)return null;
+            try {
+                String decoded=decrypt(soft,wmic.value);
+                if(!decoded.trim().isEmpty())return ascii(decoded)?decoded:null;
+            }catch(java.security.GeneralSecurityException|IllegalArgumentException e) {
+                // Native getRegNo catches failed decoding, then uses the WMI rule.
+            }
         }
         String cpu="unknow";
         if(s.cpuIds!=null) {

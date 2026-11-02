@@ -1,6 +1,6 @@
 # .NET 独立只读授权条件判定
 
-本检测器证明的状态是：**当前安装代码所对应的本地授权核心条件和网站当前产品/模式条件，通过独立只读重实现检查**。界面可以显示“授权检查通过（激活或 Patch）”，但不区分授权来源，也不证明厂商原版、可信 Patch 来源或所有业务功能正常。`Authorization` 和 `CodeIntegrity` 仍为未验证；结果使用独立的 `Acceptance.VERIFIED_USABLE` 维度。
+本检测器证明的状态是：**当前安装代码所对应的本地授权核心条件和网站当前产品/模式条件，通过独立只读重实现检查**。界面显示“当前入口条件通过（来源未确认）”（蓝色），但不区分授权来源，也不证明厂商原版、可信 Patch 来源或所有业务功能正常。`Authorization` 和 `CodeIntegrity` 仍为未验证；结果使用独立的 `Acceptance.VERIFIED_USABLE` 维度。
 
 扫描器没有启动网站、加载目标程序集、调用 `RegisterMain`、写注册表、修改授权文件或消耗授权次数。原有厂商 `CheckLocalReg` 仍存在写入，不能直接接入只读扫描。
 
@@ -48,7 +48,7 @@
 - 磁盘：按 `SELECT * FROM Win32_DiskDrive` 顺序，将 `Signature` 转为 UInt32，取第一个大于零的值；出现空属性/转换异常即走 `unknow`，不能跳过异常项取下一盘。
 - 主板：取第一行 `SerialNumber.Trim()`；无行/空属性对应 `unknow`。主板为 `unknow` 或 `None` 时使用 CPU。
 - 非双方 `unknow` 时，CPU/磁盘/主板补零至至少 9 位，再按 CIL 规则取主板与磁盘各 `Substring(length-9, 8)` 拼接。双方 `unknow` 时才使用计算机名的对应后 16 字符规则。
-- 非空 `WebSerSoftNo` 会先尝试 CPU 绑定的覆盖号。原生通过 `cmd` 运行 WMIC 并解析文本，失败时使用 `unknow`。独立 WMI 查询成功不能证明目标 WMIC 同样存在或解析成功；本轮对所有非空覆盖号保持未知，不以 WMI 成功代替该分支。7 个通过的当前样本都不依赖该覆盖号。
+- 非空 `WebSerSoftNo` 会先尝试 CPU 绑定的覆盖号。原生通过 `cmd` 运行 WMIC 并解析文本，失败时使用 `unknow`。v1.2.70 对所有非空覆盖号保持未知；v1.2.71 增加独立 `LicenseRecoverReadOnlyWmicCpuIdentity`，核对 AutoRun、可信系统程序、路径解析与严格 ASCII 文本规则后，在不执行厂商或命令处理器的情况下读取固定 WMIC 查询。不能用普通 WMI 行替代。解码非空覆盖号后仍须满足产品、期限、无限计次和当前模式全部条件；可信解码失败才按原生规则回落通常机器号。未知环境或编码仍待核。原先 7 个通过样本均不依赖覆盖号。
 
 只有公共 helper 的身份快照 `complete=true` 才允许通过；当前进一步要求所有非空身份字符串均为可打印 ASCII，避免 Java/.NET Unicode Trim、大小写和规范化差异。本机标识和解密 JSON 不写入报告。
 

@@ -170,11 +170,13 @@ public final class LicenseRecoverLicenseState {
     /** A typed state is authoritative; the label is only for display. */
     public VisualStatus visualStatus() {
         if (isScanError()) return VisualStatus.SCAN_ERROR;
-        if (acceptance == Acceptance.VERIFIED_USABLE) return VisualStatus.VERIFIED_USABLE;
+        // Preserve independent native/Patch evidence before scoped entry acceptance.
+        // An accepted entry does not prove native activation or Patch provenance.
         if (codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED) return VisualStatus.PATCHED_UNVERIFIED;
-        if (acceptance == Acceptance.VERIFIED_REJECTED) return VisualStatus.AUTHORIZATION_REJECTED;
         if (authorization == Authorization.VERIFIED_VALID) return VisualStatus.NATIVE_VALID;
         if (authorization == Authorization.VERIFIED_INVALID) return VisualStatus.NATIVE_INVALID;
+        if (acceptance == Acceptance.VERIFIED_USABLE) return VisualStatus.VERIFIED_USABLE;
+        if (acceptance == Acceptance.VERIFIED_REJECTED) return VisualStatus.AUTHORIZATION_REJECTED;
         return VisualStatus.UNVERIFIED;
     }
 
@@ -188,14 +190,16 @@ public final class LicenseRecoverLicenseState {
         if ("检测失败".equals(label)) return VisualStatus.SCAN_ERROR;
         if ("已验证激活（代码已 Patch）".equals(label)
                 || "已验证未激活（代码已 Patch）".equals(label)
-                || "已确认 Patch（授权未验证）".equals(label))
+                || "已确认 Patch（授权未验证）".equals(label)
+                || "授权检查通过（代码已 Patch）".equals(label)
+                || "授权入口拒绝（代码已 Patch）".equals(label))
             return VisualStatus.PATCHED_UNVERIFIED;
         if ("已验证激活".equals(label)) return VisualStatus.NATIVE_VALID;
-        if ("授权检查通过（激活或 Patch）".equals(label)
-                || "授权检查通过（代码已 Patch）".equals(label)) return VisualStatus.VERIFIED_USABLE;
+        if ("当前入口条件通过（来源未确认）".equals(label)
+                || "授权检查通过（激活或 Patch）".equals(label)) return VisualStatus.VERIFIED_USABLE;
         if ("已验证未激活".equals(label)) return VisualStatus.NATIVE_INVALID;
-        if ("授权入口明确拒绝（未激活）".equals(label)) return VisualStatus.AUTHORIZATION_REJECTED;
-        if ("授权入口拒绝（代码已 Patch）".equals(label)) return VisualStatus.PATCHED_UNVERIFIED;
+        if ("当前入口条件拒绝（原生状态待核）".equals(label)
+                || "授权入口明确拒绝（未激活）".equals(label)) return VisualStatus.AUTHORIZATION_REJECTED;
         return VisualStatus.UNVERIFIED;
     }
 
@@ -219,10 +223,10 @@ public final class LicenseRecoverLicenseState {
         if (isScanError()) return "检测失败";
         if (acceptance == Acceptance.VERIFIED_USABLE)
             return codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED
-                    ? "授权检查通过（代码已 Patch）" : "授权检查通过（激活或 Patch）";
+                    ? "授权检查通过（代码已 Patch）" : "当前入口条件通过（来源未确认）";
         if (acceptance == Acceptance.VERIFIED_REJECTED)
             return codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED
-                    ? "授权入口拒绝（代码已 Patch）" : "授权入口明确拒绝（未激活）";
+                    ? "授权入口拒绝（代码已 Patch）" : "当前入口条件拒绝（原生状态待核）";
         if (authorization == Authorization.VERIFIED_VALID && codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED)
             return "已验证激活（代码已 Patch）";
         if (authorization == Authorization.VERIFIED_VALID) return "已验证激活";
@@ -233,12 +237,12 @@ public final class LicenseRecoverLicenseState {
         switch(localCondition) {
             case SATISFIED: return "本地条件通过（整体待核）";
             case NO_RECORD: return "无本地授权（其他方式待核）";
-            case MACHINE_MISMATCH: return "本地机器不符（其他方式待核）";
+            case MACHINE_MISMATCH: return "本地记录标识未匹配（站点待核）";
             case EXPIRED: return "本地已过期（其他方式待核）";
             case QUOTA_EXCEEDED: return "本地次数不足（其他方式待核）";
             case PRODUCT_MISMATCH: return "本地产品不符（其他方式待核）";
             case MALFORMED: return "本地格式未通过（其余待核）";
-            case UNSUPPORTED: return "验证协议待支持";
+            case UNSUPPORTED: return "本地验证未覆盖（其他方式待核）";
             case IDENTITY_UNAVAILABLE: return "本机标识未确认（整体待核）";
             default: break;
         }

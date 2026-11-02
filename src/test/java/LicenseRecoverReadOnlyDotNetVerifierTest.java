@@ -76,12 +76,50 @@ public final class LicenseRecoverReadOnlyDotNetVerifierTest {
         LicenseRecoverReadOnlyMachineIdentity.Snapshot multiple=new LicenseRecoverReadOnlyMachineIdentity.Snapshot(
                 Arrays.asList("OTHER_CPU",hardware().cpuIds.get(0)),hardware().disks,hardware().boards,hardware().hostname);
         unknown(run(config(payload(),"1",soft),multiple),"ambiguous WMIC software-number binding remains unknown");
+        String cpuToken="SYNTHETIC_WMIC_FIRST_CPU",override="PRIVATE_OVERRIDE_MACHINE";
+        String boundSoft=encrypt(override,cpuToken);
+        LicenseRecoverReadOnlyWmicCpuIdentity.Identity auditedCpu=new LicenseRecoverReadOnlyWmicCpuIdentity.Identity(
+                true,cpuToken,"synthetic audited WMIC framing");
+        byte[] overrideConfig=config(payload().replace(MACHINE,override),"1",boundSoft);
+        accepted(LicenseRecoverReadOnlyDotNetVerifier.predicate(overrideConfig,PRODUCT,multiple,NOW,ZONE,auditedCpu),
+                "audited WMIC token selects the override independently of the WMI last row");
+        unknown(LicenseRecoverReadOnlyDotNetVerifier.predicate(overrideConfig,PRODUCT,hardware(),NOW,ZONE,
+                new LicenseRecoverReadOnlyWmicCpuIdentity.Identity(false,cpuToken,"synthetic incomplete")),
+                "incomplete WMIC evidence never selects an override");
+        unknown(LicenseRecoverReadOnlyDotNetVerifier.predicate(overrideConfig,PRODUCT,hardware(),NOW,ZONE,
+                new LicenseRecoverReadOnlyWmicCpuIdentity.Identity(true,"WRONG_WMIC_TOKEN","synthetic")),
+                "wrong override binding cannot create acceptance");
+        accepted(LicenseRecoverReadOnlyDotNetVerifier.predicate(config(payload(),"1","NOT_HEX"),PRODUCT,hardware(),NOW,ZONE,auditedCpu),
+                "audited failed override decryption follows the native normal-machine fallback");
+        accepted(LicenseRecoverReadOnlyDotNetVerifier.predicate(config(payload(),"1",encrypt("   ",cpuToken)),PRODUCT,hardware(),NOW,ZONE,auditedCpu),
+                "empty override follows the native fallback");
+        unknown(LicenseRecoverReadOnlyDotNetVerifier.predicate(config(payload().replace(MACHINE,override).replace("\"TotalTimes\":-1","\"TotalTimes\":2"),"1",boundSoft),PRODUCT,hardware(),NOW,ZONE,auditedCpu),
+                "a valid override does not bypass finite counters");
+        unknown(LicenseRecoverReadOnlyDotNetVerifier.predicate(config(payload().replace(MACHINE,override).replace("DS0101,DS0109","OTHER"),"1",boundSoft),PRODUCT,hardware(),NOW,ZONE,auditedCpu),
+                "a valid override does not bypass product coverage");
+        LicenseRecoverLicenseState privateEvidence=LicenseRecoverReadOnlyDotNetVerifier.predicate(overrideConfig,PRODUCT,hardware(),NOW,ZONE,auditedCpu);
+        if(privateEvidence.evidence.contains(override)||privateEvidence.evidence.contains(cpuToken)||privateEvidence.evidence.contains(boundSoft))
+            throw new AssertionError("override and CPU values leaked in diagnostics");checks++;
         String xml=new String(valid,StandardCharsets.UTF_8);
         unknown(run(xml.replace("</reg>","<regName>duplicate</regName></reg>").getBytes("UTF-8"),hardware()),"duplicate XML critical value fails closed");
         unknown(run(xml.replace("<reg>","<!--synthetic comment before reg--><reg>").getBytes("UTF-8"),hardware()),"vendor XML cast semantics fail closed");
         unknown(run(("<!DOCTYPE ROOT [<!ENTITY x SYSTEM 'file:///NONEXISTENT_SYNTHETIC'>]>"+xml).getBytes("UTF-8"),hardware()),"external entities never resolved");
         accepted(run(config(payload().replace("DS0101,DS0109","ds0109"),"1",""),hardware()),"reviewed case-insensitive website mode constraint");
         if(run(valid,hardware()).evidence.contains(MACHINE)||run(valid,hardware()).evidence.contains("SYNTHETIC_ONLY"))throw new AssertionError("sensitive values in evidence");checks++;
+        LicenseRecoverLicenseState mismatched=run(config(payload().replace(MACHINE,"SYNTHETIC_OTHER"),"1",""),hardware());
+        if(mismatched.localCondition!=LicenseRecoverLicenseState.LocalCondition.MACHINE_MISMATCH)
+            throw new AssertionError("synthetic mismatch fixture must produce a scoped local observation");checks++;
+        if(LicenseRecoverReadOnlyDotNetVerifier.retainIfStable(mismatched,true)!=mismatched)
+            throw new AssertionError("stable local evidence must remain unchanged");checks++;
+        LicenseRecoverLicenseState revokedLocal=LicenseRecoverReadOnlyDotNetVerifier.retainIfStable(mismatched,false);
+        unknown(revokedLocal,"changed audited bytes revoke a previously observed local mismatch");
+        if(revokedLocal.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED
+                ||!revokedLocal.evidence.contains("发生变化"))
+            throw new AssertionError("stale local observation was not fully revoked");checks++;
+        LicenseRecoverLicenseState revokedPositive=LicenseRecoverReadOnlyDotNetVerifier.retainIfStable(run(valid,hardware()),false);
+        unknown(revokedPositive,"changed audited bytes revoke a previously accepted entry");
+        if(revokedPositive.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED)
+            throw new AssertionError("stale positive observation was not fully revoked");checks++;
         System.out.println("LicenseRecoverReadOnlyDotNetVerifierTest: "+checks+" checks passed");
     }
 }

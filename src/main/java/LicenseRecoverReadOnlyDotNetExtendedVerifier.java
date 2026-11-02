@@ -34,7 +34,7 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
         private Result(boolean applies,LocalStatus localStatus,String reason,String dispatch,String upperLocal,String lowerLocal) {
             this.applies=applies;this.localStatus=localStatus;this.dispatch=dispatch;
             this.upperLocal=upperLocal;this.lowerLocal=lowerLocal;
-            String evidence=localStatus.name()+": "+reason;
+            String evidence=reason;
             state=applies&&condition(localStatus)!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED
                     ?LicenseRecoverLicenseState.localObservation(condition(localStatus),evidence)
                     :LicenseRecoverLicenseState.unverified(evidence);
@@ -81,8 +81,11 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
             Build b=build(root);
             if(b==null)return result(false,LocalStatus.NOT_APPLICABLE,"未匹配本次审核的 legacy/VM 构建组合","unknown","unknown","unknown");
             Path cfg=root.toPath().resolve("config.xml");byte[] before=read(cfg,MAX_CONFIG);
+            LicenseRecoverReadOnlyDotNetRegistrySource.Snapshot registryBefore=LicenseRecoverReadOnlyDotNetRegistrySource.readCurrent();
             Result observed=diagnose(before,b.legacy,identity,LocalDate.now());
-            return retainIfStable(observed,Arrays.equals(before,read(cfg,MAX_CONFIG))&&build(root)==b);
+            boolean stable=Arrays.equals(before,read(cfg,MAX_CONFIG))&&build(root)==b;
+            LicenseRecoverReadOnlyDotNetRegistrySource.Snapshot registryAfter=LicenseRecoverReadOnlyDotNetRegistrySource.readCurrent();
+            return withRegistryContext(retainIfStable(observed,stable),registryBefore,registryAfter);
         } catch(NoSuchFileException missing) {
             return result(false,LocalStatus.NOT_APPLICABLE,"缺少该协议的审核组件或根配置","unknown","unknown","unknown");
         } catch(IOException|SecurityException e) {
@@ -95,6 +98,15 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
     static Result retainIfStable(Result observed,boolean stable) {
         if(!stable)return result(true,LocalStatus.INPUT_CHANGED,"检查期间代码或根配置变化；已撤销局部结论","unknown","unknown","unknown");
         return observed;
+    }
+    /** Optional context never upgrades a local observation into an accepted/invalid license. */
+    static Result withRegistryContext(Result observed,LicenseRecoverReadOnlyDotNetRegistrySource.Snapshot before,
+            LicenseRecoverReadOnlyDotNetRegistrySource.Snapshot after) {
+        if(!observed.applies||observed.state.isScanError())return observed;
+        String context=before!=null&&before.same(after)?after.observation()
+                :"组合注册来源未完成一致的双重读取，未用其内容推断站点授权";
+        return result(observed.applies,observed.localStatus,observed.state.evidence+"；"+context,
+                observed.dispatch,observed.upperLocal,observed.lowerLocal);
     }
     private static Build build(File root) throws Exception {
         if(root==null)return null;
@@ -121,15 +133,15 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
                     String plain=decrypt(encrypted,"*ITMCYX0302OK*");
                     if(plain.length()>=12&&ascii(plain)&&!plain.substring(6,plain.length()-6).trim().startsWith("{"))
                         return result(true,LocalStatus.UPPER_JSON_FORMAT_MISMATCH_LOWER_VM_PENDING,
-                                "当前根记录与大写注册器要求的 JSON RegeditInfo 结构不符；小写323个FOAP记录已恢复，但验证仍为VM分派，未判定其授权结果",
+                                "当前本地记录不属于大写注册器格式；可能由另一注册组件处理，其判据尚未完成等价验证。没有据此判为未激活",
                                 dispatch,"JSON_REGEDITINFO_REQUIRED","VM_NOT_EVALUATED");
                 }catch(GeneralSecurityException|IllegalArgumentException failure) {
                     return result(true,LocalStatus.LOWER_VM_PENDING,
-                            "大写本地载荷未匹配其格式；小写真实验证由VM分派，网络/硬件狗也未核验，不能推出未激活",
+                            "当前本地载荷未通过已审格式；另一注册组件、联网、硬件狗和站点缓存仍待核，不能推出未激活",
                             dispatch,"LOCAL_PAYLOAD_UNMATCHED","VM_NOT_EVALUATED");
                 }
                 return result(true,LocalStatus.LOWER_VM_PENDING,
-                        "小写验证仍为VM分派；现有记录尚不能建立完整接受或拒绝证明",dispatch,"LOCAL_NOT_FULLY_EVALUATED","VM_NOT_EVALUATED");
+                        "现有记录由尚未完成等价审计的注册组件处理；仍需核对其他授权来源，当前没有完整接受或拒绝证明",dispatch,"LOCAL_NOT_FULLY_EVALUATED","VM_NOT_EVALUATED");
             }
             // Reviewed lowercase YX0102 has a fixed-position legacy record, not upper JSON.
             String plain;
@@ -144,7 +156,7 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
             String current=legacyMachine(identity);
             if(current==null)return result(true,LocalStatus.IDENTITY_UNAVAILABLE,"本机身份规范不属于本次审核范围",dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","IDENTITY_UNAVAILABLE");
             if(!plain.substring(6,22).equals(current))return result(true,LocalStatus.LEGACY_MACHINE_MISMATCH,
-                    "小写旧格式记录的机器字段与当前独立本机规则不匹配；该本地分支失败，但其后仍有硬件狗/联网及网站父产品路径，整套授权保持未知",
+                    "当前本地记录的机器字段与本次扫描进程取得的标识不匹配；这不是站点运行身份或缓存的观测，其他注册组件、组合来源、硬件狗及联网仍可能接受",
                     dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","MACHINE_MISMATCH");
             LocalDate end;
             try{end=LocalDate.parse(plain.substring(30,40));}
