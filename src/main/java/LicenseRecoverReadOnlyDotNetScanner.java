@@ -7,14 +7,20 @@ public final class LicenseRecoverReadOnlyDotNetScanner {
     public static final class Result {
         public final LicenseRecoverLicenseState state;
         public final LicenseRecoverReadOnlyDotNetCatalog.Assessment protocol;
+        public final LicenseRecoverReadOnlyCodeEvidence codeEvidence;
         Result(LicenseRecoverLicenseState state,LicenseRecoverReadOnlyDotNetCatalog.Assessment protocol) {
-            this.state=state;this.protocol=protocol;
+            this(state,protocol,LicenseRecoverReadOnlyCodeEvidence.unassessed("当前 .NET 代码结构尚未获得独立证明"));
+        }
+        Result(LicenseRecoverLicenseState state,LicenseRecoverReadOnlyDotNetCatalog.Assessment protocol,
+               LicenseRecoverReadOnlyCodeEvidence codeEvidence) {
+            this.state=state;this.protocol=protocol;this.codeEvidence=codeEvidence;
         }
     }
     public static LicenseRecoverLicenseState scan(File root) {return inspect(root).state;}
     public static Result inspect(File root) {
         LicenseRecoverReadOnlyDotNetCatalog.Assessment first=null;
         try {
+            LicenseRecoverReadOnlyCodeEvidence codeEvidence=LicenseRecoverReadOnlyDotNetCodeEvidence.inspect(root);
             first=LicenseRecoverReadOnlyDotNetCatalog.assess(root,true);
             LicenseRecoverLicenseState state;
             if(first.upper!=null)state=LicenseRecoverReadOnlyDotNetVerifier.verifyMatched(root,first.upper);
@@ -24,7 +30,8 @@ public final class LicenseRecoverReadOnlyDotNetScanner {
                     +"；识别同族不等于授权通过；未按软件名、版本前缀或接口同名推定有效");
             if(state.isScanError())return new Result(state,null);
             LicenseRecoverReadOnlyDotNetCatalog.Assessment last=LicenseRecoverReadOnlyDotNetCatalog.assess(root,false);
-            return retainIfStable(state,first,last);
+            Result retained=retainIfStable(state,first,last);
+            return retained.protocol==null?retained:new Result(retained.state,retained.protocol,codeEvidence);
         }catch(LicenseRecoverReadOnlyDotNetCatalog.Changed e) {
             return new Result(LicenseRecoverLicenseState.unverified(".NET 协议组件在读取期间发生变化"),null);
         }catch(IOException|SecurityException e) {

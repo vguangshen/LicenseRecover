@@ -219,7 +219,10 @@ $wmicCpuIdentityTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyWmicCpuId
 $javaScannerTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyJavaScannerTest.java'
 $dotNetScannerTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyDotNetScannerTest.java'
 $metadataBudgetTest = Join-Path $testSourceDir 'LicenseRecoverMetadataReadBudgetTest.java'
-Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $inspectionTest, $peMetadataTest, $realSampleTest, $readOnlyPlanTest, $evidenceTableTest, $machineIdentityTest, $javaVerifierTest, $dotNetVerifierTest, $localObservationTest, $javaMachineIdentityTest, $javaLocalVerifierTest, $javaAlternateVerifierTest, $dotNetExtendedVerifierTest, $dotNetRegistrySourceTest, $wmicCpuIdentityTest, $javaScannerTest, $dotNetScannerTest, $metadataBudgetTest)
+$patchProfileTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyPatchProfileTest.java'
+$javaCodeEvidenceTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyJavaCodeEvidenceTest.java'
+$dotNetCodeEvidenceTest = Join-Path $testSourceDir 'LicenseRecoverReadOnlyDotNetCodeEvidenceTest.java'
+Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $inspectionTest, $peMetadataTest, $realSampleTest, $readOnlyPlanTest, $evidenceTableTest, $machineIdentityTest, $javaVerifierTest, $dotNetVerifierTest, $localObservationTest, $javaMachineIdentityTest, $javaLocalVerifierTest, $javaAlternateVerifierTest, $dotNetExtendedVerifierTest, $dotNetRegistrySourceTest, $wmicCpuIdentityTest, $javaScannerTest, $dotNetScannerTest, $metadataBudgetTest, $patchProfileTest, $javaCodeEvidenceTest, $dotNetCodeEvidenceTest)
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyInspectionTest')
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyPeMetadataTest')
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverJavaPlanReadOnlyTest')
@@ -227,7 +230,7 @@ Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'Licen
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyMachineIdentityTest')
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyJavaVerifierTest')
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyDotNetVerifierTest')
-foreach ($test in @('LicenseRecoverLocalObservationTest', 'LicenseRecoverReadOnlyJavaMachineIdentityTest', 'LicenseRecoverReadOnlyJavaLocalVerifierTest', 'LicenseRecoverReadOnlyJavaAlternateVerifierTest', 'LicenseRecoverReadOnlyDotNetExtendedVerifierTest', 'LicenseRecoverReadOnlyDotNetRegistrySourceTest', 'LicenseRecoverReadOnlyWmicCpuIdentityTest', 'LicenseRecoverReadOnlyJavaScannerTest', 'LicenseRecoverReadOnlyDotNetScannerTest', 'LicenseRecoverMetadataReadBudgetTest')) {
+foreach ($test in @('LicenseRecoverLocalObservationTest', 'LicenseRecoverReadOnlyJavaMachineIdentityTest', 'LicenseRecoverReadOnlyJavaLocalVerifierTest', 'LicenseRecoverReadOnlyJavaAlternateVerifierTest', 'LicenseRecoverReadOnlyDotNetExtendedVerifierTest', 'LicenseRecoverReadOnlyDotNetRegistrySourceTest', 'LicenseRecoverReadOnlyWmicCpuIdentityTest', 'LicenseRecoverReadOnlyJavaScannerTest', 'LicenseRecoverReadOnlyDotNetScannerTest', 'LicenseRecoverMetadataReadBudgetTest', 'LicenseRecoverReadOnlyPatchProfileTest', 'LicenseRecoverReadOnlyJavaCodeEvidenceTest', 'LicenseRecoverReadOnlyDotNetCodeEvidenceTest')) {
     Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, $test)
 }
 
@@ -363,7 +366,7 @@ if ($batchInspectStart -lt 0 -or $batchInspectEnd -le $batchInspectStart) {
     throw 'Cannot isolate the batch inspection method for read-only safety validation.'
 }
 $batchInspectSource = $modernGuiSource.Substring($batchInspectStart, $batchInspectEnd - $batchInspectStart)
-if (([regex]::Matches($batchInspectSource, 'LicenseRecoverReadOnlyPatchScanner\.scan\s*\(')).Count -ne 2) {
+if (([regex]::Matches($batchInspectSource, 'LicenseRecoverReadOnlyPatchScanner\.scanApplication\s*\(info\.appRoot')).Count -ne 2) {
     throw 'Java and .NET batch inspection must use the reviewed read-only fingerprint scanner.'
 }
 if (-not $batchInspectSource.Contains('LicenseRecoverModernGUIJavaPlan.inspectReadOnly(info.appRoot)')) {

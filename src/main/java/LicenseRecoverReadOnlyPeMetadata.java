@@ -136,14 +136,24 @@ public final class LicenseRecoverReadOnlyPeMetadata {
         else if (heaps.containsKey("#-")) throw bad();
         if (table == null || !heaps.containsKey("#Strings") || !heaps.containsKey("#Blob")) throw bad();
         String assembly = assemblyVersion(r, table);
-        return new Layout(r,heaps,table,new LicenseRecoverReadOnlyPeMetadata(runtime, assembly, plus));
+        return new Layout(r,heaps,table,new LicenseRecoverReadOnlyPeMetadata(runtime, assembly, plus),
+                sections,cli,cliSize,meta,metaSize,r.u32(cli+16),r.u32(cli+64),r.u32(cli+68));
     }
 
     private static final class Layout {
         final Reader reader;final Map<String,long[]> heaps;final long[] table;
         final LicenseRecoverReadOnlyPeMetadata basic;
-        Layout(Reader r,Map<String,long[]> h,long[] t,LicenseRecoverReadOnlyPeMetadata b){reader=r;heaps=h;table=t;basic=b;}
+        final long[][] sections;final long cli,cliSize,metadata,metadataSize,cliFlags,nativeHeader,nativeHeaderSize;
+        Layout(Reader r,Map<String,long[]> h,long[] t,LicenseRecoverReadOnlyPeMetadata b,long[][] sections,
+                long cli,long cliSize,long metadata,long metadataSize,long flags,long nativeHeader,long nativeHeaderSize){
+            reader=r;heaps=h;table=t;basic=b;this.sections=sections;this.cli=cli;this.cliSize=cliSize;
+            this.metadata=metadata;this.metadataSize=metadataSize;cliFlags=flags;
+            this.nativeHeader=nativeHeader;this.nativeHeaderSize=nativeHeaderSize;
+        }
     }
+
+    /** A complete on-disk method body shape, never proof of a Patch or runtime behavior. */
+    public enum BooleanBodyShape { UNASSESSED, CONSTANT_FALSE, CONSTANT_TRUE, BYREF_NULL_FALSE }
 
     /**
      * Owned API declarations only. A shape match is a family candidate, never a
@@ -155,7 +165,9 @@ public final class LicenseRecoverReadOnlyPeMetadata {
         private final Set<String> types;
         private final Map<String,MethodShape> methods;
         private final Map<String,String> fields;
+        private final Layout layout;
         private ApiShape(ApiReader api)throws IOException {
+            layout=api.layout;
             assemblyName=api.assemblyName();assemblyVersion=api.layout.basic.assemblyVersion;
             runtimeVersion=api.layout.basic.runtimeVersion;
             types=Collections.unmodifiableSet(new HashSet<String>(api.topTypes));
@@ -173,6 +185,46 @@ public final class LicenseRecoverReadOnlyPeMetadata {
             return methods.containsKey(methodKey(owner,name,result,parameters));
         }
         public boolean hasField(String owner,String name,String type){return type!=null&&type.equals(fields.get(owner+"\0"+name));}
+        /** Whole constant bodies or exact local-reference null/false bodies; never a tail heuristic. */
+        public BooleanBodyShape booleanBodyShape(String owner,String name,String... parameters)throws IOException {
+            MethodShape method=methods.get(methodKey(owner,name,"System.Boolean",parameters));
+            if(method==null||method.rva==0
+                    ||(method.flags&(0x8|0x400|0x2000))!=0||(method.implFlags&~0x48)!=0
+                    ||(layout.cliFlags&1)==0||(layout.cliFlags&0x10)!=0
+                    ||layout.nativeHeader!=0||layout.nativeHeaderSize!=0)return BooleanBodyShape.UNASSESSED;
+            if((layout.cliFlags&~0x3000bL)!=0)return BooleanBodyShape.UNASSESSED;
+            for(String parameter:parameters)if(parameter.endsWith("&")) {
+                String type=parameter.substring(0,parameter.length()-1);
+                if(!types.contains(type)||!parameter.equals(method.localClassReferenceParameter))return BooleanBodyShape.UNASSESSED;
+            }
+            Reader r=layout.reader;long start=map(layout.sections,method.rva,1),headerSize,codeSize;int maxStack=8;
+            int first=r.u8(start);
+            if((first&3)==2){headerSize=1;codeSize=first>>>2;}
+            else if((first&3)==3) {
+                if((method.rva&3)!=0)return BooleanBodyShape.UNASSESSED;
+                long header=map(layout.sections,method.rva,12);int flags=r.u16(header);
+                headerSize=(flags>>>12)*4;codeSize=r.u32(header+4);maxStack=r.u16(header+2);
+                if(headerSize<12)throw bad();
+                // Unknown extensions, EH, locals and nonstandard fat headers remain unassessed.
+                if(headerSize!=12||(flags&0x0fff)!=3&&(flags&0x0fff)!=0x13
+                        ||maxStack<1||r.u32(header+8)!=0)return BooleanBodyShape.UNASSESSED;
+            } else return BooleanBodyShape.UNASSESSED;
+            long complete=headerSize+codeSize;
+            map(layout.sections,method.rva,complete);r.range(start,complete);
+            if(overlap(start,complete,layout.cli,layout.cliSize)
+                    ||overlap(start,complete,layout.metadata,layout.metadataSize))throw bad();
+            if(codeSize==5&&"CheckNet".equals(name)&&parameters.length==1&&maxStack>=2
+                    &&parameters[0].equals(method.localClassReferenceParameter)
+                    &&r.u8(start+headerSize)==(method.instance?0x03:0x02)
+                    &&r.u8(start+headerSize+1)==0x14&&r.u8(start+headerSize+2)==0x51
+                    &&r.u8(start+headerSize+3)==0x16&&r.u8(start+headerSize+4)==0x2a)
+                return BooleanBodyShape.BYREF_NULL_FALSE;
+            if(codeSize!=2||!method.instance)return BooleanBodyShape.UNASSESSED;
+            int value=r.u8(start+headerSize),end=r.u8(start+headerSize+1);
+            if(end!=0x2a)return BooleanBodyShape.UNASSESSED;
+            return value==0x16?BooleanBodyShape.CONSTANT_FALSE:value==0x17
+                    ?BooleanBodyShape.CONSTANT_TRUE:BooleanBodyShape.UNASSESSED;
+        }
         private boolean property(String owner,String name,String type) {
             return hasField(owner,name,type)||(hasMethod(owner,"get_"+name,type)
                     &&hasMethod(owner,"set_"+name,"System.Void",type));
@@ -196,7 +248,11 @@ public final class LicenseRecoverReadOnlyPeMetadata {
     }
     private static final class MethodShape {
         final boolean instance;final Set<String> localTypes;
-        MethodShape(boolean instance,Set<String> refs){this.instance=instance;localTypes=new HashSet<String>(refs);}
+        final long rva;final int flags,implFlags;final String localClassReferenceParameter;
+        MethodShape(boolean instance,Set<String> refs,long rva,int flags,int implFlags,String localClassReferenceParameter){
+            this.instance=instance;localTypes=new HashSet<String>(refs);this.rva=rva;this.flags=flags;this.implFlags=implFlags;
+            this.localClassReferenceParameter=localClassReferenceParameter;
+        }
     }
     private static final class ApiReader {
         final Layout layout;final Reader r;final long[] rows=new long[64],starts=new long[64];
@@ -267,9 +323,25 @@ public final class LicenseRecoverReadOnlyPeMetadata {
                     if(parsed.generic||parsed.convention!=0)continue;
                     String key=signatureText(owner+"\0"+name+"\0",parsed);
                     budget.nodes(signature.localTypes.size());
-                    if(methods.put(key,new MethodShape(parsed.instance,signature.localTypes))!=null)throw new IOException("ambiguous-cli-api-method");
+                    String localReference=localClassReference(row,raw,parsed);
+                    if(methods.put(key,new MethodShape(parsed.instance,signature.localTypes,r.u32(row),r.u16(row+6),r.u16(row+4),localReference))!=null)
+                        throw new IOException("ambiguous-cli-api-method");
                 }
             }
+        }
+        /** Exact bool(class TypeDef&) signature, not a same-name external or value-type reference. */
+        private String localClassReference(long row,byte[] raw,MethodSignature method)throws IOException {
+            if(raw.length<6||raw[0]!=(method.instance?0x20:0)||raw[1]!=1||raw[2]!=2||raw[3]!=0x10||raw[4]!=0x12)return null;
+            Blob strict=blob(index(row+8+si,bi));strict.p+=5;long token=strict.number();strict.end();
+            if((token&3)!=0)return null;long id=token>>>2;
+            if(id<1||id>=typeNames.length||nested[(int)id])return null;
+            long definition=offset(2,id);if((r.u32(definition)&0x20)!=0)return null;
+            long parent=index(definition+4+2L*si,coded(rows,2,2,1,27));
+            if(parent!=0) {
+                String base=type(parent,0,new HashSet<String>());
+                if("System.ValueType".equals(base)||"System.Enum".equals(base))return null;
+            }
+            return compose(typeNames[(int)id],"&");
         }
         private static String signatureKey(byte[] b){return java.util.Base64.getEncoder().encodeToString(b);}
         String assemblyName()throws IOException {

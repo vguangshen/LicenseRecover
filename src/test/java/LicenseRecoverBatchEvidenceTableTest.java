@@ -27,7 +27,7 @@ public final class LicenseRecoverBatchEvidenceTableTest {
             try { inspectTable(args); }
             catch (Exception failure) { throw new RuntimeException(failure); }
         });
-        System.out.println("PASS: evidence columns, sorted rows, tooltips and distinct native/Patch/entry colors");
+        System.out.println("PASS: common green preserves distinct proof labels; sorted code evidence, reasons and tooltips");
     }
 
     private static void inspectTable(String[] args) throws Exception {
@@ -45,9 +45,8 @@ public final class LicenseRecoverBatchEvidenceTableTest {
         JPanel results = (JPanel) ((java.awt.BorderLayout) panel.getLayout())
                 .getLayoutComponent(java.awt.BorderLayout.CENTER);
         javax.swing.JLabel legend = (javax.swing.JLabel) results.getComponent(1);
-        check(legend.getText().contains("深绿=原生有效")
-                        && legend.getText().contains("浅绿=确认 Patch")
-                        && legend.getText().contains("蓝色=当前入口通过")
+        check(legend.getText().contains("绿色=已审入口通过 / 原生有效 / 确认 Patch")
+                        && legend.getText().contains("以文字证据细分")
                         && legend.getText().contains("白色=原生无效")
                         && legend.getText().contains("琥珀=入口拒绝"),
                 "visible legend must agree with independent evidence categories");
@@ -56,8 +55,10 @@ public final class LicenseRecoverBatchEvidenceTableTest {
         JTable table = (JTable) field.get(gui);
         DefaultTableModel model = (DefaultTableModel) table.getModel();
         check(table.convertColumnIndexToModel(2) == 8, "authorization state must immediately follow application");
-        check(table.convertColumnIndexToModel(3) == 9, "detection reason must immediately follow authorization state");
-        check("授权状态".equals(table.getColumnName(2)) && "检测原因".equals(table.getColumnName(3)),
+        check(table.convertColumnIndexToModel(3) == 12 && table.convertColumnIndexToModel(4) == 9,
+                "code evidence and reason must immediately follow authorization state");
+        check("授权状态".equals(table.getColumnName(2)) && "代码证据".equals(table.getColumnName(3))
+                        && "检测原因".equals(table.getColumnName(4)),
                 "visible column headers must describe evidence");
         check("授权状态".equals(model.getColumnName(8)) && "检测原因".equals(model.getColumnName(9)),
                 "inspection model indices must remain compatible");
@@ -75,38 +76,41 @@ public final class LicenseRecoverBatchEvidenceTableTest {
         };
         String[] names = {"Z-native", "A-entry", "B-patch", "C-invalid", "D-unknown", "E-error", "F-entry-rejected"};
         for (int i = 0; i < statuses.length; i++) {
-            Object[] row = new Object[12];
+            Object[] row = new Object[13];
             java.util.Arrays.fill(row, "—");
             row[0] = Boolean.FALSE; row[1] = names[i]; row[8] = statuses[i];
             row[9] = "synthetic-current-evidence-" + i;
+            row[12] = "synthetic-code-evidence-"+i;
             model.addRow(row);
         }
         table.getRowSorter().setSortKeys(Collections.singletonList(new RowSorter.SortKey(1, SortOrder.ASCENDING)));
         table.setSize(1120, 300);
         table.doLayout();
         Color nativeGreen = color(table, 0, 2);
-        Color acceptedBlue = color(table, 1, 2);
+        Color acceptedGreen = color(table, 1, 2);
         Color patchGreen = color(table, 2, 2);
         check(new Color(22, 94, 58).equals(nativeGreen), "native valid must be dark green");
         check(new Color(205, 239, 210).equals(patchGreen), "reviewed Patch must be light green");
-        check(new Color(220, 235, 252).equals(acceptedBlue), "audited entry acceptance must be blue");
-        check(!nativeGreen.equals(patchGreen) && !nativeGreen.equals(acceptedBlue)
-                        && !patchGreen.equals(acceptedBlue), "distinct evidence must not share one green");
+        check(new Color(205, 239, 210).equals(acceptedGreen), "user-selected green represents audited acceptance");
+        check(!nativeGreen.equals(patchGreen) && acceptedGreen.equals(patchGreen),
+                "common green presentation must not change the distinct evidence labels");
+        check(!statuses[1].equals(statuses[2])&&statuses[1].contains("来源未确认"),
+                "green entry must never be mislabeled as confirmed Patch");
         check(Color.WHITE.equals(color(table, 3, 2)), "verified native invalid remains white");
         check(new Color(241, 243, 246).equals(color(table, 4, 2)), "unknown evidence remains gray");
         check(new Color(165, 45, 45).equals(color(table, 5, 2)), "read error remains red");
         check(new Color(255, 244, 214).equals(color(table, 6, 2)),
                 "audited entry rejection is amber, not native-invalid white");
-        check(acceptedBlue.equals(color(table, 1, 0)), "checkbox uses the sorted row's evidence color");
+        check(acceptedGreen.equals(color(table, 1, 0)), "checkbox uses the sorted row's evidence color");
         int acceptedViewRow = table.convertRowIndexToView(1);
         table.setRowSelectionInterval(acceptedViewRow, acceptedViewRow);
-        check(acceptedBlue.equals(color(table, 1, 2)), "selection must not conceal evidence colors");
+        check(acceptedGreen.equals(color(table, 1, 2)), "selection must not conceal evidence colors");
         java.awt.Rectangle cell = table.getCellRect(acceptedViewRow, 2, true);
         check(cell.x < 250, "authorization state starts inside the first viewport");
         String tooltip = table.getToolTipText(new MouseEvent(table, MouseEvent.MOUSE_MOVED,
                 System.currentTimeMillis(), 0, cell.x + 2, cell.y + 2, 0, false));
         check(tooltip.contains("当前授权入口判定通过") && tooltip.contains("不证明原生许可证有效")
-                        && tooltip.contains("synthetic-current-evidence-1"),
+                        && tooltip.contains("synthetic-current-evidence-1")&&tooltip.contains("synthetic-code-evidence-1"),
                 "sorted acceptance tooltip must include precise scope and current detection reason");
         if (args.length == 1) {
             // A real displayed JTable installs its header from addNotify(). This

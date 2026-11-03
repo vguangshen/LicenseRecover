@@ -20,6 +20,8 @@ public final class LicenseRecoverReadOnlyInspection {
 
     public static final class Result {
         public final String name, version, runtime, method, evidenceSource, reason, nativeVerifierSafety;
+        public final String codeComparisonEvidence, acceptanceEvidence;
+        public final LicenseRecoverReadOnlyCodeEvidence codeEvidence;
         public final boolean inspectionReadOnlyAudited = true;
         public final boolean nativeVerifierReadOnlyAudited = false;
         public final boolean acceptanceVerifierReadOnlyAudited = true;
@@ -32,25 +34,37 @@ public final class LicenseRecoverReadOnlyInspection {
         }
         Result(File root, String version, String runtime, LicenseRecoverLicenseState state,
                List<Artifact> artifacts, String reason,LicenseRecoverReadOnlyDotNetCatalog.Assessment protocol) {
+            this(root,version,runtime,state,artifacts,reason,protocol,
+                    LicenseRecoverReadOnlyCodeEvidence.unassessed("没有取得独立代码结构证据"),state.evidence,
+                    state.acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED?"当前授权入口尚未获得独立证明":state.evidence);
+        }
+        Result(File root,String version,String runtime,LicenseRecoverLicenseState state,List<Artifact> artifacts,
+               String reason,LicenseRecoverReadOnlyDotNetCatalog.Assessment protocol,
+               LicenseRecoverReadOnlyCodeEvidence codeEvidence,String codeComparisonEvidence,String acceptanceEvidence) {
             this.protocol=protocol;
+            this.codeEvidence=codeEvidence;this.codeComparisonEvidence=codeComparisonEvidence;this.acceptanceEvidence=acceptanceEvidence;
             this.name = root.getName(); this.version = canonicalVersion(version);
             this.runtime = runtime; this.state = state;
-            this.method = state.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_REJECTED
+            String authorizationMethod = state.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_REJECTED
                     ? "audited-authorization-rejection" : state.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE
                     ? ("DOTNET".equals(runtime) ? "audited-local-positive-predicate"
                         : (state.localCondition==LicenseRecoverLicenseState.LocalCondition.SATISFIED
                             ? "audited-java-local-positive-predicate" : "audited-static-authorization-gate"))
                     : (state.localCondition==LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED
-                        ? "file-only-sha256+format+reviewed-pair+audited-acceptance" : "audited-local-diagnostic");
+                        ? "file-observation+available-audit-profiles" : "audited-local-diagnostic");
+            this.method=state.codeIntegrity==LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED
+                    ||state.codeIntegrity==LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL
+                    ?"reviewed-complete-code-profile; "+authorizationMethod:authorizationMethod;
             this.evidenceSource = state.acceptance != LicenseRecoverLicenseState.Acceptance.UNVERIFIED
                     ? "audited-current-code; current-inputs; independent-read-only-predicate"
                     : "current-files; compiled-reviewed-registry; audited-acceptance-profiles";
-            this.reason = reason;
+            this.reason = reason+"；代码比对："+codeComparisonEvidence;
             this.nativeVerifierSafety = LicenseRecoverReadOnlyVerifierSafety.rejection(artifacts);
             this.artifacts = Collections.unmodifiableList(new ArrayList<Artifact>(artifacts));
         }
         public String summary() {
-            return reason + "；方法=" + method + "；组件=" + artifacts.size()
+            return reason + "；代码证据="+codeEvidence.summary()
+                    +"；方法=" + method + "；组件=" + artifacts.size()
                     +(protocol==null?"":"；协议识别="+protocol.summary())
                     + "；独立只读判定=" + (state.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE ? "通过"
                         : state.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_REJECTED ? "明确拒绝" : "未确认")
@@ -69,6 +83,11 @@ public final class LicenseRecoverReadOnlyInspection {
             pair(b,"compatibilityFamily",protocol==null?("DOTNET".equals(runtime)?"UNKNOWN":"not-applicable"):protocol.compatibilityFamily.name());
             b.append("\"protocolBindingAudited\":").append(protocol!=null&&protocol.auditedBinding).append(',');
             pair(b,"method",method); pair(b,"evidenceSource",evidenceSource); pair(b,"reason",reason);
+            pair(b,"codeBehavior",codeEvidence.behavior.name());pair(b,"registrationComponent",codeEvidence.component.name());
+            pair(b,"codeEvidenceLabel",codeEvidence.display());pair(b,"codeBehaviorEvidence",codeEvidence.behaviorEvidence);
+            pair(b,"componentEvidence",codeEvidence.componentEvidence);pair(b,"codeEvidenceSource",codeEvidence.evidenceSource);
+            pair(b,"codeComparisonEvidence",codeComparisonEvidence);pair(b,"acceptanceEvidence",acceptanceEvidence);
+            b.append("\"codeInspectionReadOnlyAudited\":true,");
             pair(b,"nativeVerifierSafety",nativeVerifierSafety);
             b.append("\"inspectionReadOnlyAudited\":true,\"nativeVerifierReadOnlyAudited\":false,\"acceptanceVerifierReadOnlyAudited\":true,\"artifacts\":[");
             for (int i=0;i<artifacts.size();i++) {
@@ -91,7 +110,7 @@ public final class LicenseRecoverReadOnlyInspection {
         String version = app.type == AppInfo.Type.JAVA
                 ? AppDetector.readJavaSoftVersion(app.appRoot) : AppDetector.readDotNetSoftVersion(dir);
         return inspect(app.appRoot, dir, runtime, version,
-                LicenseRecoverReadOnlyPatchScanner.scan(dir, runtime, version));
+                LicenseRecoverReadOnlyPatchScanner.scanApplication(app.appRoot, runtime, version));
     }
 
     /** Shared GUI seam: existing detector metadata remains separate from license evidence. */
@@ -99,6 +118,8 @@ public final class LicenseRecoverReadOnlyInspection {
                           String version, LicenseRecoverLicenseState codeState) {
         List<Artifact> artifacts = new ArrayList<Artifact>();
         LicenseRecoverLicenseState state = codeState;
+        String codeComparisonEvidence=codeState.evidence,acceptanceEvidence="当前授权入口尚未获得独立证明";
+        LicenseRecoverReadOnlyCodeEvidence codeEvidence=LicenseRecoverReadOnlyCodeEvidence.unassessed("当前组件尚无代码结构对照");
         LicenseRecoverReadOnlyDotNetCatalog.Assessment protocol=null;
         String reason = codeState.evidence + "；"
                 + (runtime == LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA
@@ -122,6 +143,12 @@ public final class LicenseRecoverReadOnlyInspection {
                     catch(NoSuchFileException missing) { /* Optional registration assembly variant. */ }
                 }
             }
+            for(String relative:LicenseRecoverReadOnlyPatchScanner.applicationArtifactPaths(runtime,version)) {
+                Path p=root.toPath().toAbsolutePath().normalize().resolve(relative).normalize();
+                try {Files.readAttributes(p,BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS);}
+                catch(NoSuchFileException absentVariant){continue;}
+                if(!paths.contains(p))paths.add(p);
+            }
             Collections.sort(paths);
             List<Path> independent = new ArrayList<Path>();
             for(Path p:paths) {
@@ -138,7 +165,8 @@ public final class LicenseRecoverReadOnlyInspection {
             }
             // Tie the state to the observations, not to a scan made before collection.
             // Recheck the reviewed set, then ensure our observed bytes still agree.
-            LicenseRecoverLicenseState current = LicenseRecoverReadOnlyPatchScanner.scan(dir,runtime,version);
+            LicenseRecoverLicenseState current = LicenseRecoverReadOnlyPatchScanner.scanApplication(root,runtime,version);
+            codeComparisonEvidence=current.evidence;
             if(current.isScanError()) {state=current;reason=current.evidence;}
             else if(!sameCodeEvidence(codeState,current))throw new Changed();
             else state=current;
@@ -154,35 +182,50 @@ public final class LicenseRecoverReadOnlyInspection {
             reason=state.evidence; // Never expose paths, configuration or exception messages.
         }
         if(!state.isScanError()) {
+            LicenseRecoverLicenseState observedCode=state;
             LicenseRecoverLicenseState accepted;
             if(runtime==LicenseRecoverReadOnlyPatchScanner.Runtime.DOTNET) {
                 LicenseRecoverReadOnlyDotNetScanner.Result scan=LicenseRecoverReadOnlyDotNetScanner.inspect(root);
-                accepted=scan.state;protocol=scan.protocol;
-            } else accepted=LicenseRecoverReadOnlyJavaScanner.scan(root);
+                accepted=scan.state;protocol=scan.protocol;codeEvidence=scan.codeEvidence;
+            } else {
+                LicenseRecoverReadOnlyJavaScanner.Result scan=LicenseRecoverReadOnlyJavaScanner.inspect(root);
+                accepted=scan.state;codeEvidence=scan.codeEvidence;
+            }
+            acceptanceEvidence=accepted.evidence;
             if(accepted.isScanError()) {state=accepted;reason=accepted.evidence;}
-            else if(accepted.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED) {
+            else {
                 try {
-                    // Bind the accepted result back to the same observed registration artifacts.
+                    // Every channel must still refer to the same observed code, including class targets.
                     for(Artifact first:artifacts) {
                         Artifact last=readArtifact(root,root.toPath().resolve(first.path),runtime);
                         if(!first.sha256.equals(last.sha256)||first.size!=last.size||!first.format.equals(last.format))
                             throw new Changed();
                     }
-                    state=LicenseRecoverLicenseState.combineAcceptance(accepted,state);
+                    if(!componentReceiptsMatch(codeEvidence,artifacts))throw new Changed();
+                    LicenseRecoverLicenseState finalCode=LicenseRecoverReadOnlyPatchScanner.scanApplication(root,runtime,version);
+                    if(!sameCodeEvidence(observedCode,finalCode))throw new Changed();
+                    codeComparisonEvidence=finalCode.evidence;
+                    if(accepted.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED)
+                        state=LicenseRecoverLicenseState.combineAcceptance(accepted,finalCode);
+                    else if(accepted.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED)
+                        state=LicenseRecoverLicenseState.combineLocalObservation(accepted,finalCode);
+                    else state=finalCode;
                     reason=accepted.evidence;
                 } catch(Changed | NoSuchFileException ex) {
                     protocol=null;
+                    codeEvidence=LicenseRecoverReadOnlyCodeEvidence.unassessed("代码证据读取期间变化，已撤销原结构结论");
                     state=LicenseRecoverLicenseState.unverified("接受条件与文件观测不再一致；扫描期间文件发生变化");reason=state.evidence;
+                    codeComparisonEvidence=acceptanceEvidence=state.evidence;
                 } catch(IOException | java.security.GeneralSecurityException | SecurityException ex) {
                     protocol=null;
+                    codeEvidence=LicenseRecoverReadOnlyCodeEvidence.unassessed("最终代码复核失败，未保留结构结论");
                     state=LicenseRecoverLicenseState.scanError("接受条件最终文件复核失败: "+ex.getClass().getSimpleName());reason=state.evidence;
+                    codeComparisonEvidence=acceptanceEvidence=state.evidence;
                 }
-            } else if(accepted.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED) {
-                state=LicenseRecoverLicenseState.combineLocalObservation(accepted,state);
-                reason=accepted.evidence;
-            } else reason=accepted.evidence+"；"+reason;
+            }
         }
-        return new Result(root,version,runtime.name(),state,artifacts,reason,protocol);
+        if(state.isScanError())codeEvidence=LicenseRecoverReadOnlyCodeEvidence.unassessed("扫描失败，代码结构证据未确认");
+        return new Result(root,version,runtime.name(),state,artifacts,reason,protocol,codeEvidence,codeComparisonEvidence,acceptanceEvidence);
     }
 
     /** Compatibility seam for source-level regression fixtures. */
@@ -196,6 +239,15 @@ public final class LicenseRecoverReadOnlyInspection {
                 && first.acceptance==last.acceptance
                 && first.localCondition==last.localCondition
                 && first.source.equals(last.source) && first.evidence.equals(last.evidence);
+    }
+    static boolean componentReceiptsMatch(LicenseRecoverReadOnlyCodeEvidence code,List<Artifact> artifacts) {
+        if(code.component!=LicenseRecoverReadOnlyCodeEvidence.Component.UNASSESSED&&code.componentHashes.isEmpty())return false;
+        for(Map.Entry<String,String> receipt:code.componentHashes.entrySet()) {
+            boolean match=false;for(Artifact artifact:artifacts)
+                if(receipt.getKey().equals(artifact.path)&&receipt.getValue().equals(artifact.sha256)){match=true;break;}
+            if(!match)return false;
+        }
+        return true;
     }
 
     private static final class Changed extends IOException { }
@@ -217,7 +269,9 @@ public final class LicenseRecoverReadOnlyInspection {
             byte[] buffer=new byte[65536]; int n; long count=0;
             while((n=in.read(buffer))!=-1) {count+=n;if(count>MAX_ARTIFACT)throw new IOException("artifact-limit");sha.update(buffer,0,n);}
         }
-        String format=runtime==LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA?jarFormat(p):peFormat(p);
+        String name=p.getFileName().toString().toLowerCase(Locale.ROOT);
+        String format=name.endsWith(".jar")?jarFormat(p):name.endsWith(".class")?classFormat(p)
+                :name.endsWith(".dll")||name.endsWith(".exe")?peFormat(p):"reviewed-fixed-input; hash-only";
         BasicFileAttributes after=Files.readAttributes(p,BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS);
         if(before.size()!=after.size()||!before.lastModifiedTime().equals(after.lastModifiedTime())
                 ||!Objects.equals(before.fileKey(),after.fileKey()))throw new Changed();
@@ -246,6 +300,13 @@ public final class LicenseRecoverReadOnlyInspection {
         if(count==0)throw new IOException("no-class-evidence");
         return "JAR/class-major-max="+max+"; minimum-Java="+(max<=48?"1."+(max-44):String.valueOf(max-44))
                 +"; classes="+count+"; header-only";
+    }
+    private static String classFormat(Path p)throws IOException {
+        try(DataInputStream in=new DataInputStream(Files.newInputStream(p,StandardOpenOption.READ,LinkOption.NOFOLLOW_LINKS))) {
+            if(in.readInt()!=0xcafebabe)throw new IOException("class-header");
+            in.readUnsignedShort();int major=in.readUnsignedShort();if(major<45||major>100)throw new IOException("class-version");
+            return "class-major="+major+"; header-only";
+        }
     }
     /** PE signature is structural evidence only, never a claim of a loadable CLR assembly. */
     private static String peFormat(Path p) throws IOException {
