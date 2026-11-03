@@ -98,6 +98,7 @@ public final class LicenseRecoverReadOnlyInspection {
     static Result inspect(File root, File dir, LicenseRecoverReadOnlyPatchScanner.Runtime runtime,
                           String version, LicenseRecoverLicenseState codeState) {
         List<Artifact> artifacts = new ArrayList<Artifact>();
+        boolean artifactsStable = false;
         LicenseRecoverLicenseState state = codeState;
         LicenseRecoverReadOnlyDotNetCatalog.Assessment protocol=null;
         String reason = codeState.evidence + "；"
@@ -146,6 +147,7 @@ public final class LicenseRecoverReadOnlyInspection {
                 Artifact currentArtifact=readArtifact(root,paths.get(i),runtime);
                 if(!currentArtifact.sha256.equals(artifacts.get(i).sha256))throw new Changed();
             }
+            artifactsStable = true;
         } catch (Changed | NoSuchFileException e) {
             state=LicenseRecoverLicenseState.unverified("扫描期间文件缺失或变化；不能确认当前状态");
             reason=state.evidence;
@@ -153,7 +155,7 @@ public final class LicenseRecoverReadOnlyInspection {
             state=LicenseRecoverLicenseState.scanError("组件只读检查失败: "+e.getClass().getSimpleName());
             reason=state.evidence; // Never expose paths, configuration or exception messages.
         }
-        if(!state.isScanError()) {
+        if(canEvaluateAcceptance(artifactsStable,state)) {
             LicenseRecoverLicenseState accepted;
             if(runtime==LicenseRecoverReadOnlyPatchScanner.Runtime.DOTNET) {
                 LicenseRecoverReadOnlyDotNetScanner.Result scan=LicenseRecoverReadOnlyDotNetScanner.inspect(root);
@@ -183,6 +185,11 @@ public final class LicenseRecoverReadOnlyInspection {
             } else reason=accepted.evidence+"；"+reason;
         }
         return new Result(root,version,runtime.name(),state,artifacts,reason,protocol);
+    }
+
+    /** Failed or incomplete artifact observations must never be promoted by a later predicate. */
+    static boolean canEvaluateAcceptance(boolean artifactsStable,LicenseRecoverLicenseState state) {
+        return artifactsStable && state!=null && !state.isScanError();
     }
 
     /** Compatibility seam for source-level regression fixtures. */
