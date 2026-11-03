@@ -1,3 +1,10 @@
+## 1.2.72 - 2026-11-03
+
+- Restore the user's shared green presentation for audited entry acceptance, retaining distinct native/Patch facts and explicit labels. Add a visible code-evidence column beside license status.
+- Scan reviewed code profiles from application roots, including Java class files, JARs, .NET DLLs and fixed startup bindings. Group alternatives by build and patch recipe instead of conflating every product-mode record into one required set; retain two-pass identity and complete-set checks.
+- Report component reference matches, audited static gate bypass and exact CIL replacement candidates independently. Preserve missing Patch-baseline reasons even when the authorization entry passes; bind component receipts back to the final artifact observation.
+- The real original/Patch pair catalog remains empty. The user confirmed DS0101/DS0105 have not used method three; their successful local authorization checks do not establish code Patch provenance.
+
 ## 1.2.71 - 2026-11-03
 
 - Preserve evidence categories: native-valid dark green, confirmed Patch light green, scoped entry acceptance blue, native-invalid white, entry rejection amber, unverified gray and scan error red. Keep the remote WMIC process-failure guard and its regression coverage.

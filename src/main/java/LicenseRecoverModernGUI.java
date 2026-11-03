@@ -71,8 +71,9 @@ public final class LicenseRecoverModernGUI {
     private static final int BATCH_COL_LICENSE_STATE = 8;
     private static final int BATCH_COL_VERIFY = 9;
     private static final int BATCH_COL_STATUS = 10;
+    private static final int BATCH_COL_CODE_EVIDENCE = 12;
     private final DefaultTableModel batchModel = new DefaultTableModel(
-            new String[]{"执行", "应用", "类型 / 授权代际", "SoftVersionID", "授权族", "运行校验ID", "RegStr", "配置目标", "授权状态", "检测原因", "状态", "路径"}, 0) {
+            new String[]{"执行", "应用", "类型 / 授权代际", "SoftVersionID", "授权族", "运行校验ID", "RegStr", "配置目标", "授权状态", "检测原因", "状态", "路径", "代码证据"}, 0) {
         public boolean isCellEditable(int row, int column) { return column == BATCH_COL_SELECTED && (batchWorker == null || batchWorker.isDone()); }
         public Class<?> getColumnClass(int column) { return column == BATCH_COL_SELECTED ? Boolean.class : String.class; }
     };
@@ -101,7 +102,8 @@ public final class LicenseRecoverModernGUI {
             else if(state.startsWith("本地")||state.startsWith("无本地"))
                 meaning = "已确认当前本地分支的具体情况；联网、硬件狗或其他授权路径尚未得出最终结论";
             else meaning = "当前证据不足；未验证不代表未激活";
-            String tooltip=meaning+"；检测原因："+reason;
+            String code=String.valueOf(getModel().getValueAt(modelRow,BATCH_COL_CODE_EVIDENCE));
+            String tooltip=meaning+"；代码证据："+code+"；检测原因："+reason;
             return "<html><div style='width:680px'>"+tooltip.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")+"</div></html>";
         }
     };
@@ -161,7 +163,7 @@ public final class LicenseRecoverModernGUI {
         static BatchScanInspection failed(File child, String reason) {
             return new BatchScanInspection(BatchTarget.skipped(child.getName()),
                     new Object[]{child.getName(), "检测未完成", "—", "—", "—", "—", "—",
-                            "检测失败", reason, "—", child.getAbsolutePath()}, 0, 0, 1, reason);
+                            "检测失败", reason, "—", child.getAbsolutePath(), "代码证据待核"}, 0, 0, 1, reason);
         }
     }
 
@@ -472,12 +474,13 @@ public final class LicenseRecoverModernGUI {
         batchTable.getColumnModel().getColumn(BATCH_COL_SELECTED).setMaxWidth(65);
         batchTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         batchTable.setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
-        int[] widths = new int[]{52, 120, 170, 105, 95, 115, 180, 200, 210, 460, 85, 320};
+        int[] widths = new int[]{52, 120, 170, 105, 95, 115, 180, 200, 210, 460, 85, 320, 260};
         for (int i = 0; i < widths.length; i++) batchTable.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
         // Change only the presentation order. Inspection rows, background updates
         // and recovery selection continue to use the stable model-column indices.
         batchTable.moveColumn(batchTable.convertColumnIndexToView(BATCH_COL_LICENSE_STATE), 2);
-        batchTable.moveColumn(batchTable.convertColumnIndexToView(BATCH_COL_VERIFY), 3);
+        batchTable.moveColumn(batchTable.convertColumnIndexToView(BATCH_COL_CODE_EVIDENCE), 3);
+        batchTable.moveColumn(batchTable.convertColumnIndexToView(BATCH_COL_VERIFY), 4);
         // Color is driven by current evidence, never by historical tool operations.
         batchTable.setDefaultRenderer(String.class, new DefaultTableCellRenderer() {
             @Override public Component getTableCellRendererComponent(JTable table, Object value,
@@ -497,7 +500,7 @@ public final class LicenseRecoverModernGUI {
         });
         JPanel results = new JPanel(new BorderLayout(0, 5));
         results.add(new JScrollPane(batchTable), BorderLayout.CENTER);
-        JLabel legend = new JLabel("深绿=原生有效   浅绿=确认 Patch   蓝色=当前入口通过   白色=原生无效   琥珀=入口拒绝   灰色=未验证   红色=检测错误");
+        JLabel legend = new JLabel("绿色=已审入口通过 / 原生有效 / 确认 Patch（以文字证据细分）   白色=原生无效   琥珀=入口拒绝   灰色=未验证   红色=检测错误");
         legend.setFont(legend.getFont().deriveFont(11f));
         legend.setBorder(new EmptyBorder(3, 7, 3, 7));
         results.add(legend, BorderLayout.SOUTH);
@@ -525,9 +528,9 @@ public final class LicenseRecoverModernGUI {
             background = new Color(205, 239, 210);
             foreground = new Color(20, 75, 37);
         } else if (visual == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE) {
-            // Scoped entry acceptance cannot be rendered as native-valid or confirmed Patch.
-            background = new Color(220, 235, 252);
-            foreground = new Color(24, 62, 112);
+            // User-selected common green presentation; labels and typed evidence remain distinct.
+            background = new Color(205, 239, 210);
+            foreground = new Color(20, 75, 37);
         } else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID) {
             background = Color.WHITE;
             foreground = Color.BLACK;
@@ -1017,7 +1020,7 @@ public final class LicenseRecoverModernGUI {
                             String statusText = !plan.detected ? "待识别"
                                     : (plan.automaticRecoveryReady ? "待处理" : "待确认");
                             LicenseRecoverLicenseState licenseState =
-                                    LicenseRecoverReadOnlyPatchScanner.scan(info.libDir,
+                                    LicenseRecoverReadOnlyPatchScanner.scanApplication(info.appRoot,
                                             LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, plan.softVersionId);
                             LicenseRecoverReadOnlyInspection.Result inspection = LicenseRecoverReadOnlyInspection.inspect(
                                     info.appRoot, info.libDir, LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA,
@@ -1038,7 +1041,7 @@ public final class LicenseRecoverModernGUI {
                                     plan.detected ? "Java / " + plan.generation : "Java",
                                     valueOrDash(plan.softVersionId), valueOrDash(plan.authorizationFamily),
                                     valueOrDash(plan.runtimeProductId), plan.regStrSummary(), plan.configTargets,
-                                    licenseState.display(), verifyText, statusText, info.appRoot.getAbsolutePath()};
+                                    licenseState.display(), verifyText, statusText, info.appRoot.getAbsolutePath(), inspection.codeEvidence.display()};
                             detectedCount = errorCount == 0 ? 1 : 0;
                         } else if (info.type == AppInfo.Type.DOTNET) {
                             target = BatchTarget.dotNetTarget(child.getName(), info.binDir);
@@ -1066,7 +1069,7 @@ public final class LicenseRecoverModernGUI {
                             if (knownDs0101DllPair)
                                 verify = "已识别 DS0101 双 DLL 精确 SHA-256（授权未验证）";
                             LicenseRecoverLicenseState licenseState =
-                                    LicenseRecoverReadOnlyPatchScanner.scan(info.binDir,
+                                    LicenseRecoverReadOnlyPatchScanner.scanApplication(info.appRoot,
                                             LicenseRecoverReadOnlyPatchScanner.Runtime.DOTNET, d.versionId);
                             LicenseRecoverReadOnlyInspection.Result inspection = LicenseRecoverReadOnlyInspection.inspect(
                                     info.appRoot, info.binDir, LicenseRecoverReadOnlyPatchScanner.Runtime.DOTNET,
@@ -1084,12 +1087,12 @@ public final class LicenseRecoverModernGUI {
                             cells = new Object[]{child.getName(), kind,
                                     valueOrDash(d.versionId), valueOrDash(d.productName), valueOrDash(d.productName),
                                     valueOrDash(dotNetRegStr), "config.xml", licenseState.display(), verify, dotNetStatus,
-                                    info.binDir.getAbsolutePath()};
+                                    info.binDir.getAbsolutePath(), inspection.codeEvidence.display()};
                             detectedCount = errorCount == 0 ? 1 : 0;
                         } else {
                             target = BatchTarget.skipped(child.getName());
                             cells = new Object[]{child.getName(), "—", "—", "—", "—", "—", "—", "未知", "—",
-                                    "未识别", child.getAbsolutePath()};
+                                    "未识别", child.getAbsolutePath(), "代码证据待核"};
                             skippedCount = 1;
                         }
                     } catch (Throwable ex) {
@@ -1099,7 +1102,7 @@ public final class LicenseRecoverModernGUI {
                         String reason = ex.getClass().getSimpleName()
                                 + (msg == null || msg.trim().isEmpty() ? "" : ": " + msg.trim());
                         cells = new Object[]{child.getName(), "检测异常", "—", "—", "—", "—", "—", "检测失败", reason,
-                                "检测异常", child.getAbsolutePath()};
+                                "检测异常", child.getAbsolutePath(), "代码证据待核"};
                         diagnostic = reason;
                     }
         return new BatchScanInspection(target, cells, detectedCount, skippedCount, errorCount, diagnostic);

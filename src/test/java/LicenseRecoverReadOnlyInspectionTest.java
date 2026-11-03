@@ -29,6 +29,10 @@ public final class LicenseRecoverReadOnlyInspectionTest {
             check(r.reason.contains("静态门槛〔")&&r.reason.contains("本地谓词〔")&&r.reason.contains("备用入口〔"),
                     "unknown Java inspection must retain all attempted strategy reasons");
             check(!r.toJson().contains("PRIVATE_SENTINEL")&&!r.toJson().contains(root.toString()),"no license values or absolute paths");
+            check(r.toJson().contains("\"codeComparisonEvidence\"")&&r.toJson().contains("\"acceptanceEvidence\"")
+                    &&r.toJson().contains("\"codeBehavior\":\"UNASSESSED\""),"independent code channels are explicit");
+            check(r.reason.contains(r.codeComparisonEvidence)&&!r.method.contains("reviewed-pair"),
+                    "missing Patch evidence remains visible without claiming a pair was matched");
             check(Arrays.equals(before,Files.readAllBytes(artifact)),"read-only artifact");
             jar(artifact,false);
             check(LicenseRecoverReadOnlyInspection.inspect(app.toFile()).state.isScanError(),"damaged class is scan error");
@@ -89,6 +93,17 @@ public final class LicenseRecoverReadOnlyInspectionTest {
                     "ef00e4751fcbc5ea6c100e4bbaf73f60094310d26c1894ca3906e70c73f45cfa","JAR",1));
             check(LicenseRecoverReadOnlyVerifierSafety.rejection(observed).startsWith("REJECTED_SIDE_EFFECTS"),
                     "observed unsafe hash denies execution without establishing original/Patch provenance");
+            LicenseRecoverReadOnlyCodeEvidence component=LicenseRecoverReadOnlyCodeEvidence.referenceComponent(
+                    "synthetic exact component", "synthetic-user-reference").bindComponents(
+                    java.util.Collections.singletonMap(observed.get(0).path,observed.get(0).sha256));
+            check(LicenseRecoverReadOnlyInspection.componentReceiptsMatch(component,observed),"current component receipt matches observation");
+            check(!LicenseRecoverReadOnlyInspection.componentReceiptsMatch(component,java.util.Collections.singletonList(
+                    new LicenseRecoverReadOnlyInspection.Artifact("ITMCReg.jar",String.join("",java.util.Collections.nCopies(64,"1")),"JAR",1))),
+                    "a stable but different outer observation cannot retain an earlier component proof");
+            boolean immutable=false;try {component.componentHashes.clear();}catch(UnsupportedOperationException expected){immutable=true;}
+            check(immutable,"component receipts must not change after validation");
+            check(LicenseRecoverReadOnlyCodeEvidence.staticBypass(component,"synthetic full gate proof","synthetic gate").componentHashes.equals(component.componentHashes),
+                    "full gate evidence preserves its independently bound component observation");
             System.out.println("PASS: file evidence, damaged/missing/unknown and privacy boundaries");
         } finally {
             try(java.util.stream.Stream<Path> paths=Files.walk(root)) {

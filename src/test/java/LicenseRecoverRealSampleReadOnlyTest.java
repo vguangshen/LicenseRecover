@@ -44,6 +44,10 @@ public final class LicenseRecoverRealSampleReadOnlyTest {
                     || LicenseRecoverLicenseState.visualStatus(String.valueOf(cells[7]))!=verdict.visual)
                 throw new AssertionError("GUI and current inspection disagree for "+child.getName());
             if(String.valueOf(cells[8]).trim().isEmpty())throw new AssertionError("missing detection reason for "+child.getName());
+            if(cells.length!=12||!current.codeEvidence.display().equals(String.valueOf(cells[11])))
+                throw new AssertionError("GUI and current code-evidence channel disagree for "+child.getName());
+            if(!String.valueOf(cells[8]).contains("代码比对："))
+                throw new AssertionError("GUI dropped the Patch comparison reason for "+child.getName());
             if(current.state.acceptance==LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE) {
                 accepted++;
                 if(current.state.authorization!=LicenseRecoverLicenseState.Authorization.UNVERIFIED

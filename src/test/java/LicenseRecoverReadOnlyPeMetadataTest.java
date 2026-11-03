@@ -36,6 +36,7 @@ public final class LicenseRecoverReadOnlyPeMetadataTest {
         invalid(null, "null input");
         apiChecks();
         apiBudgetChecks();
+        booleanBodyChecks();
         System.out.println("LicenseRecoverReadOnlyPeMetadataTest: " + checks + " checks passed");
     }
     private static void apiChecks()throws Exception {
@@ -103,6 +104,96 @@ public final class LicenseRecoverReadOnlyPeMetadataTest {
     private static void u32(ByteArrayOutputStream b,int value){u16(b,value);u16(b,value>>>16);}
     static byte[] apiFixtureBytes(boolean plus,String ns,boolean wrongOwner,boolean externalInfo)throws Exception {
         return apiFixture(plus,ns,wrongOwner,externalInfo).data.clone();
+    }
+    /** Owned synthetic methods with independently constructed PE32/PE32+ CIL bodies. */
+    static byte[] booleanBodyFixture(boolean plus,String ns,boolean wrongOwner,String name,boolean byref,boolean fat,int... code)throws Exception {
+        return booleanBodyFixture(plus,ns,wrongOwner,name,byref,fat,false,code);
+    }
+    static byte[] booleanBodyFixture(boolean plus,String ns,boolean wrongOwner,String name,boolean byref,boolean fat,boolean staticMethod,int... code)throws Exception {
+        ApiFixture f=apiFixture(plus,ns,wrongOwner,false);
+        installBooleanBody(f,fat,code);
+        int nameIndex=ByteBuffer.wrap(f.data).order(ByteOrder.LITTLE_ENDIAN).getShort(f.methodTable+8)&0xffff;
+        byte[] methodName=(name+"\0").getBytes(StandardCharsets.UTF_8);
+        if(methodName.length>12)throw new IllegalArgumentException("fixture method name");
+        System.arraycopy(methodName,0,f.data,f.stringStart+nameIndex,methodName.length);
+        int[] signature=byref?new int[]{0x20,1,2,0x10,0x12,12}:new int[]{0x20,0,2};
+        if(staticMethod){signature[0]=0;put16(f.data,f.methodTable+6,0x16);}
+        f.data[f.blobStart+64]=(byte)signature.length;
+        for(int i=0;i<signature.length;i++)f.data[f.blobStart+65+i]=(byte)signature[i];
+        put32(f.data,0x2c4,65+signature.length);put16(f.data,f.methodTable+10,64);
+        return f.data;
+    }
+    static byte[] externalRefBodyFixture()throws Exception {
+        ApiFixture f=apiFixture(false,"ITMC.Regedit",false,true);installBooleanBody(f,false,0x03,0x14,0x51,0x16,0x2a);
+        int name=ByteBuffer.wrap(f.data).order(ByteOrder.LITTLE_ENDIAN).getShort(f.methodTable+8)&0xffff;
+        byte[] bytes="CheckNet\0".getBytes(StandardCharsets.UTF_8);System.arraycopy(bytes,0,f.data,f.stringStart+name,bytes.length);
+        return f.data;
+    }
+    private static void installBooleanBody(ApiFixture f,boolean fat,int... code) {
+        put32(f.data,0x210,1);put32(f.data,f.methodTable,0x2b00);
+        int body=0xd00;
+        if(fat){put16(f.data,body,0x3003);put16(f.data,body+2,8);put32(f.data,body+4,code.length);put32(f.data,body+8,0);body+=12;}
+        else {if(code.length>63)throw new IllegalArgumentException("tiny fixture length");f.data[body++]=(byte)((code.length<<2)|2);}
+        for(int b:code)f.data[body++]=(byte)b;
+    }
+    private static void booleanBodyChecks()throws Exception {
+        String main="ITMC.Regedit.RegeditMain",info="ITMC.Regedit.RegeditInfo&";
+        for(boolean plus:new boolean[]{false,true})for(boolean fat:new boolean[]{false,true}) {
+            byte[] bytes=booleanBodyFixture(plus,"ITMC.Regedit",false,"CheckReInfo",true,fat,0x16,0x2a);
+            check(LicenseRecoverReadOnlyPeMetadata.parseApiShape(bytes).booleanBodyShape(main,"CheckReInfo",info)
+                    ==LicenseRecoverReadOnlyPeMetadata.BooleanBodyShape.CONSTANT_FALSE,"complete tiny/fat body false");
+            bytes=booleanBodyFixture(plus,"ITMC.Regedit",false,"CheckNet",false,fat,0x17,0x2a);
+            check(LicenseRecoverReadOnlyPeMetadata.parseApiShape(bytes).booleanBodyShape(main,"CheckNet")
+                    ==LicenseRecoverReadOnlyPeMetadata.BooleanBodyShape.CONSTANT_TRUE,"complete owned bool no-argument body true");
+            check(LicenseRecoverReadOnlyPeMetadata.parseApiShape(bytes).booleanBodyShape(main,"CheckNet",info)
+                    ==LicenseRecoverReadOnlyPeMetadata.BooleanBodyShape.UNASSESSED,"complete parameter signature is required");
+        }
+        byte[] bytes=booleanBodyFixture(false,"ITMC.Regedit",false,"CheckReInfo",true,false,0x17,0x26,0x16,0x2a);
+        check(LicenseRecoverReadOnlyPeMetadata.parseApiShape(bytes).booleanBodyShape(main,"CheckReInfo",info)
+                ==LicenseRecoverReadOnlyPeMetadata.BooleanBodyShape.UNASSESSED,"a false ending is not a complete constant body");
+        bytes=booleanBodyFixture(false,"ITMC.Regedit",false,"CheckReInfo",true,false,0x2b,0,0x16,0x2a);
+        check(LicenseRecoverReadOnlyPeMetadata.parseApiShape(bytes).booleanBodyShape(main,"CheckReInfo",info)
+                ==LicenseRecoverReadOnlyPeMetadata.BooleanBodyShape.UNASSESSED,"even simple branches are outside the supported exact shape");
+        ApiFixture f=apiFixture(false,"ITMC.Regedit",false,false);installBooleanBody(f,true,0x16,0x2a);
+        put16(f.data,0xd00,0x300b);
+        check(LicenseRecoverReadOnlyPeMetadata.parseApiShape(f.data).booleanBodyShape(main,"CheckReInfo",info)
+                ==LicenseRecoverReadOnlyPeMetadata.BooleanBodyShape.UNASSESSED,"EH or extra sections revoke the exact body observation");
+        installBooleanBody(f,true,0x16,0x2a);put32(f.data,0xd08,0x11000001);
+        check(LicenseRecoverReadOnlyPeMetadata.parseApiShape(f.data).booleanBodyShape(main,"CheckReInfo",info)
+                ==LicenseRecoverReadOnlyPeMetadata.BooleanBodyShape.UNASSESSED,"local signature bodies remain outside exact shape");
+        installBooleanBody(f,false,0x16,0x2a);put16(f.data,f.methodTable+4,3);
+        check(LicenseRecoverReadOnlyPeMetadata.parseApiShape(f.data).booleanBodyShape(main,"CheckReInfo",info)
+                ==LicenseRecoverReadOnlyPeMetadata.BooleanBodyShape.UNASSESSED,"runtime/protected method implementations are not CIL evidence");
+        f=apiFixture(false,"ITMC.Regedit",false,true);installBooleanBody(f,false,0x16,0x2a);
+        check(LicenseRecoverReadOnlyPeMetadata.parseApiShape(f.data).booleanBodyShape(main,"CheckReInfo",info)
+                ==LicenseRecoverReadOnlyPeMetadata.BooleanBodyShape.UNASSESSED,"external same-name ref parameter cannot establish local method identity");
+        f=apiFixture(false,"ITMC.Regedit",false,false);installBooleanBody(f,false,0x16,0x2a);
+        put32(f.data,f.methodTable,0xfffffff0L);
+        try{LicenseRecoverReadOnlyPeMetadata.parseApiShape(f.data).booleanBodyShape(main,"CheckReInfo",info);throw new AssertionError("unmapped body RVA");}
+        catch(IOException expected){checks++;}
+        f=apiFixture(false,"ITMC.Regedit",false,false);installBooleanBody(f,true,0x16,0x2a);put32(f.data,0xd04,0xffffffffL);
+        try{LicenseRecoverReadOnlyPeMetadata.parseApiShape(f.data).booleanBodyShape(main,"CheckReInfo",info);throw new AssertionError("overflow body extent");}
+        catch(IOException expected){checks++;}
+        for(boolean fat:new boolean[]{false,true})for(boolean stat:new boolean[]{false,true}) {
+            bytes=booleanBodyFixture(false,"ITMC.Regedit",false,"CheckNet",true,fat,stat,stat?0x02:0x03,0x14,0x51,0x16,0x2a);
+            check(LicenseRecoverReadOnlyPeMetadata.parseApiShape(bytes).booleanBodyShape(main,"CheckNet",info)
+                    ==LicenseRecoverReadOnlyPeMetadata.BooleanBodyShape.BYREF_NULL_FALSE,"tiny/fat exact local ref null false follows the declared argument index");
+            bytes=booleanBodyFixture(false,"ITMC.Regedit",false,"CheckNet",true,fat,stat,stat?0x03:0x02,0x14,0x51,0x16,0x2a);
+            check(LicenseRecoverReadOnlyPeMetadata.parseApiShape(bytes).booleanBodyShape(main,"CheckNet",info)
+                    ==LicenseRecoverReadOnlyPeMetadata.BooleanBodyShape.UNASSESSED,"wrong instance/static argument index does not match the replacement");
+        }
+        bytes=externalRefBodyFixture();
+        check(LicenseRecoverReadOnlyPeMetadata.parseApiShape(bytes).booleanBodyShape(main,"CheckNet",info)
+                ==LicenseRecoverReadOnlyPeMetadata.BooleanBodyShape.UNASSESSED,"same-named external class reference is not the owned local class");
+        bytes=booleanBodyFixture(false,"ITMC.Regedit",false,"CheckNet",true,false,0x03,0x14,0x51,0x16,0x2a);bytes[0x880+69]=0x11;
+        check(LicenseRecoverReadOnlyPeMetadata.parseApiShape(bytes).booleanBodyShape(main,"CheckNet",info)
+                ==LicenseRecoverReadOnlyPeMetadata.BooleanBodyShape.UNASSESSED,"valuetype byref is not a local class-reference parameter");
+        bytes=booleanBodyFixture(false,"ITMC.Regedit",false,"CheckNet",true,true,0x03,0x14,0x51,0x16,0x2a);put16(bytes,0xd02,1);
+        check(LicenseRecoverReadOnlyPeMetadata.parseApiShape(bytes).booleanBodyShape(main,"CheckNet",info)
+                ==LicenseRecoverReadOnlyPeMetadata.BooleanBodyShape.UNASSESSED,"the ref/null body requires its declared stack depth");
+        bytes=booleanBodyFixture(false,"ITMC.Regedit",false,"CheckNet",true,false,0x17,0x26,0x03,0x14,0x51,0x16,0x2a);
+        check(LicenseRecoverReadOnlyPeMetadata.parseApiShape(bytes).booleanBodyShape(main,"CheckNet",info)
+                ==LicenseRecoverReadOnlyPeMetadata.BooleanBodyShape.UNASSESSED,"a matching null/false tail is not the complete method");
     }
     private static ApiFixture apiFixture(boolean plus,String ns,boolean wrongOwner,boolean externalInfo)throws Exception {
         ApiFixture out=new ApiFixture();out.data=Arrays.copyOf(fixture(plus),4096);

@@ -1,9 +1,17 @@
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.*;
 
 /**
  * Read-only integration point for reviewed Java/.NET patch fingerprints.
@@ -36,6 +44,9 @@ public final class LicenseRecoverReadOnlyPatchScanner {
     // No real-world patch pair has yet been independently audited.
     // Add only independently reviewed, exact version + original + patch pairs.
     private static final Reviewed[] REVIEWED = new Reviewed[0];
+    // A real profile requires independently reviewed original/derived files and provenance.
+    // Synthetic regression fixtures must never be added to this production catalog.
+    private static final LicenseRecoverReadOnlyPatchProfile[] APPLICATION_PROFILES = new LicenseRecoverReadOnlyPatchProfile[0];
 
     private LicenseRecoverReadOnlyPatchScanner() { }
 
@@ -47,6 +58,275 @@ public final class LicenseRecoverReadOnlyPatchScanner {
                                                    String detectedVersion) {
         return scanReviewed(runtimeRoot, runtime, detectedVersion, REVIEWED);
     }
+
+    /** Application-relative profiles can cover classes, registration JARs/DLLs and startup bindings. */
+    public static LicenseRecoverLicenseState scanApplication(File appRoot,Runtime runtime,String productMode) {
+        return scanApplicationReviewed(appRoot,runtime,productMode,APPLICATION_PROFILES);
+    }
+
+    /** Only root-relative public evidence paths, never expected hashes or target configuration. */
+    public static List<String> applicationArtifactPaths(Runtime runtime,String productMode)throws IOException {
+        return applicationArtifactPathsReviewed(runtime,productMode,APPLICATION_PROFILES);
+    }
+    static List<String> applicationArtifactPathsReviewed(Runtime runtime,String productMode,
+            LicenseRecoverReadOnlyPatchProfile[] profiles)throws IOException {
+        LicenseRecoverReadOnlyPatchProfile[] records=validateProfiles(profiles);Set<String> paths=new TreeSet<String>();
+        if(runtime==null||!identifier(productMode,80))return Collections.emptyList();
+        for(LicenseRecoverReadOnlyPatchProfile p:records)if(p.runtime==runtime&&p.productMode.equalsIgnoreCase(productMode)) {
+            for(LicenseRecoverReadOnlyPatchProfile.FixedBinding f:p.fixedBindings)paths.add(f.path);
+            for(LicenseRecoverReadOnlyPatchProfile.TargetPair t:p.targets)paths.add(t.path);
+        }
+        return Collections.unmodifiableList(new ArrayList<String>(paths));
+    }
+
+    /** Fixed test seam; production always uses the compiled, source-reviewed catalog above. */
+    static LicenseRecoverLicenseState scanApplicationReviewed(File appRoot,Runtime runtime,String productMode,
+            LicenseRecoverReadOnlyPatchProfile[] profiles) {
+        if(appRoot==null||runtime==null||!identifier(productMode,80))
+            return LicenseRecoverLicenseState.unverified("缺少应用目录、运行时或明确的产品/模式；不能确认代码来源");
+        if(profiles==null)return LicenseRecoverLicenseState.unverified("没有可信应用级双指纹审核目录");
+        try {
+            ProfileSnapshot first=applicationSnapshotReviewed(appRoot,runtime,productMode,profiles);
+            return recheckApplicationReviewed(appRoot,runtime,productMode,profiles,first);
+        }catch(ProfileInputChanged changed){return changedProfileInputs();}
+        catch(IOException|SecurityException|InvalidPathException error){return profileError(error);}
+    }
+
+    /** Opaque first-pass receipt permits deterministic change tests without a production write hook. */
+    static final class ProfileSnapshot {
+        private final String scope,catalog;
+        private final Map<String,ObservedProfileFile> inputs;
+        private final LicenseRecoverLicenseState decision;
+        private ProfileSnapshot(String scope,String catalog,Map<String,ObservedProfileFile> inputs,
+                LicenseRecoverLicenseState decision) {
+            this.scope=scope;this.catalog=catalog;this.inputs=Collections.unmodifiableMap(new TreeMap<String,ObservedProfileFile>(inputs));
+            this.decision=decision;
+        }
+    }
+
+    static ProfileSnapshot applicationSnapshotReviewed(File appRoot,Runtime runtime,String productMode,
+            LicenseRecoverReadOnlyPatchProfile[] profiles)throws IOException {
+        if(appRoot==null||runtime==null||!identifier(productMode,80))throw new ProfileSchemaError("missing-scan-scope");
+        LicenseRecoverReadOnlyPatchProfile[] records=validateProfiles(profiles);
+        Path root=appRoot.toPath().toAbsolutePath().normalize();ProfileReads reads=new ProfileReads(root);
+        List<ProfileMatch> complete=new ArrayList<ProfileMatch>();Set<String> reasons=new TreeSet<String>();int applicable=0;
+        for(LicenseRecoverReadOnlyPatchProfile p:records) {
+            if(p.runtime!=runtime||!p.productMode.equalsIgnoreCase(productMode))continue;
+            applicable++;boolean bound=true;
+            for(LicenseRecoverReadOnlyPatchProfile.FixedBinding fixed:p.fixedBindings) {
+                ObservedProfileFile file=reads.read(fixed.path);
+                if(!file.present){reasons.add("必需启动/依赖文件缺失");bound=false;break;}
+                if(!file.sha256.equalsIgnoreCase(fixed.sha256)){reasons.add("启动/依赖绑定不匹配");bound=false;break;}
+            }
+            if(!bound)continue;
+            boolean original=false,patched=false,incomplete=false;List<String> paths=new ArrayList<String>();
+            for(LicenseRecoverReadOnlyPatchProfile.FixedBinding fixed:p.fixedBindings)paths.add(fixed.path);
+            for(LicenseRecoverReadOnlyPatchProfile.TargetPair target:p.targets) {
+                paths.add(target.path);ObservedProfileFile file=reads.read(target.path);
+                if(!file.present){reasons.add("必需比对目标缺失");incomplete=true;continue;}
+                LicenseRecoverLicenseState.CodeIntegrity state=reads.compare(target,p.buildId,file);
+                if(state==LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL)original=true;
+                else if(state==LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED)patched=true;
+                else{reasons.add("目标不匹配已审核双指纹");incomplete=true;}
+            }
+            if(original&&patched){reasons.add("同一配方的原版/Patch 目标混合");incomplete=true;}
+            if(!incomplete&&reads.aliased(paths)){reasons.add("必需文件互为物理别名");incomplete=true;}
+            if(!incomplete)complete.add(new ProfileMatch(p,patched,originalManifest(p)));
+        }
+        LicenseRecoverLicenseState decision;
+        if(complete.isEmpty())decision=LicenseRecoverLicenseState.unverified(applicable==0
+                ?"未收录当前产品/模式的来源可核验应用级原版/Patch 双指纹；产品标识不是发行版本"
+                :"应用级审核集合未完整匹配："+String.join("、",reasons)+"；不能确认原版或 Patch");
+        else {
+            ProfileMatch first=complete.get(0);boolean ambiguous=false;
+            for(int i=1;i<complete.size();i++) {
+                ProfileMatch next=complete.get(i);
+                // Multiple recipes may share ONE exact original build. A patched
+                // result or conflicting original build is never selected by order.
+                if(first.patched||next.patched||!first.profile.buildId.equals(next.profile.buildId)
+                        ||!first.originalManifest.equals(next.originalManifest))ambiguous=true;
+            }
+            decision=ambiguous?LicenseRecoverLicenseState.unverified("多份应用级审核记录同时匹配且来源/配方状态存在歧义；未按首项确认代码来源")
+                    :LicenseRecoverLicenseState.codeComparison(first.patched,profileEvidence(complete));
+        }
+        return new ProfileSnapshot(root.toString()+"\0"+runtime+"\0"+productMode.toLowerCase(Locale.ROOT),
+                catalogReceipt(records),reads.files,decision);
+    }
+
+    static LicenseRecoverLicenseState recheckApplicationReviewed(File appRoot,Runtime runtime,String productMode,
+            LicenseRecoverReadOnlyPatchProfile[] profiles,ProfileSnapshot first) {
+        if(first==null)return LicenseRecoverLicenseState.unverified("应用级审核首轮回执缺失");
+        try {
+            ProfileSnapshot second=applicationSnapshotReviewed(appRoot,runtime,productMode,profiles);
+            if(!first.scope.equals(second.scope)||!first.catalog.equals(second.catalog)
+                    ||!first.inputs.equals(second.inputs)||first.decision.codeIntegrity!=second.decision.codeIntegrity
+                    ||!first.decision.evidence.equals(second.decision.evidence))return changedProfileInputs();
+            return second.decision;
+        }catch(ProfileInputChanged changed){return changedProfileInputs();}
+        catch(IOException|SecurityException|InvalidPathException error){return profileError(error);}
+    }
+
+    private static LicenseRecoverLicenseState changedProfileInputs() {
+        return LicenseRecoverLicenseState.unverified("应用级双指纹审核期间文件、配置绑定或审核集合变化；已撤销代码来源结论");
+    }
+    private static LicenseRecoverLicenseState profileError(Exception error) {
+        return LicenseRecoverLicenseState.scanError(error instanceof ProfileSchemaError
+                ?"应用级双指纹审核记录无效："+error.getMessage():"应用级双指纹只读检查失败: "+error.getClass().getSimpleName());
+    }
+    private static boolean identifier(String s,int max) {
+        return s!=null&&s.length()<=max&&s.matches("[A-Za-z0-9][A-Za-z0-9._-]*");
+    }
+    private static boolean auditReference(String s) {
+        if(s==null||s.trim().isEmpty()||s.length()>512)return false;
+        for(int i=0;i<s.length();i++)if(Character.isISOControl(s.charAt(i)))return false;
+        return true;
+    }
+    private static String profilePath(String text)throws ProfileSchemaError {
+        if(text==null||text.isEmpty()||text.length()>512||!text.equals(text.trim())
+                ||text.indexOf('\\')>=0||text.matches(".*[:*?\"<>|].*"))throw new ProfileSchemaError("invalid-artifact-path");
+        for(int i=0;i<text.length();i++)if(Character.isISOControl(text.charAt(i)))throw new ProfileSchemaError("invalid-artifact-path");
+        try {
+            Path relative=Paths.get(text);
+            if(relative.isAbsolute()||!relative.normalize().toString().replace('\\','/').equals(text))throw new ProfileSchemaError("noncanonical-artifact-path");
+            for(String part:text.split("/",-1)) {
+                String base=part.split("\\.",2)[0].toUpperCase(Locale.ROOT);
+                if(part.isEmpty()||part.equals(".")||part.equals("..")||part.endsWith(".")||part.endsWith(" ")
+                        ||base.matches("CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]"))throw new ProfileSchemaError("noncanonical-artifact-path");
+            }
+            return text;
+        }catch(InvalidPathException bad){throw new ProfileSchemaError("invalid-artifact-path");}
+    }
+    private static LicenseRecoverReadOnlyPatchProfile[] validateProfiles(LicenseRecoverReadOnlyPatchProfile[] profiles)throws IOException {
+        if(profiles==null||profiles.length>128)throw new ProfileSchemaError("invalid-profile-catalog");
+        LicenseRecoverReadOnlyPatchProfile[] copy=profiles.clone();Set<String> ids=new HashSet<String>(),groups=new HashSet<String>();int entries=0;
+        for(LicenseRecoverReadOnlyPatchProfile p:copy) {
+            if(p==null||p.runtime==null||!identifier(p.profileId,128)||!identifier(p.productMode,80)
+                    ||!identifier(p.buildId,128)||!identifier(p.recipeId,128)||!auditReference(p.auditRef)
+                    ||p.fixedBindings==null||p.targets==null||p.targets.isEmpty()
+                    ||p.fixedBindings.size()+p.targets.size()>256)throw new ProfileSchemaError("missing-profile-field");
+            if(!ids.add(p.profileId.toLowerCase(Locale.ROOT))||!groups.add(p.runtime+"\0"+p.productMode.toLowerCase(Locale.ROOT)
+                    +"\0"+p.buildId.toLowerCase(Locale.ROOT)+"\0"+p.recipeId.toLowerCase(Locale.ROOT)))throw new ProfileSchemaError("duplicate-profile-group");
+            Set<String> roles=new HashSet<String>(),paths=new HashSet<String>();
+            for(LicenseRecoverReadOnlyPatchProfile.FixedBinding fixed:p.fixedBindings) {
+                if(fixed==null||!isSha256(fixed.sha256))throw new ProfileSchemaError("invalid-fixed-binding");
+                validateRole(fixed.role,fixed.path,roles,paths);entries++;
+            }
+            for(LicenseRecoverReadOnlyPatchProfile.TargetPair target:p.targets) {
+                if(target==null||!isSha256(target.originalSha256)||!isSha256(target.patchedSha256)
+                        ||target.originalSha256.equalsIgnoreCase(target.patchedSha256))throw new ProfileSchemaError("invalid-target-pair");
+                validateRole(target.role,target.path,roles,paths);entries++;
+            }
+            if(entries>4096)throw new ProfileSchemaError("profile-catalog-limit");
+        }
+        return copy;
+    }
+    private static void validateRole(String role,String path,Set<String> roles,Set<String> paths)throws ProfileSchemaError {
+        if(!identifier(role,80)||!roles.add(role.toLowerCase(Locale.ROOT))||!paths.add(profilePath(path).toLowerCase(Locale.ROOT)))
+            throw new ProfileSchemaError("duplicate-or-invalid-artifact-field");
+    }
+    private static String originalManifest(LicenseRecoverReadOnlyPatchProfile p) {
+        Map<String,String> files=new TreeMap<String,String>();
+        for(LicenseRecoverReadOnlyPatchProfile.FixedBinding b:p.fixedBindings)files.put(b.path,b.sha256.toLowerCase(Locale.ROOT));
+        for(LicenseRecoverReadOnlyPatchProfile.TargetPair t:p.targets)files.put(t.path,t.originalSha256.toLowerCase(Locale.ROOT));
+        StringBuilder manifest=new StringBuilder();
+        for(Map.Entry<String,String> file:files.entrySet())manifest.append(file.getKey()).append('\0').append(file.getValue()).append('\n');
+        return manifest.toString();
+    }
+    private static String catalogReceipt(LicenseRecoverReadOnlyPatchProfile[] records) {
+        StringBuilder b=new StringBuilder();
+        for(LicenseRecoverReadOnlyPatchProfile p:records) {
+            b.append(p.profileId).append('\0').append(p.runtime).append('\0').append(p.productMode).append('\0')
+                    .append(p.buildId).append('\0').append(p.recipeId).append('\0').append(p.auditRef).append('\n');
+            for(LicenseRecoverReadOnlyPatchProfile.FixedBinding f:p.fixedBindings)b.append(f.role).append('\0').append(f.path).append('\0').append(f.sha256).append('\n');
+            for(LicenseRecoverReadOnlyPatchProfile.TargetPair t:p.targets)b.append(t.role).append('\0').append(t.path).append('\0').append(t.originalSha256).append('\0').append(t.patchedSha256).append('\n');
+        }
+        MessageDigest sha=profileDigest();return hex(sha.digest(b.toString().getBytes(StandardCharsets.UTF_8)));
+    }
+    private static String profileEvidence(List<ProfileMatch> matches) {
+        StringBuilder b=new StringBuilder("应用级完整审核集合两次只读一致；产品/模式仅作候选键，不是发行版本；");int count=0;
+        for(ProfileMatch m:matches) {
+            if(count++==8){b.append("另有 ").append(matches.size()-8).append(" 份相同原版审核记录；");break;}
+            b.append("profile=").append(m.profile.profileId).append("；build=").append(m.profile.buildId)
+                    .append("；recipe=").append(m.profile.recipeId).append("；audit=").append(m.profile.auditRef).append("；");
+        }
+        return b.toString();
+    }
+    private static final class ProfileMatch {
+        final LicenseRecoverReadOnlyPatchProfile profile;final boolean patched;final String originalManifest;
+        ProfileMatch(LicenseRecoverReadOnlyPatchProfile p,boolean patched,String manifest){profile=p;this.patched=patched;originalManifest=manifest;}
+    }
+    private static final class ProfileSchemaError extends IOException {ProfileSchemaError(String reason){super(reason);}}
+    private static final class ProfileInputChanged extends IOException { }
+    private static final class ObservedProfileFile {
+        final boolean present;final String sha256;final long size;final BasicFileAttributes attributes;
+        ObservedProfileFile(){present=false;sha256="";size=0;attributes=null;}
+        ObservedProfileFile(String hash,BasicFileAttributes attributes){present=true;sha256=hash;this.attributes=attributes;size=attributes.size();}
+        @Override public boolean equals(Object other){
+            if(!(other instanceof ObservedProfileFile))return false;ObservedProfileFile b=(ObservedProfileFile)other;
+            return present==b.present&&(!present||(sha256.equals(b.sha256)&&sameAttributes(attributes,b.attributes)));
+        }
+        @Override public int hashCode(){return present?Objects.hash(sha256,size,attributes.lastModifiedTime(),attributes.fileKey()):0;}
+    }
+    private static final class ProfileReads {
+        final Path root;final Map<String,ObservedProfileFile> files=new TreeMap<String,ObservedProfileFile>();
+        // The byte budget counts unique observations. Recognized targets may also
+        // be streamed once by Fingerprint; it is not a cap on all I/O across both passes.
+        final Set<String> compared=new HashSet<String>();final Map<String,Boolean> identityPairs=new HashMap<String,Boolean>();long total;
+        ProfileReads(Path root){this.root=root;}
+        ObservedProfileFile read(String relative)throws IOException {
+            if(files.containsKey(relative))return files.get(relative);Path file=root.resolve(relative);BasicFileAttributes before;
+            try{before=profileAttributes(file);}catch(java.nio.file.NoSuchFileException absent){ObservedProfileFile missing=new ObservedProfileFile();files.put(relative,missing);return missing;}
+            if(!before.isRegularFile()||before.size()>128L*1024*1024||before.size()>512L*1024*1024-total)throw new IOException("profile-input-limit-or-type");
+            total+=before.size();MessageDigest sha=profileDigest();long count=0;
+            try {
+                try(InputStream in=Files.newInputStream(file,StandardOpenOption.READ,LinkOption.NOFOLLOW_LINKS)) {
+                    byte[] bytes=new byte[65536];int n;while((n=in.read(bytes))!=-1){count+=n;if(count>before.size())throw new ProfileInputChanged();sha.update(bytes,0,n);}
+                }
+                BasicFileAttributes after=profileAttributes(file);if(count!=before.size()||!sameAttributes(before,after))throw new ProfileInputChanged();
+            }catch(java.nio.file.NoSuchFileException changed){throw new ProfileInputChanged();}
+            ObservedProfileFile observed=new ObservedProfileFile(hex(sha.digest()),before);files.put(relative,observed);return observed;
+        }
+        LicenseRecoverLicenseState.CodeIntegrity compare(LicenseRecoverReadOnlyPatchProfile.TargetPair target,String build,
+                ObservedProfileFile observed)throws IOException {
+            LicenseRecoverLicenseState.CodeIntegrity expected=observed.sha256.equalsIgnoreCase(target.originalSha256)
+                    ?LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_ORIGINAL:observed.sha256.equalsIgnoreCase(target.patchedSha256)
+                    ?LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED:LicenseRecoverLicenseState.CodeIntegrity.UNKNOWN;
+            // Reuse the existing strict comparison for a potentially recognized
+            // target, once per path/pass. Product IDs are not passed as versions.
+            if(expected!=LicenseRecoverLicenseState.CodeIntegrity.UNKNOWN&&compared.add(target.path)) {
+                LicenseRecoverLicenseState result=LicenseRecoverReadOnlyFingerprint.compare(root.resolve(target.path).toFile(),build,build,
+                        target.originalSha256,target.patchedSha256);
+                if(result.isScanError())throw new IOException("profile-fingerprint-read");
+                try{if(!sameAttributes(observed.attributes,profileAttributes(root.resolve(target.path)))||result.codeIntegrity!=expected)throw new ProfileInputChanged();}
+                catch(java.nio.file.NoSuchFileException changed){throw new ProfileInputChanged();}
+            }
+            return expected;
+        }
+        boolean aliased(List<String> paths)throws IOException {
+            for(int i=0;i<paths.size();i++)for(int j=0;j<i;j++) {
+                String a=paths.get(i),b=paths.get(j);Object ka=files.get(a).attributes.fileKey(),kb=files.get(b).attributes.fileKey();
+                if(ka!=null&&kb!=null&&!ka.equals(kb))continue;
+                String pair=a.compareTo(b)<0?a+"\0"+b:b+"\0"+a;Boolean alias=identityPairs.get(pair);
+                if(alias!=null){if(alias)return true;continue;}
+                if(identityPairs.size()>=65536)throw new IOException("profile-file-identity-work-limit");
+                try{boolean same=Files.isSameFile(root.resolve(a),root.resolve(b));identityPairs.put(pair,same);if(same)return true;}
+                catch(java.nio.file.NoSuchFileException changed){throw new ProfileInputChanged();}
+            }
+            return false;
+        }
+    }
+    private static BasicFileAttributes profileAttributes(Path file)throws IOException {
+        Path cursor=file.getRoot();
+        for(Path part:file){cursor=cursor.resolve(part);BasicFileAttributes a=Files.readAttributes(cursor,BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS);
+            if(a.isSymbolicLink()||a.isOther())throw new IOException("linked-profile-input");
+            if(!cursor.equals(file)&&!a.isDirectory())throw new IOException("non-directory-profile-parent");}
+        return Files.readAttributes(file,BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS);
+    }
+    private static boolean sameAttributes(BasicFileAttributes a,BasicFileAttributes b) {
+        return b.isRegularFile()&&a.size()==b.size()&&a.lastModifiedTime().equals(b.lastModifiedTime())&&Objects.equals(a.fileKey(),b.fileKey());
+    }
+    private static MessageDigest profileDigest() {try{return MessageDigest.getInstance("SHA-256");}catch(NoSuchAlgorithmException impossible){throw new AssertionError(impossible);}}
+    private static String hex(byte[] digest) {StringBuilder b=new StringBuilder(64);for(byte x:digest)b.append(Character.forDigit((x>>>4)&15,16)).append(Character.forDigit(x&15,16));return b.toString();}
 
     /**
      * All reviewed artifacts for one runtime/version form one evidence set.
