@@ -25,8 +25,14 @@ public final class LicenseRecoverReadOnlyInspection {
         public final boolean acceptanceVerifierReadOnlyAudited = true;
         public final LicenseRecoverLicenseState state;
         public final List<Artifact> artifacts;
+        public final LicenseRecoverReadOnlyDotNetCatalog.Assessment protocol;
         Result(File root, String version, String runtime, LicenseRecoverLicenseState state,
                List<Artifact> artifacts, String reason) {
+            this(root,version,runtime,state,artifacts,reason,null);
+        }
+        Result(File root, String version, String runtime, LicenseRecoverLicenseState state,
+               List<Artifact> artifacts, String reason,LicenseRecoverReadOnlyDotNetCatalog.Assessment protocol) {
+            this.protocol=protocol;
             this.name = root.getName(); this.version = canonicalVersion(version);
             this.runtime = runtime; this.state = state;
             this.method = state.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_REJECTED
@@ -45,6 +51,7 @@ public final class LicenseRecoverReadOnlyInspection {
         }
         public String summary() {
             return reason + "；方法=" + method + "；组件=" + artifacts.size()
+                    +(protocol==null?"":"；协议识别="+protocol.summary())
                     + "；独立只读判定=" + (state.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE ? "通过"
                         : state.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_REJECTED ? "明确拒绝" : "未确认")
                     + "；未执行目标原生代码；" + nativeVerifierSafety;
@@ -57,6 +64,10 @@ public final class LicenseRecoverReadOnlyInspection {
             pair(b,"authorization",state.authorization.name()); pair(b,"codeIntegrity",state.codeIntegrity.name());
             pair(b,"acceptance",state.acceptance.name());
             pair(b,"localCondition",state.localCondition.name());
+            pair(b,"pipeline","JAVA".equals(runtime)?"JAVA_SHARED":"DOTNET".equals(runtime)?"DOTNET_SHARED":"UNKNOWN");
+            pair(b,"protocolFamily",protocol==null?("DOTNET".equals(runtime)?"UNKNOWN":"not-applicable"):protocol.upperFamily.name());
+            pair(b,"compatibilityFamily",protocol==null?("DOTNET".equals(runtime)?"UNKNOWN":"not-applicable"):protocol.compatibilityFamily.name());
+            b.append("\"protocolBindingAudited\":").append(protocol!=null&&protocol.auditedBinding).append(',');
             pair(b,"method",method); pair(b,"evidenceSource",evidenceSource); pair(b,"reason",reason);
             pair(b,"nativeVerifierSafety",nativeVerifierSafety);
             b.append("\"inspectionReadOnlyAudited\":true,\"nativeVerifierReadOnlyAudited\":false,\"acceptanceVerifierReadOnlyAudited\":true,\"artifacts\":[");
@@ -87,7 +98,9 @@ public final class LicenseRecoverReadOnlyInspection {
     static Result inspect(File root, File dir, LicenseRecoverReadOnlyPatchScanner.Runtime runtime,
                           String version, LicenseRecoverLicenseState codeState) {
         List<Artifact> artifacts = new ArrayList<Artifact>();
+        boolean artifactsStable = false;
         LicenseRecoverLicenseState state = codeState;
+        LicenseRecoverReadOnlyDotNetCatalog.Assessment protocol=null;
         String reason = codeState.evidence + "；"
                 + (runtime == LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA
                 ? "RegisterMain 构造/初始化及 checkReInfo 传递副作用尚未完整证明只读"
@@ -134,6 +147,7 @@ public final class LicenseRecoverReadOnlyInspection {
                 Artifact currentArtifact=readArtifact(root,paths.get(i),runtime);
                 if(!currentArtifact.sha256.equals(artifacts.get(i).sha256))throw new Changed();
             }
+            artifactsStable = true;
         } catch (Changed | NoSuchFileException e) {
             state=LicenseRecoverLicenseState.unverified("扫描期间文件缺失或变化；不能确认当前状态");
             reason=state.evidence;
@@ -141,8 +155,12 @@ public final class LicenseRecoverReadOnlyInspection {
             state=LicenseRecoverLicenseState.scanError("组件只读检查失败: "+e.getClass().getSimpleName());
             reason=state.evidence; // Never expose paths, configuration or exception messages.
         }
-        if(!state.isScanError()) {
-            LicenseRecoverLicenseState accepted = inspectAuthorization(root,runtime);
+        if(canEvaluateAcceptance(artifactsStable,state)) {
+            LicenseRecoverLicenseState accepted;
+            if(runtime==LicenseRecoverReadOnlyPatchScanner.Runtime.DOTNET) {
+                LicenseRecoverReadOnlyDotNetScanner.Result scan=LicenseRecoverReadOnlyDotNetScanner.inspect(root);
+                accepted=scan.state;protocol=scan.protocol;
+            } else accepted=LicenseRecoverReadOnlyJavaScanner.scan(root);
             if(accepted.isScanError()) {state=accepted;reason=accepted.evidence;}
             else if(accepted.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED) {
                 try {
@@ -155,8 +173,10 @@ public final class LicenseRecoverReadOnlyInspection {
                     state=LicenseRecoverLicenseState.combineAcceptance(accepted,state);
                     reason=accepted.evidence;
                 } catch(Changed | NoSuchFileException ex) {
+                    protocol=null;
                     state=LicenseRecoverLicenseState.unverified("接受条件与文件观测不再一致；扫描期间文件发生变化");reason=state.evidence;
                 } catch(IOException | java.security.GeneralSecurityException | SecurityException ex) {
+                    protocol=null;
                     state=LicenseRecoverLicenseState.scanError("接受条件最终文件复核失败: "+ex.getClass().getSimpleName());reason=state.evidence;
                 }
             } else if(accepted.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED) {
@@ -164,40 +184,18 @@ public final class LicenseRecoverReadOnlyInspection {
                 reason=accepted.evidence;
             } else reason=accepted.evidence+"；"+reason;
         }
-        return new Result(root,version,runtime.name(),state,artifacts,reason);
+        return new Result(root,version,runtime.name(),state,artifacts,reason,protocol);
     }
 
-    private static LicenseRecoverLicenseState inspectAuthorization(File root,LicenseRecoverReadOnlyPatchScanner.Runtime runtime) {
-        if(runtime==LicenseRecoverReadOnlyPatchScanner.Runtime.DOTNET) {
-            LicenseRecoverLicenseState primary=LicenseRecoverReadOnlyDotNetVerifier.verify(root);
-            if(primary.isScanError()||primary.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED)return primary;
-            LicenseRecoverLicenseState extended=LicenseRecoverReadOnlyDotNetExtendedVerifier.verify(root);
-            return extended.isScanError()||extended.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED
-                    ?extended:primary;
-        }
-        LicenseRecoverLicenseState gate=LicenseRecoverReadOnlyJavaVerifier.verify(root);
-        if(gate.isScanError()||gate.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED)return gate;
-        LicenseRecoverLicenseState local=LicenseRecoverReadOnlyJavaLocalVerifier.verify(root);
-        if(local.isScanError()||local.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED)return local;
-        LicenseRecoverLicenseState alternate=LicenseRecoverReadOnlyJavaAlternateVerifier.verify(root);
-        if(alternate.isScanError()||alternate.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED
-                ||alternate.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED)return alternate;
-        return local.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED?local
-                :unverifiedJavaEvidence(gate,local,alternate);
+    /** Failed or incomplete artifact observations must never be promoted by a later predicate. */
+    static boolean canEvaluateAcceptance(boolean artifactsStable,LicenseRecoverLicenseState state) {
+        return artifactsStable && state!=null && !state.isScanError();
     }
 
-    /** Retain each attempted strategy's applicability reason without creating a verdict. */
+    /** Compatibility seam for source-level regression fixtures. */
     static LicenseRecoverLicenseState unverifiedJavaEvidence(LicenseRecoverLicenseState gate,
             LicenseRecoverLicenseState local,LicenseRecoverLicenseState alternate) {
-        for(LicenseRecoverLicenseState state:new LicenseRecoverLicenseState[]{gate,local,alternate}) {
-            if(state==null||state.authorization!=LicenseRecoverLicenseState.Authorization.UNVERIFIED
-                    ||state.codeIntegrity!=LicenseRecoverLicenseState.CodeIntegrity.UNKNOWN
-                    ||state.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED
-                    ||state.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED)
-                throw new IllegalArgumentException("only unresolved applicability evidence may be combined");
-        }
-        return LicenseRecoverLicenseState.unverified("Java 只读规则适用性：静态门槛〔"+gate.evidence
-                +"〕；本地谓词〔"+local.evidence+"〕；备用入口〔"+alternate.evidence+"〕");
+        return LicenseRecoverReadOnlyJavaScanner.unresolved(gate,local,alternate);
     }
 
     static boolean sameCodeEvidence(LicenseRecoverLicenseState first,LicenseRecoverLicenseState last) {

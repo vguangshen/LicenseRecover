@@ -1,11 +1,18 @@
-## 1.2.71 - 2026-11-02
+## 1.2.71 - 2026-11-03
 
-- Preserve evidence categories in the .NET diagnostic candidate: native-valid dark green, confirmed Patch light green, scoped entry acceptance blue, native-invalid white, entry rejection amber, unverified gray and scan error red. Restore UI regression tests from the earlier color-separation branch.
+- Preserve evidence categories: native-valid dark green, confirmed Patch light green, scoped entry acceptance blue, native-invalid white, entry rejection amber, unverified gray and scan error red. Keep the remote WMIC process-failure guard and its regression coverage.
+
+### Two shared read-only runtime pipelines
+- Route discovery through one Java scanner and one .NET scanner. Centralize .NET protocol families and audited component/parameter bindings; do not select authorization by directory names or product prefixes.
+- Reuse the same modern local JSON/DES predicate for DS0101 and DS0105. Unknown CLI interfaces can identify family candidates without certifying method bodies, license acceptance or Patch provenance.
+- Revoke local observations and protocol audit flags when current configuration/components change; recheck Java expiry after final hashing and select all complete builds sharing an entry anchor.
+- Bound PE metadata signature expansion and pre-scan discovery inputs. Exercise the shared scanners against source classes and both final ZIP runtimes, including every newly compiled internal class.
+
 ### Scoped .NET machine and registration-source evidence
 - Read the audited physical 32-bit YunClient source twice without loading target assemblies, importing registration or reading CRM credentials; retain source presence separately from authorization acceptance.
 - Add a bounded independent WMIC text/environment reader for the reviewed machine-override branch. A WMI CPU row cannot substitute for this protocol; unknown encoding, resolution and command context stay unverified.
 - Clarify local-record identity mismatch versus the IIS runtime context and other accepting paths; retain native/global uncertainty and remove implementation identifiers from user-facing reasons.
-- Cover registry framing/type/privacy/change boundaries and override acceptance/fallback/product/counter checks. DS0101 remains accepted in fresh v1.2.70 CLI/GUI reproduction; no DS0102 directory was present.
+- Cover registry framing/type/privacy/change boundaries and override acceptance/fallback/product/counter checks. The user corrected the second reported application to DS0105; both DS0101 and DS0105 pass the shared audited local predicate on fresh copies.
 
 ## 1.2.70 - 2026-11-02
 

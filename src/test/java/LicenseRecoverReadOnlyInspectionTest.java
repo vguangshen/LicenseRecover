@@ -39,12 +39,25 @@ public final class LicenseRecoverReadOnlyInspectionTest {
             check(LicenseRecoverReadOnlyInspection.inspect(app.toFile(),lib.toFile(),
                     LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA,"TEST01",unknown).state.visualStatus()
                     ==LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,"missing evidence gray");
+            // An incomplete or changed artifact observation cannot be upgraded to blue
+            // by a subsequent positive local predicate (even if that predicate is audited).
+            LicenseRecoverLicenseState positive=LicenseRecoverLicenseState.authorizationAcceptance(
+                    "synthetic independently audited current-entry predicate");
+            check(!LicenseRecoverReadOnlyInspection.canEvaluateAcceptance(false,positive),
+                    "missing or changed artifact evidence blocks positive promotion");
+            check(!LicenseRecoverReadOnlyInspection.canEvaluateAcceptance(false,unknown),
+                    "incomplete artifact evidence skips all later acceptance checks");
+            check(!LicenseRecoverReadOnlyInspection.canEvaluateAcceptance(true,
+                    LicenseRecoverLicenseState.scanError("synthetic artifact error")),
+                    "scan errors must not be overridden by acceptance");
+            check(LicenseRecoverReadOnlyInspection.canEvaluateAcceptance(true,unknown),
+                    "complete stable artifact evidence permits independent predicate checks");
             Files.delete(lib);
             Files.write(lib,new byte[]{1});
             check(LicenseRecoverReadOnlyInspection.inspect(app.toFile(),lib.toFile(),
                     LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA,"TEST01",unknown).state.isScanError(),"non-directory IO error red");
             Path net=root.resolve("net"),bin=net.resolve("bin");Files.createDirectories(bin);
-            byte[] pe=LicenseRecoverReadOnlyPeMetadataTest.fixture(false);
+            byte[] pe=LicenseRecoverReadOnlyPeMetadataTest.apiFixtureBytes(false,"Other.Namespace",false,false);
             Files.write(bin.resolve("ITMC.Web.dll"),pe);Files.write(bin.resolve("ITMC.Regedit.dll"),pe);
             LicenseRecoverReadOnlyInspection.Result n=LicenseRecoverReadOnlyInspection.inspect(net.toFile());
             check(n.artifacts.size()==2&&!n.state.isScanError(),"CLI metadata observation accepted");

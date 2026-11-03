@@ -4,6 +4,7 @@ import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.util.*;
+import java.util.function.LongSupplier;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.w3c.dom.*;
@@ -86,7 +87,7 @@ public final class LicenseRecoverReadOnlyJavaAlternateVerifier {
                     candidates.add(profile);
             }
             return candidates.isEmpty()?LicenseRecoverLicenseState.unverified("Java 备用授权入口未匹配已审核的入口锚点")
-                    :verifyReviewed(appRoot,candidates.toArray(new Profile[candidates.size()]),null,System.currentTimeMillis(),null,null);
+                    :verifyReviewed(appRoot,candidates.toArray(new Profile[candidates.size()]),null,System::currentTimeMillis,null,null);
         }catch(LinkedInput|Changed e){return LicenseRecoverLicenseState.unverified("Java 备用入口链接布局或读取期间变化");}
         catch(IOException|SecurityException e){return LicenseRecoverLicenseState.scanError("Java 备用入口读取失败: "+e.getClass().getSimpleName());}
     }
@@ -108,6 +109,11 @@ public final class LicenseRecoverReadOnlyJavaAlternateVerifier {
     // Package-private synthetic seam; production cannot import a profile or a successful result.
     static LicenseRecoverLicenseState verifyReviewed(File root,Profile[] profiles,LocalEvaluator evaluator,
             long now,LicenseRecoverReadOnlyJavaMachineIdentity.Identity identity,Runnable beforeRecheck) {
+        return verifyReviewed(root,profiles,evaluator,()->now,identity,beforeRecheck);
+    }
+    /** Production reads current time after the final receipt; fixtures may supply a controlled clock. */
+    static LicenseRecoverLicenseState verifyReviewed(File root,Profile[] profiles,LocalEvaluator evaluator,
+            LongSupplier clock,LicenseRecoverReadOnlyJavaMachineIdentity.Identity identity,Runnable beforeRecheck) {
         try {
             Snapshot first=snapshot(root.toPath());
             for(Profile profile:profiles) {
@@ -117,12 +123,14 @@ public final class LicenseRecoverReadOnlyJavaAlternateVerifier {
                         || root.getAbsolutePath().contains("classes")))
                     return LicenseRecoverLicenseState.localObservation(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,
                             "默认注册组件的 CodeSource 路径替换需要额外审核，未选择看似有效的其他注册文件");
-                LicenseRecoverLicenseState result=evaluate(profile,first,evaluator,now,identity);
+                evaluate(profile,first,evaluator,clock.getAsLong(),identity);
                 if(beforeRecheck!=null)beforeRecheck.run();
                 Snapshot second=snapshot(root.toPath());
                 if(!profile.matches(second)||!first.identity().equals(second.identity()))
                     return LicenseRecoverLicenseState.unverified("Java 备用入口代码或配置在读取期间变化");
-                return result;
+                // A complete dependency re-read may cross an expiry boundary.
+                // Recompute from the final matching inputs and the current clock.
+                return evaluate(profile,second,evaluator,clock.getAsLong(),identity);
             }
             return LicenseRecoverLicenseState.unverified("当前 Java 代码、依赖或启动资源不匹配已审核的备用入口");
         }catch(NoSuchFileException|LinkedInput|Changed e){return LicenseRecoverLicenseState.unverified("Java 备用入口证据缺失、链接布局或读取期间变化");}

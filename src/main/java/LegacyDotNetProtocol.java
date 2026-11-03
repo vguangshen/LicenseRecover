@@ -1,11 +1,12 @@
 /*
  * DS01xx .NET 旧版授权协议适配。
  *
- * 这类 ASP.NET 应用没有使用新版 JSON 授权串：申请号使用 itmcsoft，
+ * 这里仅描述注册页离线交换及写回兼容格式：申请号使用 itmcsoft，
  * 离线授权码使用应用自身的动态密钥（"itmc" + ProName），提交成功后由应用
  * 自身用 *b2bOK* 写回本地授权。DS0101 的 ProName 是 itmcIEC，因此密钥为
  * itmcitmcIEC。
- * 这里仅负责按目标程序集的格式生成和校验授权码，不写入目标应用配置。
+ * 运行时可能同时包含大写 JSON 本地检查；不能用此兼容分类推断授权状态。
+ * 这里只负责按目标程序集的格式生成和校验授权码，不写入目标应用配置。
  */
 import java.io.File;
 import java.nio.charset.StandardCharsets;

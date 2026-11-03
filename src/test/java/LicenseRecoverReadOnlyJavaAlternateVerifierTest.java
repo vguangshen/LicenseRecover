@@ -70,6 +70,18 @@ public final class LicenseRecoverReadOnlyJavaAlternateVerifierTest {
             check(accepted.authorization==LicenseRecoverLicenseState.Authorization.UNVERIFIED
                     &&accepted.codeIntegrity==LicenseRecoverLicenseState.CodeIntegrity.UNKNOWN,"acceptance does not fabricate native activation or Patch provenance");
             check(!accepted.evidence.contains("PRIVATE_")&&!accepted.evidence.contains("synthetic-machine"),"no license, database password or machine value in result");
+            final int[] clockReads={0};
+            LicenseRecoverLicenseState expiredDuringRecheck=LicenseRecoverReadOnlyJavaAlternateVerifier.verifyReviewed(root.toFile(),
+                    new LicenseRecoverReadOnlyJavaAlternateVerifier.Profile[]{any},
+                    (a,b,c,d,time)->new LicenseRecoverReadOnlyJavaAlternateVerifier.Check(
+                            time<2L?LicenseRecoverLicenseState.LocalCondition.SATISFIED:LicenseRecoverLicenseState.LocalCondition.EXPIRED,
+                            "synthetic expiry boundary",time<2L,time<2L,true,false),
+                    ()->clockReads[0]++==0?1L:3L,
+                    new LicenseRecoverReadOnlyJavaMachineIdentity.Identity(true,"synthetic-machine","synthetic","synthetic identity"),null);
+            check(clockReads[0]==2,"production-style clock is observed before and after the complete receipt recheck");
+            check(expiredDuringRecheck.acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED
+                    &&expiredDuringRecheck.localCondition==LicenseRecoverLicenseState.LocalCondition.EXPIRED,
+                    "crossing an expiry boundary revokes the earlier positive rather than keeping a stale green");
             String before=LicenseRecoverReadOnlyJavaAlternateVerifier.inputSnapshot(root.toFile());
             check(inspect(root,any,(a,b,c,d,e)->new LicenseRecoverReadOnlyJavaAlternateVerifier.Check(
                     LicenseRecoverLicenseState.LocalCondition.MACHINE_MISMATCH,"machine mismatch",false,false,true,false),null)
