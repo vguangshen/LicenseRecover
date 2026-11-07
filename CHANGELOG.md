@@ -1,3 +1,14 @@
+## 1.2.74 - 2026-11-08
+
+- Correct the v1.2.73 YS01 audit scope: lazy construction in a business fallback does not exclude the compatibility module's native initialization/JIT lookup. Retain satisfied modern local conditions, withdraw whole-entry acceptance, and keep native/Patch provenance unverified.
+
+- Include the website-referenced compatibility DLL in complete YS01 audit bindings. Missing or replaced dependencies revoke the positive binding; shared predicate success cannot substitute for the reviewed website dependency set.
+- Reuse the modern local engine for the reviewed YX0301 build, with exact product and seven-component evidence. Its network-first dispatch and database-backed mode/parent-product mapping remain local-only diagnostics, never whole-entry acceptance.
+- Expose concrete gaps for every exact local-only fingerprint match, including protected native initialization and database mappings, even when the current local record does not pass.
+- Continue static reconstruction of both protected native images and bridge context. Reading the decrypted constructor or a default callback is insufficient to prove the actual native callback path; preserve the existing scoped YX0302 result.
+- Add exact current Java resource/build variants and code-derived constructor/scope selection for all nine previously unassessed samples. Retain first-constructor uncertainty, mapped YT product rules, strict instant expiry and diagnostic-only results.
+- Evaluate modern local record facts independently of dispatch priority, retaining global uncertainty for network/HASP-first modes. Recover reviewed fixed-record field diagnostics for the compatibility builds, with explicit native/JIT and writeback gaps, and distinguish record absence, machine mismatch and malformed conversion data.
+
 ## 1.2.73 - 2026-11-07
 
 - Evaluate audited modern local records in dual-registration builds before compatibility diagnostics. Reuse the shared product/machine/date/unlimited-counter/current-mode predicate for the reviewed YS01 website; preserve both scoped findings when no path proves acceptance.

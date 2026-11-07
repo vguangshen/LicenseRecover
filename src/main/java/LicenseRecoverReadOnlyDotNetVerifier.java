@@ -100,11 +100,10 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
             LicenseRecoverReadOnlyMachineIdentity.Snapshot identity,Instant now,ZoneId zone,
             LicenseRecoverReadOnlyWmicCpuIdentity.Identity cpu) {
         try {
-            if(identity==null||!identity.complete)return local(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,"独立本机身份快照不完整");
-            if(!asciiIdentity(identity))return local(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,"本机身份包含未审核的非 ASCII 规范");
             Document config=parseXml(xml);
-            // In the supported cold-start branch, local is first and succeeds before network/HASP.
-            if(!"1".equals(element(config,"reg","regType")))return local(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,"当前注册分派尚未证明本地优先接受");
+            // Record facts are independent of dispatch. Only the audited local-first
+            // branch may promote them to entry acceptance; prior network/HASP stays unknown.
+            boolean localFirst="1".equals(element(config,"reg","regType"));
             String version=element(config,"SystemSoft","SoftVersionID");
             if(!version.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,79}"))return unknown("网站当前产品/模式标识不明确");
             String encrypted=element(config,"reg","regName");
@@ -121,6 +120,8 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
                 return unknown("日期字段大小写未匹配审核结构");
             // ProName is an additional conservative binding, beyond CheckLocalReg's machine check.
             if(!product.equals(info.get("ProName")))return local(LicenseRecoverLicenseState.LocalCondition.PRODUCT_MISMATCH,"本地载荷未匹配当前审核产品身份；其他授权方式未判断");
+            if(identity==null||!identity.complete)return local(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,"独立本机身份快照不完整");
+            if(!asciiIdentity(identity))return local(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,"本机身份包含未审核的非 ASCII 规范");
             String machine=machine(config,identity,cpu);
             if(machine==null||machine.isEmpty())return local(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,
                     "本机覆盖号或身份规则尚未形成独立证明；未判机器不匹配"
@@ -138,6 +139,8 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
                 return local(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,"授权产品字段格式尚未匹配审核结构；未判当前产品缺失");
             if(!((String)reg).toLowerCase(Locale.ROOT).contains(version.toLowerCase(Locale.ROOT)))
                 return local(LicenseRecoverLicenseState.LocalCondition.PRODUCT_MISMATCH,"本地载荷未覆盖网站当前模式；兼容/父版本路径未判断");
+            if(!localFirst)return local(LicenseRecoverLicenseState.LocalCondition.SATISFIED,
+                    "现代本地载荷的产品、本机、日期、无限计次及当前模式条件匹配；当前分派非已审核的本地优先路径，先行联网/硬件狗及整体入口仍待核；未执行厂商代码");
             return LicenseRecoverLicenseState.authorizationAcceptance(
                     "审核 .NET 当前构建的独立本地正向谓词通过：产品绑定、本机绑定、日期、无限计次及网站当前模式均匹配；"
                     +"未执行厂商程序集；"+(!element(config,"reg","WebSerSoftNo").isEmpty()?"已按审核的只读 WMIC 覆盖号/回退规则核验；":"")

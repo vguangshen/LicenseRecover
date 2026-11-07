@@ -27,10 +27,10 @@ public final class LicenseRecoverReadOnlyDotNetScanner {
                 state=LicenseRecoverReadOnlyDotNetVerifier.verifyMatched(root,first.upper);
                 if(!state.isScanError()&&state.acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED&&first.extended!=null)
                     state=combineDiagnostics(state,LicenseRecoverReadOnlyDotNetExtendedVerifier.inspectMatched(root,first.extended,
-                            first.extended.legacy()?LicenseRecoverReadOnlyMachineIdentity.current():null).state);
+                            first.extended.fixedFields()?LicenseRecoverReadOnlyMachineIdentity.current():null).state);
             }
             else if(first.extended!=null)state=LicenseRecoverReadOnlyDotNetExtendedVerifier.inspectMatched(root,first.extended,
-                    first.extended.legacy()?LicenseRecoverReadOnlyMachineIdentity.current():null).state;
+                    first.extended.fixedFields()?LicenseRecoverReadOnlyMachineIdentity.current():null).state;
             else state=LicenseRecoverLicenseState.unverified(first.summary()
                     +"；识别同族不等于授权通过；未按软件名、版本前缀或接口同名推定有效");
             if(state.isScanError())return new Result(state,null);

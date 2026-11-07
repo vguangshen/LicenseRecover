@@ -50,7 +50,7 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
             LicenseRecoverReadOnlyDotNetCatalog.ExtendedBinding b=build(root);
             if(b==null)return result(false,LocalStatus.NOT_APPLICABLE,"未匹配本次审核的 legacy/VM 构建组合","unknown","unknown","unknown");
             // VM/format diagnostics do not use machine identity; avoid a needless OS query.
-            return inspect(root,b.legacy()?LicenseRecoverReadOnlyMachineIdentity.current():null);
+            return inspect(root,b.fixedFields()?LicenseRecoverReadOnlyMachineIdentity.current():null);
         }catch(NoSuchFileException missing){return result(false,LocalStatus.NOT_APPLICABLE,"缺少该协议的审核组件或根配置","unknown","unknown","unknown");}
         catch(LicenseRecoverReadOnlyDotNetCatalog.Changed e){return result(true,LocalStatus.INPUT_CHANGED,"协议组件读取期间变化","unknown","unknown","unknown");}
         catch(IOException|SecurityException e){return new Result(LicenseRecoverLicenseState.scanError("只读 legacy/VM 组件检查失败: "+e.getClass().getSimpleName()));}
@@ -71,7 +71,7 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
         try {
             Path cfg=root.toPath().resolve("config.xml");byte[] before=read(cfg,MAX_CONFIG);
             LicenseRecoverReadOnlyDotNetRegistrySource.Snapshot registryBefore=LicenseRecoverReadOnlyDotNetRegistrySource.readCurrent();
-            Result observed=diagnose(before,b.legacy(),identity,LocalDate.now());
+            Result observed=diagnose(before,b.format,identity,LocalDate.now());
             boolean stable=Arrays.equals(before,read(cfg,MAX_CONFIG))&&build(root)==b;
             LicenseRecoverReadOnlyDotNetRegistrySource.Snapshot registryAfter=LicenseRecoverReadOnlyDotNetRegistrySource.readCurrent();
             return withRegistryContext(retainIfStable(observed,stable),registryBefore,registryAfter);
@@ -104,15 +104,30 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
 
     /** Fixtures exercise the actual local predicates without adding synthetic trusted hashes. */
     static Result diagnose(byte[] xml,boolean legacy,LicenseRecoverReadOnlyMachineIdentity.Snapshot identity,LocalDate today) {
+        return diagnose(xml,legacy?LicenseRecoverReadOnlyDotNetCatalog.LocalFormat.FIXED_MARKET_RECORD
+                :LicenseRecoverReadOnlyDotNetCatalog.LocalFormat.PROTECTED_VM,identity,today);
+    }
+    static Result diagnose(byte[] xml,LicenseRecoverReadOnlyDotNetCatalog.LocalFormat format,
+            LicenseRecoverReadOnlyMachineIdentity.Snapshot identity,LocalDate today) {
+        Result result=diagnoseFields(xml,format,identity,today);
+        if(format!=LicenseRecoverReadOnlyDotNetCatalog.LocalFormat.RECOVERED_FIXED_FIELDS)return result;
+        return result(result.applies,result.localStatus,"已恢复托管分支的固定位置字段核对："+result.state.evidence
+                +"；原生密钥回调/JIT、网站映射及后备路径仍待核。原生成功分支会写 Register.xml，本扫描没有调用或写回",
+                "托管恢复分派（原生未核）："+result.dispatch,result.upperLocal,result.lowerLocal);
+    }
+    private static Result diagnoseFields(byte[] xml,LicenseRecoverReadOnlyDotNetCatalog.LocalFormat format,
+            LicenseRecoverReadOnlyMachineIdentity.Snapshot identity,LocalDate today) {
+        boolean legacy=format==LicenseRecoverReadOnlyDotNetCatalog.LocalFormat.FIXED_MARKET_RECORD;
+        boolean fixed=legacy||format==LicenseRecoverReadOnlyDotNetCatalog.LocalFormat.RECOVERED_FIXED_FIELDS;
         String dispatch="unknown";
         try {
             Document cfg=xml(xml);String mode=element(cfg,"reg","regType");
-            dispatch=dispatch(mode,legacy);
+            dispatch=dispatch(mode,fixed);
             String encrypted=element(cfg,"reg","regName");
             if(encrypted.trim().isEmpty())return result(true,LocalStatus.NO_LOCAL_RECORD,
                     "根 config.xml 未包含本地授权记录；大写本地检查返回失败；网络/硬件狗及小写路径未获全路径结论",
                     dispatch,"NO_LOCAL_RECORD",legacy?"NO_LOCAL_RECORD":"VM_NOT_EVALUATED");
-            if(!legacy) {
+            if(!fixed) {
                 try {
                     String plain=decrypt(encrypted,"*ITMCYX0302OK*");
                     if(plain.length()>=12&&ascii(plain)&&!plain.substring(6,plain.length()-6).trim().startsWith("{"))
@@ -129,14 +144,14 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
             }
             // Reviewed lowercase YX0102 has a fixed-position legacy record, not upper JSON.
             String plain;
-            try{plain=decrypt(encrypted.trim(),"*MarketOK*");}
+            try{plain=decrypt(encrypted.trim(),legacy?"*MarketOK*":"*ITMCYX0302OK*");}
             catch(GeneralSecurityException|IllegalArgumentException failure){
-                Result modern=modernCandidate(encrypted,dispatch);if(modern!=null)return modern;
+                Result modern=modernCandidate(encrypted,dispatch,legacy?"*ITMCYS01OK*":"*ITMCYX0302OK*");if(modern!=null)return modern;
                 return result(true,LocalStatus.LEGACY_FORMAT_UNSUPPORTED,
                     "小写旧协议载荷无法按审核格式解码；本地失败不等于网络/硬件狗或网站父产品路径全部失败",
                     dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","LOCAL_PAYLOAD_UNMATCHED");}
             if(!ascii(plain)||plain.length()<40||!plain.substring(30,40).matches("\\d{4}-\\d{2}-\\d{2}")) {
-                Result modern=modernCandidate(encrypted,dispatch);if(modern!=null)return modern;
+                Result modern=modernCandidate(encrypted,dispatch,legacy?"*ITMCYS01OK*":"*ITMCYX0302OK*");if(modern!=null)return modern;
                 return result(true,LocalStatus.LEGACY_FORMAT_UNSUPPORTED,"小写记录未匹配审核的固定位置结构；未判断全部授权方式",dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","UNSUPPORTED_RECORD");
             }
             if(identity==null||!identity.complete)return result(true,LocalStatus.IDENTITY_UNAVAILABLE,
@@ -153,6 +168,10 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
             if(!end.isAfter(today))return result(true,LocalStatus.LEGACY_EXPIRED,
                     "小写旧协议的本地到期条件未通过（到期日当天也拒绝）；网络/硬件狗及网站兼容路径未判断",
                     dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","LOCAL_DATE_REJECTED");
+            if(format==LicenseRecoverReadOnlyDotNetCatalog.LocalFormat.RECOVERED_FIXED_FIELDS&&!fixedRecordFields(plain))
+                return result(true,LocalStatus.LEGACY_FORMAT_UNSUPPORTED,
+                        "机器和期限字段匹配，但后续固定记录的日期/整数字段无法按恢复规则转换；未调用原生写回或判断整个入口",
+                        dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","FIXED_FIELD_CONVERSION_UNSUPPORTED");
             return result(true,LocalStatus.LEGACY_LOCAL_CONDITIONS_MATCHED,
                     "小写本地机器与日期条件匹配；后续 RegInfo 构造和网站模式条件仍需完整证明，不能据此提升为授权检查通过",
                     dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","MACHINE_AND_DATE_MATCHED_WEBSITE_PENDING");
@@ -163,15 +182,29 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
     private static Result result(boolean applies,LocalStatus status,String reason,String dispatch,String upper,String lower) {
         return new Result(applies,status,reason,dispatch,upper,lower);
     }
+    private static boolean fixedRecordFields(String plain) {
+        try {
+            if(plain.length()<64)return false;
+            LocalDate.parse(plain.substring(42,52));
+            Integer.parseInt(plain.substring(24,28).replaceFirst("^0+","").trim());
+            Integer.parseInt(plain.substring(57,59).replaceFirst("^0+","").trim());
+            if(!plain.substring(54,55).matches("[0-9]"))return false;
+            Integer.parseInt(plain.substring(61,plain.length()-2).trim());
+            return true;
+        }catch(RuntimeException unsupported){return false;}
+    }
     /** Format routing only; even malformed JSON with this outer shape must never become accepted. */
     private static Result modernCandidate(String encrypted,String dispatch) {
+        return modernCandidate(encrypted,dispatch,"*ITMCYS01OK*");
+    }
+    private static Result modernCandidate(String encrypted,String dispatch,String password) {
         try {
-            String clear=decrypt(encrypted.trim(),"*ITMCYS01OK*");
+            String clear=decrypt(encrypted.trim(),password);
             if(!ascii(clear)||clear.length()<14)return null;
             String wrapped=clear.substring(6,clear.length()-6).trim();
             if(!wrapped.startsWith("{")||!wrapped.endsWith("}"))return null;
             return result(true,LocalStatus.MODERN_RECORD_CANDIDATE,
-                    "当前载荷可按已审 YS01 现代编码解密并具有 JSON 外形；不能当作小写旧格式损坏。内容、机器、日期和模式必须由独立现代谓词另行验证，格式候选不证明授权通过",
+                    "当前载荷可按对应编码解密并具有 JSON 外形；不能当作小写固定位置格式损坏。内容、机器、日期和模式必须由独立现代谓词另行验证，格式候选不证明授权通过",
                     dispatch,"MODERN_SHAPE_REQUIRES_VALIDATION","LEGACY_FORMAT_NOT_APPLICABLE");
         }catch(GeneralSecurityException|IllegalArgumentException failure){return null;}
     }
