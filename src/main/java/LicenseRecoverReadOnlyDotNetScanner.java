@@ -23,7 +23,12 @@ public final class LicenseRecoverReadOnlyDotNetScanner {
             LicenseRecoverReadOnlyCodeEvidence codeEvidence=LicenseRecoverReadOnlyDotNetCodeEvidence.inspect(root);
             first=LicenseRecoverReadOnlyDotNetCatalog.assess(root,true);
             LicenseRecoverLicenseState state;
-            if(first.upper!=null)state=LicenseRecoverReadOnlyDotNetVerifier.verifyMatched(root,first.upper);
+            if(first.upper!=null) {
+                state=LicenseRecoverReadOnlyDotNetVerifier.verifyMatched(root,first.upper);
+                if(!state.isScanError()&&state.acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED&&first.extended!=null)
+                    state=combineDiagnostics(state,LicenseRecoverReadOnlyDotNetExtendedVerifier.inspectMatched(root,first.extended,
+                            first.extended.legacy()?LicenseRecoverReadOnlyMachineIdentity.current():null).state);
+            }
             else if(first.extended!=null)state=LicenseRecoverReadOnlyDotNetExtendedVerifier.inspectMatched(root,first.extended,
                     first.extended.legacy()?LicenseRecoverReadOnlyMachineIdentity.current():null).state;
             else state=LicenseRecoverLicenseState.unverified(first.summary()
@@ -39,6 +44,24 @@ public final class LicenseRecoverReadOnlyDotNetScanner {
         }catch(IllegalStateException e) {
             return new Result(LicenseRecoverLicenseState.scanError(".NET 协议审核目录存在冲突，未进行授权判定"),null);
         }
+    }
+    /** A dual-component build retains both scoped findings when neither path proves acceptance. */
+    static LicenseRecoverLicenseState combineDiagnostics(LicenseRecoverLicenseState modern,LicenseRecoverLicenseState compatibility) {
+        if(modern.isScanError())return modern;if(compatibility.isScanError())return compatibility;
+        if(modern.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED
+                ||compatibility.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED
+                ||modern.authorization!=LicenseRecoverLicenseState.Authorization.UNVERIFIED
+                ||compatibility.authorization!=LicenseRecoverLicenseState.Authorization.UNVERIFIED
+                ||modern.codeIntegrity!=LicenseRecoverLicenseState.CodeIntegrity.UNKNOWN
+                ||compatibility.codeIntegrity!=LicenseRecoverLicenseState.CodeIntegrity.UNKNOWN)
+            throw new IllegalArgumentException("only unresolved local diagnostics may be combined");
+        LicenseRecoverLicenseState.LocalCondition condition=modern.localCondition;
+        if((condition==LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED||condition==LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED)
+                &&compatibility.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED)
+            condition=compatibility.localCondition;
+        String evidence="大写现代本地路径〔"+modern.evidence+"〕；小写兼容路径〔"+compatibility.evidence+"〕；未得出完整授权拒绝结论";
+        return condition==LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED?LicenseRecoverLicenseState.unverified(evidence)
+                :LicenseRecoverLicenseState.localObservation(condition,evidence);
     }
     static Result retainIfStable(LicenseRecoverLicenseState state,LicenseRecoverReadOnlyDotNetCatalog.Assessment first,
             LicenseRecoverReadOnlyDotNetCatalog.Assessment last) {

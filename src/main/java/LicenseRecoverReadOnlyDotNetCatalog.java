@@ -14,14 +14,21 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
     enum LocalFormat { FIXED_MARKET_RECORD, PROTECTED_VM }
     static final class UpperBinding {
         final String web,registration,product,cryptoFile,cryptoHash,jsonHash,logHash;
+        final boolean positiveEntryAudited;final String auditGap;
         UpperBinding(String web,String registration,String product,String file,String crypto,String json,String log) {
+            this(web,registration,product,file,crypto,json,log,true,"");
+        }
+        UpperBinding(String web,String registration,String product,String file,String crypto,String json,String log,
+                boolean positiveEntryAudited,String auditGap) {
             this.web=web;this.registration=registration;this.product=product;cryptoFile=file;
             cryptoHash=crypto;jsonHash=json;logHash=log;
+            this.positiveEntryAudited=positiveEntryAudited;this.auditGap=auditGap;
+            if(!positiveEntryAudited&&(auditGap==null||auditGap.trim().isEmpty()))throw new IllegalArgumentException("local audit requires an explicit entry gap");
         }
         boolean matches(Map<String,String> h) {
             return eq(h,"ITMC.Web.dll",web)&&eq(h,"ITMC.Regedit.dll",registration)
                     &&eq(h,cryptoFile,cryptoHash)&&eq(h,"Newtonsoft.Json.dll",jsonHash)
-                    &&eq(h,"log4net.dll",logHash)&&eq(h,"LiteDB.dll",LITE);
+                    &&(logHash==null?!h.containsKey("log4net.dll"):eq(h,"log4net.dll",logHash))&&eq(h,"LiteDB.dll",LITE);
         }
     }
     static final class ExtendedBinding {
@@ -48,7 +55,23 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
             "ItmcBtoB.DBUtility.dll","7d880b03364e4c31c39c47a053144345b5b02804ac7a0e80a87ebf24096fd999",JSON6,LOG_OLD),
         new UpperBinding("57fa95aa72a15bfd569834374860f29dbef22a48294f7010e94846023a94ce35",
             "f5a2c38dee0f694c33fdac2c5570c2431b955c594e244e87596f120c0eb07f99","YX0303",
-            "ITMC.DBUtility.dll","f8c2ff0b28b03bfc33ce61e32f63d8b179c0c213a4ccab8ba748aa4dd73d5c22",JSON7,LOG_NEW)
+            "ITMC.DBUtility.dll","f8c2ff0b28b03bfc33ce61e32f63d8b179c0c213a4ccab8ba748aa4dd73d5c22",JSON7,LOG_NEW),
+        // The shared local predicate is audited; the protected website result constructor is not.
+        new UpperBinding("929d67295961ed453202e4ea44bbeb2614543b7212c50717d58a455558067be4",
+            "222df2d024efb4b30510af9bf5f552646e4e2f75ea9b3795daa7a279d8a6f725","YX0302",
+            "ITMC.DBUtility.dll","dc7e1806270ae5dc54c073f417949f7a3b1f24731e70925d16027e645ce150bc",JSON6,
+            "c228ad98c76a3b40bbd1bc950b81feff977646b2b99a21310164d4d310c7ea75",false,
+            "网站接受前依赖小写 RegeditInfo 的受保护 VM 构造器；见 docs/DOTNET_YX0302_UPPER_LOCAL_AUDIT.md"),
+        new UpperBinding("07183f09c19b69c5c4ddcdcb43ad4b8d91cf56f629f6a3d7d675dfc84f761079",
+            "222df2d024efb4b30510af9bf5f552646e4e2f75ea9b3795daa7a279d8a6f725","YX0302",
+            "ITMC.DBUtility.dll","dc7e1806270ae5dc54c073f417949f7a3b1f24731e70925d16027e645ce150bc",JSON6,
+            "c228ad98c76a3b40bbd1bc950b81feff977646b2b99a21310164d4d310c7ea75",false,
+            "网站接受前依赖小写 RegeditInfo 的受保护 VM 构造器；见 docs/DOTNET_YX0302_UPPER_LOCAL_AUDIT.md"),
+        // YS01 uses the same audited JSON predicate; this reviewed build has no log4net file.
+        // See docs/DOTNET_YS01_UPPER_AUDIT_20261107.md; not original/Patch provenance.
+        new UpperBinding("1790526c91b0dc51aa914d80604e600175cfb3d8899c8299bb3b2c85684b9b20",
+            "c942c3c21466979e63eee1ffadbfe7273c83c2dc0a455f324c9da7e187953f46","YS01",
+            "ITMC.DBUtility.dll","236cfe610b87fb7a4f6589cb2a9e319a048b8a8e2a1b79d3028d4d7e1b5fcb6b",JSON7,null)
     };
     private static final ExtendedBinding[] EXTENDED={
         new ExtendedBinding("1790526c91b0dc51aa914d80604e600175cfb3d8899c8299bb3b2c85684b9b20",
@@ -67,21 +90,90 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
     private static final String[] COMPONENTS={"config.xml","ITMC.Web.dll","ITMC.Regedit.dll","itmcRegedit.dll",
             "ItmcBtoB.DBUtility.dll","ITMC.DBUtility.dll","Newtonsoft.Json.dll","log4net.dll","LiteDB.dll"};
     static final class Changed extends IOException { }
+    /** Code-set coverage only. An exact diagnostic binding is not a complete license proof. */
+    public static final class FingerprintMatch {
+        public final String profileId, auditScope;
+        public final int requiredComponents, matchedComponents;
+        public final List<String> missingComponents, differentComponents, requiredAbsentComponents;
+        public final boolean exact;
+        FingerprintMatch(String id,String scope,Map<String,String> required,Map<String,String> observed) {
+            profileId=id;auditScope=scope;requiredComponents=required.size();int matched=0;
+            List<String> missing=new ArrayList<String>(),different=new ArrayList<String>(),absent=new ArrayList<String>();
+            for(Map.Entry<String,String> e:required.entrySet()) {
+                String actual=observed.get(e.getKey());
+                if(e.getValue()==null) {absent.add("bin/"+e.getKey());if(actual==null)matched++;else different.add("bin/"+e.getKey());}
+                else if(actual==null)missing.add("bin/"+e.getKey());
+                else if(e.getValue().equals(actual))matched++;else different.add("bin/"+e.getKey());
+            }
+            matchedComponents=matched;exact=matched==requiredComponents;
+            missingComponents=Collections.unmodifiableList(missing);differentComponents=Collections.unmodifiableList(different);
+            requiredAbsentComponents=Collections.unmodifiableList(absent);
+        }
+    }
     public static final class Assessment {
         public final Family upperFamily,compatibilityFamily;
         public final boolean auditedBinding;
+        public final String fingerprintStatus, auditScope, profileId;
+        public final List<FingerprintMatch> fingerprintMatches;
         final UpperBinding upper;final ExtendedBinding extended;final Map<String,String> hashes;
         Assessment(Family a,Family b,UpperBinding u,ExtendedBinding e,Map<String,String> hashes) {
             upperFamily=a;compatibilityFamily=b;upper=u;extended=e;auditedBinding=u!=null||e!=null;
             this.hashes=Collections.unmodifiableMap(new TreeMap<String,String>(hashes));
+            fingerprintMatches=fingerprintMatches(this.hashes);
+            // The same build may support a reviewed modern positive path AND a legacy
+            // diagnostic. Those are different scopes, not competing Patch provenances.
+            String selectedScope=u!=null?u.positiveEntryAudited?"LOCAL_POSITIVE_PREDICATE":"MODERN_LOCAL_DIAGNOSTIC":e!=null
+                    ?e.legacy()?"LEGACY_LOCAL_DIAGNOSTIC":"PROTECTED_LOCAL_DIAGNOSTIC":"NONE";
+            FingerprintMatch exact=null;int exactCount=0;
+            for(FingerprintMatch match:fingerprintMatches)if(match.exact&&selectedScope.equals(match.auditScope)){exact=match;exactCount++;}
+            fingerprintStatus=exactCount==1?"EXACT_REVIEWED_SET":exactCount>1?"AMBIGUOUS_REVIEWED_SETS"
+                    :!fingerprintMatches.isEmpty()?"PARTIAL_REVIEWED_SET"
+                    :a==Family.REGINFO_API_CANDIDATE||b==Family.COMPATIBILITY_API_CANDIDATE?"API_CANDIDATE":"UNKNOWN";
+            profileId=exactCount==1?exact.profileId:"none";auditScope=exactCount==1?exact.auditScope:"NONE";
         }
         public String summary() {
             String family=upperFamily==Family.MODERN_JSON_DES?"现代本地记录协议"
                     :upperFamily==Family.REGINFO_API_CANDIDATE?"同系列注册接口候选":"未识别的大写注册协议";
             if(compatibilityFamily!=Family.UNKNOWN)family+="及兼容注册组件";
-            return family+(auditedBinding?"；当前入口与依赖已匹配审核证据":"；当前完整授权逻辑尚未获得审核证明");
+            return family+"；"+fingerprintSummary();
+        }
+        public String fingerprintSummary() {
+            if("EXACT_REVIEWED_SET".equals(fingerprintStatus))return "构建指纹 "+profileId
+                    +("LOCAL_POSITIVE_PREDICATE".equals(auditScope)?" 已匹配本地接受判据的审核组件集合"
+                    :" 已匹配局部诊断的审核组件集合，完整接受路径尚未闭合");
+            StringBuilder result=new StringBuilder("当前构建未匹配完整审核组件集合");
+            for(FingerprintMatch match:fingerprintMatches)result.append("；").append(match.profileId)
+                    .append(" 匹配 ").append(match.matchedComponents).append('/').append(match.requiredComponents)
+                    .append("，缺少 ").append(match.missingComponents).append("，不同 ").append(match.differentComponents);
+            return result.toString();
         }
         boolean sameInputs(Assessment other) {return other!=null&&hashes.equals(other.hashes);}
+    }
+    private static List<FingerprintMatch> fingerprintMatches(Map<String,String> observed) {
+        List<FingerprintMatch> result=new ArrayList<FingerprintMatch>();int index=0;
+        for(UpperBinding binding:UPPER) {
+            Map<String,String> required=new TreeMap<String,String>();
+            required.put("ITMC.Web.dll",binding.web);required.put("ITMC.Regedit.dll",binding.registration);
+            required.put(binding.cryptoFile,binding.cryptoHash);required.put("Newtonsoft.Json.dll",binding.jsonHash);
+            required.put("log4net.dll",binding.logHash);required.put("LiteDB.dll",LITE);
+            addCoverage(result,"DOTNET-JSON-DES-"+(++index),binding.positiveEntryAudited?"LOCAL_POSITIVE_PREDICATE":"MODERN_LOCAL_DIAGNOSTIC",required,observed);
+        }
+        index=0;
+        for(ExtendedBinding binding:EXTENDED) {
+            Map<String,String> required=new TreeMap<String,String>();
+            required.put("ITMC.Web.dll",binding.web);required.put("ITMC.Regedit.dll",binding.upper);
+            required.put("itmcRegedit.dll",binding.lower);required.put("ITMC.DBUtility.dll",binding.crypto);
+            addCoverage(result,"DOTNET-COMPAT-"+(++index),binding.legacy()?"LEGACY_LOCAL_DIAGNOSTIC":"PROTECTED_LOCAL_DIAGNOSTIC",required,observed);
+        }
+        return Collections.unmodifiableList(result);
+    }
+    private static void addCoverage(List<FingerprintMatch> result,String id,String scope,Map<String,String> required,
+            Map<String,String> observed) {
+        // Only a matching site/registration component admits an evidence candidate, not a ubiquitous dependency.
+        for(String anchor:new String[]{"ITMC.Web.dll","ITMC.Regedit.dll","itmcRegedit.dll"})
+            if(required.containsKey(anchor)&&required.get(anchor).equals(observed.get(anchor))) {
+                result.add(new FingerprintMatch(id,scope,required,observed));return;
+            }
     }
     static Assessment assess(File root,boolean structuralCandidates)throws IOException {
         if(root==null)return classify(Collections.<String,String>emptyMap(),null,null);

@@ -54,6 +54,21 @@ public final class LicenseRecoverReadOnlyInspectionTest {
             check(n.artifacts.size()==2&&!n.state.isScanError(),"CLI metadata observation accepted");
             check(n.artifacts.get(0).format.contains("assembly-version=2.7.19.4"),"assembly version evidence");
             check(n.state.authorization==LicenseRecoverLicenseState.Authorization.UNVERIFIED,"PE is not native-valid");
+            check(n.toJson().contains("\"protocolFingerprintMatches\":[]")&&n.toJson().contains("\"protocolAuditScope\":\"NONE\""),
+                    "unreviewed file observations do not acquire an audit coverage receipt");
+            Map<String,String> partial=new HashMap<String,String>();
+            partial.put("ITMC.Regedit.dll","735a7f868825111cd437cb5093eaa79f0a977330a79121fb2d18885290da743f");
+            partial.put("config.xml","PRIVATE_LICENSE_SENTINEL");
+            LicenseRecoverReadOnlyDotNetCatalog.Assessment coverage=LicenseRecoverReadOnlyDotNetCatalog.classify(partial,null,null);
+            LicenseRecoverReadOnlyInspection.Result diagnostic=new LicenseRecoverReadOnlyInspection.Result(net.toFile(),"TEST01","DOTNET",unknown,
+                    Collections.<LicenseRecoverReadOnlyInspection.Artifact>emptyList(),"synthetic current observation",coverage);
+            String json=diagnostic.toJson();
+            check(json.contains("\"protocolFingerprintStatus\":\"PARTIAL_REVIEWED_SET\"")&&json.contains("bin/ITMC.Web.dll")
+                    &&json.contains("\"matchedComponents\":1")&&!json.contains("PRIVATE_LICENSE_SENTINEL"),
+                    "coverage JSON identifies missing binaries without disclosing root-record hashes or values");
+            check(diagnostic.reason.contains("构建审核：")&&diagnostic.reason.contains("匹配 1/6")
+                    &&diagnostic.state.acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED,
+                    "GUI diagnostic includes coverage but does not promote a partial match");
             Files.write(bin.resolve("ITMC.Regedit.dll"),new byte[]{0});
             check(LicenseRecoverReadOnlyInspection.inspect(net.toFile()).state.isScanError(),"damaged PE red");
             check(!r.toJson().contains("nativeVerifierReadOnlyAudited\":true"),"native safety cannot be fabricated");

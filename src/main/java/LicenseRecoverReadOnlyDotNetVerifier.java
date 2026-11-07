@@ -71,10 +71,19 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
         if(!stable)return state;
         state=predicate(before,build.product,identity,Instant.now(),ZoneId.systemDefault(),cpu);
         if(state.acceptance!=LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE)return state;
-        return LicenseRecoverLicenseState.authorizationAcceptance(state.evidence
+        return applyAuditScope(LicenseRecoverLicenseState.authorizationAcceptance(state.evidence
                 +"；site-root/config.xml SHA-256="+sha(before)
                 +"；website SHA-256="+build.web+"；registration SHA-256="+build.registration,
-                LicenseRecoverLicenseState.LocalCondition.SATISFIED);
+                LicenseRecoverLicenseState.LocalCondition.SATISFIED),build);
+    }
+
+    /** Sharing the record predicate does not close an opaque website/initializer path. */
+    static LicenseRecoverLicenseState applyAuditScope(LicenseRecoverLicenseState observed,
+            LicenseRecoverReadOnlyDotNetCatalog.UpperBinding binding) {
+        if(binding.positiveEntryAudited||observed.acceptance!=LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE)return observed;
+        return LicenseRecoverLicenseState.localObservation(LicenseRecoverLicenseState.LocalCondition.SATISFIED,
+                "大写现代协议的本地产品、本机、日期、无限计次及当前模式条件满足；完整网站入口仍待核："
+                +binding.auditGap+"；没有据此确认原生激活、Patch 或整体入口通过；未执行厂商程序集");
     }
 
     /** All current-state observations, not just positive acceptance, require stable inputs. */

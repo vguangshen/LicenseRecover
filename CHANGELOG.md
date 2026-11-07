@@ -1,3 +1,10 @@
+## 1.2.73 - 2026-11-07
+
+- Evaluate audited modern local records in dual-registration builds before compatibility diagnostics. Reuse the shared product/machine/date/unlimited-counter/current-mode predicate for the reviewed YS01 website; preserve both scoped findings when no path proves acceptance.
+- Bind YX0302 modern local diagnostics to exact reviewed components. Downgrade positive local conditions to scoped evidence while its website's protected result constructor remains unaudited; do not infer whole-entry acceptance or native/Patch provenance.
+- Report immutable fingerprint coverage, exact audit scope, required absence, missing and changed components in JSON and GUI reasons. Recheck all protocol dependencies and the root record after the final artifact pass.
+- Recognize a modern YS01 record candidate in legacy-only diagnostics without mislabelling it as a damaged legacy record. Format recognition alone never establishes activation.
+
 ## 1.2.72 - 2026-11-03
 
 - Restore the user's shared green presentation for audited entry acceptance, retaining distinct native/Patch facts and explicit labels. Add a visible code-evidence column beside license status.

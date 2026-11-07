@@ -63,6 +63,18 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifierTest {
                 LicenseRecoverLicenseState.LocalCondition.NO_RECORD,"legacy empty local record");
         expect(run(config("BAD-CIPHER","1"),true),LicenseRecoverReadOnlyDotNetExtendedVerifier.LocalStatus.LEGACY_FORMAT_UNSUPPORTED,
                 LicenseRecoverLicenseState.LocalCondition.MALFORMED,"malformed ciphertext is not globally invalid");
+        String modernCandidate=encrypt("123456{\"unreviewed\":true}654321","*ITMCYS01OK*");
+        expect(run(config(modernCandidate,"1"),true),LicenseRecoverReadOnlyDotNetExtendedVerifier.LocalStatus.MODERN_RECORD_CANDIDATE,
+                LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,"YS01 modern candidate must not be decoded only as a broken legacy record");
+        expect(run(config(encrypt("123456{\"unreviewed\":}654321","*ITMCYS01OK*"),"1"),true),
+                LicenseRecoverReadOnlyDotNetExtendedVerifier.LocalStatus.MODERN_RECORD_CANDIDATE,
+                LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,"outer JSON shape alone cannot assert valid JSON or authorization");
+        expect(run(config(encrypt("123456UNREVIEWED654321","*ITMCYS01OK*"),"1"),true),
+                LicenseRecoverReadOnlyDotNetExtendedVerifier.LocalStatus.LEGACY_FORMAT_UNSUPPORTED,
+                LicenseRecoverLicenseState.LocalCondition.MALFORMED,"decryptable non-record is not a modern format candidate");
+        if(run(config(modernCandidate,"1"),true).state.evidence.contains(modernCandidate)
+                ||run(config(modernCandidate,"1"),true).state.evidence.contains("unreviewed"))
+            throw new AssertionError("format diagnostics must not disclose ciphertext or plaintext");checks++;
         expect(LicenseRecoverReadOnlyDotNetExtendedVerifier.diagnose(valid,true,null,TODAY),
                 LicenseRecoverReadOnlyDotNetExtendedVerifier.LocalStatus.IDENTITY_UNAVAILABLE,LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,"no identity cannot establish mismatch");
         String vmRecord=encrypt(plain(MACHINE,TODAY.plusYears(1)),"*ITMCYX0302OK*");

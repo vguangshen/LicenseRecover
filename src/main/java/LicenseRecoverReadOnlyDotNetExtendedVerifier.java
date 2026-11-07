@@ -23,7 +23,7 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
     private static final int MAX_CONFIG=4*1024*1024, MAX_BINARY=128*1024*1024;
     public enum LocalStatus {
         NOT_APPLICABLE, NO_LOCAL_RECORD, LEGACY_MACHINE_MISMATCH, LEGACY_EXPIRED,
-        LEGACY_LOCAL_CONDITIONS_MATCHED, LEGACY_FORMAT_UNSUPPORTED, IDENTITY_UNAVAILABLE,
+        LEGACY_LOCAL_CONDITIONS_MATCHED, LEGACY_FORMAT_UNSUPPORTED, MODERN_RECORD_CANDIDATE, IDENTITY_UNAVAILABLE,
         UPPER_JSON_FORMAT_MISMATCH_LOWER_VM_PENDING, LOWER_VM_PENDING, INPUT_CHANGED, INSPECTION_ERROR
     }
     public static final class Result {
@@ -130,11 +130,15 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
             // Reviewed lowercase YX0102 has a fixed-position legacy record, not upper JSON.
             String plain;
             try{plain=decrypt(encrypted.trim(),"*MarketOK*");}
-            catch(GeneralSecurityException|IllegalArgumentException failure){return result(true,LocalStatus.LEGACY_FORMAT_UNSUPPORTED,
+            catch(GeneralSecurityException|IllegalArgumentException failure){
+                Result modern=modernCandidate(encrypted,dispatch);if(modern!=null)return modern;
+                return result(true,LocalStatus.LEGACY_FORMAT_UNSUPPORTED,
                     "小写旧协议载荷无法按审核格式解码；本地失败不等于网络/硬件狗或网站父产品路径全部失败",
                     dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","LOCAL_PAYLOAD_UNMATCHED");}
-            if(!ascii(plain)||plain.length()<40||!plain.substring(30,40).matches("\\d{4}-\\d{2}-\\d{2}"))
+            if(!ascii(plain)||plain.length()<40||!plain.substring(30,40).matches("\\d{4}-\\d{2}-\\d{2}")) {
+                Result modern=modernCandidate(encrypted,dispatch);if(modern!=null)return modern;
                 return result(true,LocalStatus.LEGACY_FORMAT_UNSUPPORTED,"小写记录未匹配审核的固定位置结构；未判断全部授权方式",dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","UNSUPPORTED_RECORD");
+            }
             if(identity==null||!identity.complete)return result(true,LocalStatus.IDENTITY_UNAVAILABLE,
                     "旧格式本地记录存在，但独立本机身份不可用；网络/硬件狗尚未核验",dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","IDENTITY_UNAVAILABLE");
             String current=legacyMachine(identity);
@@ -159,6 +163,18 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
     private static Result result(boolean applies,LocalStatus status,String reason,String dispatch,String upper,String lower) {
         return new Result(applies,status,reason,dispatch,upper,lower);
     }
+    /** Format routing only; even malformed JSON with this outer shape must never become accepted. */
+    private static Result modernCandidate(String encrypted,String dispatch) {
+        try {
+            String clear=decrypt(encrypted.trim(),"*ITMCYS01OK*");
+            if(!ascii(clear)||clear.length()<14)return null;
+            String wrapped=clear.substring(6,clear.length()-6).trim();
+            if(!wrapped.startsWith("{")||!wrapped.endsWith("}"))return null;
+            return result(true,LocalStatus.MODERN_RECORD_CANDIDATE,
+                    "当前载荷可按已审 YS01 现代编码解密并具有 JSON 外形；不能当作小写旧格式损坏。内容、机器、日期和模式必须由独立现代谓词另行验证，格式候选不证明授权通过",
+                    dispatch,"MODERN_SHAPE_REQUIRES_VALIDATION","LEGACY_FORMAT_NOT_APPLICABLE");
+        }catch(GeneralSecurityException|IllegalArgumentException failure){return null;}
+    }
     private static LicenseRecoverLicenseState.LocalCondition condition(LocalStatus status) {
         switch(status) {
             case NO_LOCAL_RECORD:return LicenseRecoverLicenseState.LocalCondition.NO_RECORD;
@@ -168,6 +184,7 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
             case LEGACY_FORMAT_UNSUPPORTED:return LicenseRecoverLicenseState.LocalCondition.MALFORMED;
             case IDENTITY_UNAVAILABLE:return LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE;
             case UPPER_JSON_FORMAT_MISMATCH_LOWER_VM_PENDING:
+            case MODERN_RECORD_CANDIDATE:
             case LOWER_VM_PENDING:return LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED;
             default:return LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED;
         }
