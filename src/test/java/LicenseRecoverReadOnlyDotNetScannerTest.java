@@ -23,13 +23,77 @@ public final class LicenseRecoverReadOnlyDotNetScannerTest {
         LicenseRecoverReadOnlyDotNetCatalog.Assessment a=LicenseRecoverReadOnlyDotNetCatalog.classify(ds01,null,null),b=LicenseRecoverReadOnlyDotNetCatalog.classify(ds05,null,null);
         check(a.upperFamily==b.upperFamily&&a.upperFamily==LicenseRecoverReadOnlyDotNetCatalog.Family.MODERN_JSON_DES,"different products/builds share one modern protocol family");
         check(a.auditedBinding&&b.auditedBinding&&a.upper.product.equals(b.upper.product),"explicit audited parameters share the same product engine");
+        check("EXACT_REVIEWED_SET".equals(a.fingerprintStatus)&&"LOCAL_POSITIVE_PREDICATE".equals(a.auditScope)
+                &&a.fingerprintMatches.size()==1,"exact code-set evidence reports its audit scope");
+        check(a.fingerprintMatches.get(0).requiredComponents==6&&a.fingerprintMatches.get(0).matchedComponents==6,
+                "the complete six-component modern binding is distinguished from a DLL match");
         Map<String,String> future=new HashMap<String,String>(ds05);future.put("ITMC.Web.dll",LicenseRecoverReadOnlyDotNetCatalog.hash(new byte[]{1}));
         LicenseRecoverReadOnlyDotNetCatalog.Assessment variant=LicenseRecoverReadOnlyDotNetCatalog.classify(future,null,null);
         check(variant.upperFamily==a.upperFamily&&!variant.auditedBinding,"known protocol component in a future site is identified but not certified");
+        check("PARTIAL_REVIEWED_SET".equals(variant.fingerprintStatus)&&"NONE".equals(variant.auditScope)
+                &&variant.fingerprintMatches.get(0).differentComponents.equals(Collections.singletonList("bin/ITMC.Web.dll")),
+                "an altered website shows the specific unreviewed component without borrowing its audit scope");
         future=new HashMap<String,String>(ds05);future.put("ItmcBtoB.DBUtility.dll","changed");
         check(!LicenseRecoverReadOnlyDotNetCatalog.classify(future,null,null).auditedBinding,"dependency changes cannot inherit license semantics");
+        LicenseRecoverReadOnlyDotNetCatalog.Assessment dependency=LicenseRecoverReadOnlyDotNetCatalog.classify(future,null,null);
+        check(dependency.fingerprintMatches.get(0).differentComponents.equals(Collections.singletonList("bin/ItmcBtoB.DBUtility.dll")),
+                "crypto changes are disclosed as a different required dependency");
+        future.remove("ItmcBtoB.DBUtility.dll");
+        LicenseRecoverReadOnlyDotNetCatalog.Assessment missing=LicenseRecoverReadOnlyDotNetCatalog.classify(future,null,null);
+        check(missing.fingerprintMatches.get(0).missingComponents.equals(Collections.singletonList("bin/ItmcBtoB.DBUtility.dll"))
+                &&missing.fingerprintMatches.get(0).matchedComponents==5,"a missing dependency is not a bad license or a known code set");
+        boolean immutable=false;try{a.fingerprintMatches.clear();}catch(UnsupportedOperationException expected){immutable=true;}
+        check(immutable,"fingerprint coverage collection is immutable");
+        immutable=false;try{missing.fingerprintMatches.get(0).missingComponents.clear();}catch(UnsupportedOperationException expected){immutable=true;}
+        check(immutable,"component mismatch receipts are immutable");
+        Map<String,String> onlyDependency=new HashMap<String,String>();onlyDependency.put("LiteDB.dll",ds01.get("LiteDB.dll"));
+        check(LicenseRecoverReadOnlyDotNetCatalog.classify(onlyDependency,null,null).fingerprintMatches.isEmpty(),
+                "a ubiquitous dependency cannot select a registration-family audit candidate");
+        Map<String,String> protectedSet=new HashMap<String,String>();
+        protectedSet.put("ITMC.Web.dll","929d67295961ed453202e4ea44bbeb2614543b7212c50717d58a455558067be4");
+        protectedSet.put("ITMC.Regedit.dll","222df2d024efb4b30510af9bf5f552646e4e2f75ea9b3795daa7a279d8a6f725");
+        protectedSet.put("itmcRegedit.dll","35e40be423f9ea8493edc29bbdfd406a030309241d6ec8c2f1ae3975ef7e5b5f");
+        protectedSet.put("ITMC.DBUtility.dll","dc7e1806270ae5dc54c073f417949f7a3b1f24731e70925d16027e645ce150bc");
+        LicenseRecoverReadOnlyDotNetCatalog.Assessment protectedBuild=LicenseRecoverReadOnlyDotNetCatalog.classify(protectedSet,null,null);
+        check(protectedBuild.auditedBinding&&"PROTECTED_LOCAL_DIAGNOSTIC".equals(protectedBuild.auditScope)
+                &&protectedBuild.fingerprintSummary().contains("完整接受路径尚未闭合"),"exact protected fingerprints never masquerade as a fully audited positive predicate");
+        protectedSet.put("Newtonsoft.Json.dll",ds01.get("Newtonsoft.Json.dll"));protectedSet.put("LiteDB.dll",ds01.get("LiteDB.dll"));
+        protectedSet.put("log4net.dll","c228ad98c76a3b40bbd1bc950b81feff977646b2b99a21310164d4d310c7ea75");
+        protectedBuild=LicenseRecoverReadOnlyDotNetCatalog.classify(protectedSet,null,null);
+        check(protectedBuild.upper!=null&&protectedBuild.extended!=null&&!protectedBuild.upper.positiveEntryAudited
+                &&"MODERN_LOCAL_DIAGNOSTIC".equals(protectedBuild.auditScope),"one dual-DLL build can expose modern local evidence while its protected website proof stays open");
+        Map<String,String> ys=new HashMap<String,String>();
+        ys.put("ITMC.Web.dll","1790526c91b0dc51aa914d80604e600175cfb3d8899c8299bb3b2c85684b9b20");
+        ys.put("ITMC.Regedit.dll","c942c3c21466979e63eee1ffadbfe7273c83c2dc0a455f324c9da7e187953f46");
+        ys.put("ITMC.DBUtility.dll","236cfe610b87fb7a4f6589cb2a9e319a048b8a8e2a1b79d3028d4d7e1b5fcb6b");
+        ys.put("Newtonsoft.Json.dll","9eca2c5ed187b5e1319c359aabf8382992131efe1854b899c23a93fe227496e3");ys.put("LiteDB.dll",ds01.get("LiteDB.dll"));
+        LicenseRecoverReadOnlyDotNetCatalog.Assessment ysBinding=LicenseRecoverReadOnlyDotNetCatalog.classify(ys,null,null);
+        check(ysBinding.upper!=null&&ysBinding.upper.positiveEntryAudited&&"YS01".equals(ysBinding.upper.product)
+                &&ysBinding.fingerprintMatches.get(0).requiredAbsentComponents.equals(Collections.singletonList("bin/log4net.dll")),
+                "reviewed YS01 binding records the intentional dependency absence instead of borrowing another build's log hash");
+        ys.put("log4net.dll","unexpected-file");
+        check(LicenseRecoverReadOnlyDotNetCatalog.classify(ys,null,null).upper==null,"adding an absent-bound dependency withdraws the exact code-set proof");
         LicenseRecoverLicenseState noRecord=LicenseRecoverLicenseState.localObservation(
                 LicenseRecoverLicenseState.LocalCondition.NO_RECORD,"synthetic missing root record");
+        LicenseRecoverLicenseState both=LicenseRecoverReadOnlyDotNetScanner.combineDiagnostics(
+                LicenseRecoverLicenseState.unverified("synthetic modern format not matched"),noRecord);
+        check(both.localCondition==LicenseRecoverLicenseState.LocalCondition.NO_RECORD
+                &&both.evidence.contains("synthetic modern format not matched")&&both.evidence.contains("synthetic missing root record"),
+                "unresolved dual components retain both attempted paths and scoped compatibility finding");
+        both=LicenseRecoverReadOnlyDotNetScanner.combineDiagnostics(noRecord,LicenseRecoverLicenseState.localObservation(
+                LicenseRecoverLicenseState.LocalCondition.MALFORMED,"synthetic legacy format not matched"));
+        check(both.localCondition==LicenseRecoverLicenseState.LocalCondition.NO_RECORD
+                &&both.acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED,"a legacy parser failure does not discard a recognized modern diagnostic");
+        both=LicenseRecoverReadOnlyDotNetScanner.combineDiagnostics(LicenseRecoverLicenseState.localObservation(
+                LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,"synthetic dispatch not audited"),noRecord);
+        check(both.localCondition==LicenseRecoverLicenseState.LocalCondition.NO_RECORD&&both.evidence.contains("synthetic dispatch not audited"),
+                "unsupported modern dispatch does not hide an independently observed missing local record");
+        check(LicenseRecoverReadOnlyDotNetScanner.combineDiagnostics(noRecord,LicenseRecoverLicenseState.scanError("synthetic read failure")).isScanError(),
+                "real fallback read errors are never hidden by partial findings");
+        boolean refused=false;try{LicenseRecoverReadOnlyDotNetScanner.combineDiagnostics(
+                LicenseRecoverLicenseState.authorizationAcceptance("synthetic audited positive"),noRecord);}
+        catch(IllegalArgumentException expected){refused=true;}
+        check(refused,"diagnostic combination cannot downgrade or fabricate a proven acceptance");
         LicenseRecoverReadOnlyDotNetScanner.Result revoked=LicenseRecoverReadOnlyDotNetScanner.retainIfStable(noRecord,a,b);
         check(revoked.state.localCondition==LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED&&revoked.protocol==null,
                 "changed evidence revokes both a local negative finding and its current audit flag");

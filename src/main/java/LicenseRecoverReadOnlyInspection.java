@@ -58,7 +58,8 @@ public final class LicenseRecoverReadOnlyInspection {
             this.evidenceSource = state.acceptance != LicenseRecoverLicenseState.Acceptance.UNVERIFIED
                     ? "audited-current-code; current-inputs; independent-read-only-predicate"
                     : "current-files; compiled-reviewed-registry; audited-acceptance-profiles";
-            this.reason = reason+"；代码比对："+codeComparisonEvidence;
+            this.reason = reason+"；代码比对："+codeComparisonEvidence
+                    +(protocol==null?"":"；构建审核："+protocol.fingerprintSummary());
             this.nativeVerifierSafety = LicenseRecoverReadOnlyVerifierSafety.rejection(artifacts);
             this.artifacts = Collections.unmodifiableList(new ArrayList<Artifact>(artifacts));
         }
@@ -82,6 +83,21 @@ public final class LicenseRecoverReadOnlyInspection {
             pair(b,"protocolFamily",protocol==null?("DOTNET".equals(runtime)?"UNKNOWN":"not-applicable"):protocol.upperFamily.name());
             pair(b,"compatibilityFamily",protocol==null?("DOTNET".equals(runtime)?"UNKNOWN":"not-applicable"):protocol.compatibilityFamily.name());
             b.append("\"protocolBindingAudited\":").append(protocol!=null&&protocol.auditedBinding).append(',');
+            pair(b,"protocolFingerprintStatus",protocol==null?"UNASSESSED":protocol.fingerprintStatus);
+            pair(b,"protocolAuditScope",protocol==null?"NONE":protocol.auditScope);
+            pair(b,"protocolProfileId",protocol==null?"none":protocol.profileId);
+            b.append("\"protocolFingerprintMatches\":[");
+            if(protocol!=null)for(int i=0;i<protocol.fingerprintMatches.size();i++) {
+                if(i>0)b.append(',');LicenseRecoverReadOnlyDotNetCatalog.FingerprintMatch match=protocol.fingerprintMatches.get(i);
+                b.append('{');pair(b,"profileId",match.profileId);pair(b,"auditScope",match.auditScope);
+                b.append("\"exact\":").append(match.exact).append(',');
+                b.append("\"requiredComponents\":").append(match.requiredComponents).append(',');
+                b.append("\"matchedComponents\":").append(match.matchedComponents).append(',');
+                stringArray(b,"missingComponents",match.missingComponents);b.append(',');
+                stringArray(b,"differentComponents",match.differentComponents);b.append(',');
+                stringArray(b,"requiredAbsentComponents",match.requiredAbsentComponents);b.append('}');
+            }
+            b.append("],");
             pair(b,"method",method); pair(b,"evidenceSource",evidenceSource); pair(b,"reason",reason);
             pair(b,"codeBehavior",codeEvidence.behavior.name());pair(b,"registrationComponent",codeEvidence.component.name());
             pair(b,"codeEvidenceLabel",codeEvidence.display());pair(b,"codeBehaviorEvidence",codeEvidence.behaviorEvidence);
@@ -204,6 +220,9 @@ public final class LicenseRecoverReadOnlyInspection {
                     if(!componentReceiptsMatch(codeEvidence,artifacts))throw new Changed();
                     LicenseRecoverLicenseState finalCode=LicenseRecoverReadOnlyPatchScanner.scanApplication(root,runtime,version);
                     if(!sameCodeEvidence(observedCode,finalCode))throw new Changed();
+                    // Recheck every audited dependency and root record after the outer artifact pass,
+                    // not only the registration DLLs included in the GUI's artifact inventory.
+                    if(protocol!=null&&!protocol.sameInputs(LicenseRecoverReadOnlyDotNetCatalog.assess(root,false)))throw new Changed();
                     codeComparisonEvidence=finalCode.evidence;
                     if(accepted.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED)
                         state=LicenseRecoverLicenseState.combineAcceptance(accepted,finalCode);
@@ -226,6 +245,12 @@ public final class LicenseRecoverReadOnlyInspection {
         }
         if(state.isScanError())codeEvidence=LicenseRecoverReadOnlyCodeEvidence.unassessed("扫描失败，代码结构证据未确认");
         return new Result(root,version,runtime.name(),state,artifacts,reason,protocol,codeEvidence,codeComparisonEvidence,acceptanceEvidence);
+    }
+
+    private static void stringArray(StringBuilder b,String name,List<String> values) {
+        b.append(quote(name)).append(": [");
+        for(int i=0;i<values.size();i++){if(i>0)b.append(',');b.append(quote(values.get(i)));}
+        b.append(']');
     }
 
     /** Compatibility seam for source-level regression fixtures. */

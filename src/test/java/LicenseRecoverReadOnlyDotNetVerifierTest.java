@@ -49,6 +49,24 @@ public final class LicenseRecoverReadOnlyDotNetVerifierTest {
     public static void main(String[] args) throws Exception {
         byte[] valid=config(payload(),"1","");byte[] before=valid.clone();
         accepted(run(valid,hardware()),"machine-bound unexpired unlimited current-mode positive");
+        LicenseRecoverReadOnlyDotNetCatalog.UpperBinding scoped=new LicenseRecoverReadOnlyDotNetCatalog.UpperBinding(
+                "synthetic-site","synthetic-registration",PRODUCT,"synthetic-crypto.dll","synthetic-crypto","synthetic-json","synthetic-log",false,
+                "synthetic protected result constructor remains unaudited");
+        LicenseRecoverLicenseState localOnly=LicenseRecoverReadOnlyDotNetVerifier.applyAuditScope(run(valid,hardware()),scoped);
+        unknown(localOnly,"modern local success must not bypass an opaque website constructor");
+        if(localOnly.localCondition!=LicenseRecoverLicenseState.LocalCondition.SATISFIED
+                ||!localOnly.evidence.contains(scoped.auditGap)||localOnly.codeIntegrity!=LicenseRecoverLicenseState.CodeIntegrity.UNKNOWN)
+            throw new AssertionError("local-only audit scope was discarded");checks++;
+        LicenseRecoverLicenseState expired=run(config(payload().replace("1907712000000","1907625600000"),"1",""),hardware());
+        if(LicenseRecoverReadOnlyDotNetVerifier.applyAuditScope(expired,scoped)!=expired)
+            throw new AssertionError("audit scope must preserve failed local conditions");checks++;
+        String ysPayload=payload().replace(PRODUCT,"YS01").replace("DS0101,DS0109","YX0102");
+        byte[] ys=productConfig(ysPayload,"YS01","YX0102","1");
+        accepted(LicenseRecoverReadOnlyDotNetVerifier.predicate(ys,"YS01",hardware(),NOW,ZONE),"YS01 reuses modern engine with its own product/key/mode binding");
+        unknown(LicenseRecoverReadOnlyDotNetVerifier.predicate(ys,PRODUCT,hardware(),NOW,ZONE),"shared family does not permit the DS product key for YS01");
+        unknown(LicenseRecoverReadOnlyDotNetVerifier.predicate(productConfig(ysPayload.replace(MACHINE,"OTHER_SYNTHETIC"),"YS01","YX0102","1"),"YS01",hardware(),NOW,ZONE),"YS01 still enforces independent machine binding");
+        unknown(LicenseRecoverReadOnlyDotNetVerifier.predicate(productConfig(ysPayload,"YS01","OTHER_MODE","1"),"YS01",hardware(),NOW,ZONE),"YS01 still enforces current-mode coverage");
+        unknown(LicenseRecoverReadOnlyDotNetVerifier.predicate(productConfig(ysPayload,"YS01","YX0102","3"),"YS01",hardware(),NOW,ZONE),"earlier network/dog dispatch is not promoted by a readable modern record");
         if(!Arrays.equals(valid,before))throw new AssertionError("predicate changed bytes");checks++;
         unknown(run(config(payload().replace(MACHINE,"SYNTHETIC_OTHER"),"1",""),hardware()),"wrong machine stays unknown");
         unknown(run(config(payload().replace("1907712000000","1907625600000"),"1",""),hardware()),"expired local is not a global invalid verdict");
@@ -121,5 +139,10 @@ public final class LicenseRecoverReadOnlyDotNetVerifierTest {
         if(revokedPositive.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED)
             throw new AssertionError("stale positive observation was not fully revoked");checks++;
         System.out.println("LicenseRecoverReadOnlyDotNetVerifierTest: "+checks+" checks passed");
+    }
+    static byte[] productConfig(String payload,String product,String version,String mode)throws Exception {
+        return ("<ROOT><SystemSoft><SoftVersionID>"+version+"</SoftVersionID></SystemSoft><reg><regType>"+mode
+                +"</regType><regName>"+encrypt("123456"+payload+"654321","*ITMC"+product+"OK*")
+                +"</regName><WebSerSoftNo></WebSerSoftNo></reg></ROOT>").getBytes(StandardCharsets.UTF_8);
     }
 }
