@@ -77,12 +77,25 @@ public final class LicenseRecoverReadOnlyDotNetVerifierTest {
         unknown(run(config(payload().replace("DS0101,DS0109","QT100101"),"1",""),hardware()),"current website mode must be covered");
         unknown(run(config(payload().replace("itmcIEC","OTHER_SYNTHETIC_PRODUCT"),"1",""),hardware()),"product must match reviewed key and website");
         unknown(run(config(payload(),"3",""),hardware()),"unreviewed earlier network branch stays unknown");
+        LicenseRecoverLicenseState networkFirst=run(config(payload(),"3",""),hardware());
+        if(networkFirst.localCondition!=LicenseRecoverLicenseState.LocalCondition.SATISFIED
+                ||!networkFirst.evidence.contains("先行联网/硬件狗"))throw new AssertionError("dispatch must not hide independently verified local record conditions");checks++;
+        LicenseRecoverLicenseState dogFirst=run(config(payload(),"2",""),hardware());
+        unknown(dogFirst,"HASP-first cannot use local success as whole-entry acceptance");
+        if(dogFirst.localCondition!=LicenseRecoverLicenseState.LocalCondition.SATISFIED)throw new AssertionError("HASP-first local condition was discarded");checks++;
+        LicenseRecoverLicenseState wrongModeMachine=run(config(payload().replace(MACHINE,"OTHER_SYNTHETIC"),"3",""),hardware());
+        unknown(wrongModeMachine,"network-first local machine mismatch is not global invalidity");
+        if(wrongModeMachine.localCondition!=LicenseRecoverLicenseState.LocalCondition.MACHINE_MISMATCH)throw new AssertionError("dispatch hid specific local mismatch");checks++;
         unknown(run(config(payload()+"trailing","1",""),hardware()),"malformed JSON not accepted");
         unknown(run(config(payload().replace("\"TotalTimes\":-1","\"TotalTimes\":-1,\"TotalTimes\":-1"),"1",""),hardware()),"duplicate fields rejected");
         unknown(run(config(payload().replace("\"TotalTimes\":-1","\"totaltimes\":-1"),"1",""),hardware()),"case-aliased critical fields rejected");
         unknown(run(config(payload().replace("\"TotalTimes\":-1","\"TotalTimes\":{}"),"1",""),hardware()),"unsupported nested field rejected");
         unknown(run("<ROOT><reg><regType>1</regType><regName>FF</regName></reg></ROOT>".getBytes("UTF-8"),hardware()),"file presence is insufficient");
         unknown(run(config(payload(),"1",""),null),"missing independent identity");
+        LicenseRecoverLicenseState noRecordWithoutIdentity=run("<ROOT><SystemSoft><SoftVersionID>DS0109</SoftVersionID></SystemSoft><reg><regType>3</regType></reg></ROOT>".getBytes("UTF-8"),null);
+        unknown(noRecordWithoutIdentity,"absent local record cannot establish global invalidity");
+        if(noRecordWithoutIdentity.localCondition!=LicenseRecoverLicenseState.LocalCondition.NO_RECORD)
+            throw new AssertionError("missing hardware metadata must not hide an independently absent local record");checks++;
         LicenseRecoverReadOnlyMachineIdentity.Snapshot incomplete=new LicenseRecoverReadOnlyMachineIdentity.Snapshot(
                 hardware().cpuIds,hardware().disks,hardware().boards,hardware().hostname,false,"synthetic incomplete");
         unknown(run(valid,incomplete),"incomplete independent identity cannot promote");

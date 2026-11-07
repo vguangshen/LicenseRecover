@@ -11,24 +11,34 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
     private static final int MAX_METADATA_BYTES=16*1024*1024;
     public enum Family { MODERN_JSON_DES, LEGACY_FIXED_RECORD, PROTECTED_COMPATIBILITY,
         REGINFO_API_CANDIDATE, COMPATIBILITY_API_CANDIDATE, UNKNOWN }
-    enum LocalFormat { FIXED_MARKET_RECORD, PROTECTED_VM }
+    enum LocalFormat { FIXED_MARKET_RECORD, PROTECTED_VM, RECOVERED_FIXED_FIELDS }
     static final class UpperBinding {
-        final String web,registration,product,cryptoFile,cryptoHash,jsonHash,logHash;
+        final String web,registration,product,cryptoFile,cryptoHash,jsonHash,logHash,compatibilityHash;
         final boolean positiveEntryAudited;final String auditGap;
         UpperBinding(String web,String registration,String product,String file,String crypto,String json,String log) {
             this(web,registration,product,file,crypto,json,log,true,"");
         }
         UpperBinding(String web,String registration,String product,String file,String crypto,String json,String log,
                 boolean positiveEntryAudited,String auditGap) {
+            this(web,registration,product,file,crypto,json,log,positiveEntryAudited,auditGap,null);
+        }
+        UpperBinding(String web,String registration,String product,String file,String crypto,String json,String log,
+                String compatibilityHash) {
+            this(web,registration,product,file,crypto,json,log,true,"",compatibilityHash);
+        }
+        UpperBinding(String web,String registration,String product,String file,String crypto,String json,String log,
+                boolean positiveEntryAudited,String auditGap,String compatibilityHash) {
             this.web=web;this.registration=registration;this.product=product;cryptoFile=file;
             cryptoHash=crypto;jsonHash=json;logHash=log;
+            this.compatibilityHash=compatibilityHash;
             this.positiveEntryAudited=positiveEntryAudited;this.auditGap=auditGap;
             if(!positiveEntryAudited&&(auditGap==null||auditGap.trim().isEmpty()))throw new IllegalArgumentException("local audit requires an explicit entry gap");
         }
         boolean matches(Map<String,String> h) {
             return eq(h,"ITMC.Web.dll",web)&&eq(h,"ITMC.Regedit.dll",registration)
                     &&eq(h,cryptoFile,cryptoHash)&&eq(h,"Newtonsoft.Json.dll",jsonHash)
-                    &&(logHash==null?!h.containsKey("log4net.dll"):eq(h,"log4net.dll",logHash))&&eq(h,"LiteDB.dll",LITE);
+                    &&(logHash==null?!h.containsKey("log4net.dll"):eq(h,"log4net.dll",logHash))&&eq(h,"LiteDB.dll",LITE)
+                    &&(compatibilityHash==null||eq(h,"itmcRegedit.dll",compatibilityHash));
         }
     }
     static final class ExtendedBinding {
@@ -39,6 +49,7 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
         boolean matches(Map<String,String> h) {return eq(h,"ITMC.Web.dll",web)&&eq(h,"ITMC.Regedit.dll",upper)
                 &&eq(h,"itmcRegedit.dll",lower)&&eq(h,"ITMC.DBUtility.dll",crypto);}
         boolean legacy(){return format==LocalFormat.FIXED_MARKET_RECORD;}
+        boolean fixedFields(){return legacy()||format==LocalFormat.RECOVERED_FIXED_FIELDS;}
     }
     private static final String LITE="4091c455a882e3e44c8dc0c4034e6b2536f180ce019695769ef72497a90467ec";
     private static final String JSON6="78bedd9fce877a71a8d8ff9a813662d8248361e46705c4ef7afc61d440ff2eeb";
@@ -61,17 +72,25 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
             "222df2d024efb4b30510af9bf5f552646e4e2f75ea9b3795daa7a279d8a6f725","YX0302",
             "ITMC.DBUtility.dll","dc7e1806270ae5dc54c073f417949f7a3b1f24731e70925d16027e645ce150bc",JSON6,
             "c228ad98c76a3b40bbd1bc950b81feff977646b2b99a21310164d4d310c7ea75",false,
-            "网站接受前依赖小写 RegeditInfo 的受保护 VM 构造器；见 docs/DOTNET_YX0302_UPPER_LOCAL_AUDIT.md"),
+            "网站初始化依赖受保护的原生桥接，产品/父版本数据库映射也未闭合；见 docs/DOTNET_YX0302_UPPER_LOCAL_AUDIT.md"),
         new UpperBinding("07183f09c19b69c5c4ddcdcb43ad4b8d91cf56f629f6a3d7d675dfc84f761079",
             "222df2d024efb4b30510af9bf5f552646e4e2f75ea9b3795daa7a279d8a6f725","YX0302",
             "ITMC.DBUtility.dll","dc7e1806270ae5dc54c073f417949f7a3b1f24731e70925d16027e645ce150bc",JSON6,
             "c228ad98c76a3b40bbd1bc950b81feff977646b2b99a21310164d4d310c7ea75",false,
-            "网站接受前依赖小写 RegeditInfo 的受保护 VM 构造器；见 docs/DOTNET_YX0302_UPPER_LOCAL_AUDIT.md"),
-        // YS01 uses the same audited JSON predicate; this reviewed build has no log4net file.
-        // See docs/DOTNET_YS01_UPPER_AUDIT_20261107.md; not original/Patch provenance.
+            "网站初始化依赖受保护的原生桥接，产品/父版本数据库映射也未闭合；见 docs/DOTNET_YX0302_UPPER_LOCAL_AUDIT.md"),
+        // YS01 shares the local JSON predicate, but the compatibility module has native initialization.
+        // The lazy business fallback alone does not close module/JIT interposition; keep local-only.
         new UpperBinding("1790526c91b0dc51aa914d80604e600175cfb3d8899c8299bb3b2c85684b9b20",
             "c942c3c21466979e63eee1ffadbfe7273c83c2dc0a455f324c9da7e187953f46","YS01",
-            "ITMC.DBUtility.dll","236cfe610b87fb7a4f6589cb2a9e319a048b8a8e2a1b79d3028d4d7e1b5fcb6b",JSON7,null)
+            "ITMC.DBUtility.dll","236cfe610b87fb7a4f6589cb2a9e319a048b8a8e2a1b79d3028d4d7e1b5fcb6b",JSON7,null,false,
+            "兼容模块包含原生 JIT 初始化路径，其回调及跨模块作用范围尚未闭合；见 docs/DOTNET_YS01_UPPER_AUDIT_20261107.md",
+            "36f58b8657bce75a19356796f21c135104e28f5abc4bc9007f0d4ec517f479df"),
+        new UpperBinding("d22c923d7f11b084e2839b3d0d6ee572e06ad5d41200ff6c8215757f54e7501e",
+            "222df2d024efb4b30510af9bf5f552646e4e2f75ea9b3795daa7a279d8a6f725","YX0301",
+            "ITMC.DBUtility.dll","dc7e1806270ae5dc54c073f417949f7a3b1f24731e70925d16027e645ce150bc",JSON6,
+            "c228ad98c76a3b40bbd1bc950b81feff977646b2b99a21310164d4d310c7ea75",false,
+            "网站先读取 Data/db/RegisterVersion.db 的当前模式/父产品映射；数据库查询、解密及模式选择尚未纳入完整入口证明；见 docs/DOTNET_YX0301_LOCAL_AUDIT_20261108.md",
+            "e684d265332af25ccc3449c38a38f024ecbf87353b9c48710c5ae2b2433c5183")
     };
     private static final ExtendedBinding[] EXTENDED={
         new ExtendedBinding("1790526c91b0dc51aa914d80604e600175cfb3d8899c8299bb3b2c85684b9b20",
@@ -81,11 +100,15 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
         new ExtendedBinding("929d67295961ed453202e4ea44bbeb2614543b7212c50717d58a455558067be4",
             "222df2d024efb4b30510af9bf5f552646e4e2f75ea9b3795daa7a279d8a6f725",
             "35e40be423f9ea8493edc29bbdfd406a030309241d6ec8c2f1ae3975ef7e5b5f",
-            "dc7e1806270ae5dc54c073f417949f7a3b1f24731e70925d16027e645ce150bc",LocalFormat.PROTECTED_VM),
+            "dc7e1806270ae5dc54c073f417949f7a3b1f24731e70925d16027e645ce150bc",LocalFormat.RECOVERED_FIXED_FIELDS),
         new ExtendedBinding("07183f09c19b69c5c4ddcdcb43ad4b8d91cf56f629f6a3d7d675dfc84f761079",
             "222df2d024efb4b30510af9bf5f552646e4e2f75ea9b3795daa7a279d8a6f725",
             "35e40be423f9ea8493edc29bbdfd406a030309241d6ec8c2f1ae3975ef7e5b5f",
-            "dc7e1806270ae5dc54c073f417949f7a3b1f24731e70925d16027e645ce150bc",LocalFormat.PROTECTED_VM)
+            "dc7e1806270ae5dc54c073f417949f7a3b1f24731e70925d16027e645ce150bc",LocalFormat.RECOVERED_FIXED_FIELDS),
+        new ExtendedBinding("d22c923d7f11b084e2839b3d0d6ee572e06ad5d41200ff6c8215757f54e7501e",
+            "222df2d024efb4b30510af9bf5f552646e4e2f75ea9b3795daa7a279d8a6f725",
+            "e684d265332af25ccc3449c38a38f024ecbf87353b9c48710c5ae2b2433c5183",
+            "dc7e1806270ae5dc54c073f417949f7a3b1f24731e70925d16027e645ce150bc",LocalFormat.RECOVERED_FIXED_FIELDS)
     };
     private static final String[] COMPONENTS={"config.xml","ITMC.Web.dll","ITMC.Regedit.dll","itmcRegedit.dll",
             "ItmcBtoB.DBUtility.dll","ITMC.DBUtility.dll","Newtonsoft.Json.dll","log4net.dll","LiteDB.dll"};
@@ -140,7 +163,8 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
         public String fingerprintSummary() {
             if("EXACT_REVIEWED_SET".equals(fingerprintStatus))return "构建指纹 "+profileId
                     +("LOCAL_POSITIVE_PREDICATE".equals(auditScope)?" 已匹配本地接受判据的审核组件集合"
-                    :" 已匹配局部诊断的审核组件集合，完整接受路径尚未闭合");
+                    :" 已匹配局部诊断的审核组件集合，完整接受路径尚未闭合")
+                    +(upper!=null&&!upper.positiveEntryAudited?"；缺口："+upper.auditGap:"");
             StringBuilder result=new StringBuilder("当前构建未匹配完整审核组件集合");
             for(FingerprintMatch match:fingerprintMatches)result.append("；").append(match.profileId)
                     .append(" 匹配 ").append(match.matchedComponents).append('/').append(match.requiredComponents)
@@ -156,6 +180,7 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
             required.put("ITMC.Web.dll",binding.web);required.put("ITMC.Regedit.dll",binding.registration);
             required.put(binding.cryptoFile,binding.cryptoHash);required.put("Newtonsoft.Json.dll",binding.jsonHash);
             required.put("log4net.dll",binding.logHash);required.put("LiteDB.dll",LITE);
+            if(binding.compatibilityHash!=null)required.put("itmcRegedit.dll",binding.compatibilityHash);
             addCoverage(result,"DOTNET-JSON-DES-"+(++index),binding.positiveEntryAudited?"LOCAL_POSITIVE_PREDICATE":"MODERN_LOCAL_DIAGNOSTIC",required,observed);
         }
         index=0;

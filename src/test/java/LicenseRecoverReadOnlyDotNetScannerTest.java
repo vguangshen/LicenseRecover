@@ -62,15 +62,36 @@ public final class LicenseRecoverReadOnlyDotNetScannerTest {
         protectedBuild=LicenseRecoverReadOnlyDotNetCatalog.classify(protectedSet,null,null);
         check(protectedBuild.upper!=null&&protectedBuild.extended!=null&&!protectedBuild.upper.positiveEntryAudited
                 &&"MODERN_LOCAL_DIAGNOSTIC".equals(protectedBuild.auditScope),"one dual-DLL build can expose modern local evidence while its protected website proof stays open");
+        Map<String,String> yx0301=new HashMap<String,String>(protectedSet);
+        yx0301.put("ITMC.Web.dll","d22c923d7f11b084e2839b3d0d6ee572e06ad5d41200ff6c8215757f54e7501e");
+        yx0301.put("itmcRegedit.dll","e684d265332af25ccc3449c38a38f024ecbf87353b9c48710c5ae2b2433c5183");
+        LicenseRecoverReadOnlyDotNetCatalog.Assessment yx0301Binding=LicenseRecoverReadOnlyDotNetCatalog.classify(yx0301,null,null);
+        check(yx0301Binding.upper!=null&&!yx0301Binding.upper.positiveEntryAudited&&"YX0301".equals(yx0301Binding.upper.product)
+                &&"MODERN_LOCAL_DIAGNOSTIC".equals(yx0301Binding.auditScope),"a reviewed new product reuses the core local engine without borrowing full entry proof");
+        check(yx0301Binding.fingerprintSummary().contains("RegisterVersion.db"),"an exact local-only binding retains its concrete entry gap for the GUI");
+        yx0301.remove("itmcRegedit.dll");
+        check(LicenseRecoverReadOnlyDotNetCatalog.classify(yx0301,null,null).upper==null,"the new website's explicit compatibility dependency is required");
         Map<String,String> ys=new HashMap<String,String>();
         ys.put("ITMC.Web.dll","1790526c91b0dc51aa914d80604e600175cfb3d8899c8299bb3b2c85684b9b20");
         ys.put("ITMC.Regedit.dll","c942c3c21466979e63eee1ffadbfe7273c83c2dc0a455f324c9da7e187953f46");
         ys.put("ITMC.DBUtility.dll","236cfe610b87fb7a4f6589cb2a9e319a048b8a8e2a1b79d3028d4d7e1b5fcb6b");
         ys.put("Newtonsoft.Json.dll","9eca2c5ed187b5e1319c359aabf8382992131efe1854b899c23a93fe227496e3");ys.put("LiteDB.dll",ds01.get("LiteDB.dll"));
+        ys.put("itmcRegedit.dll","36f58b8657bce75a19356796f21c135104e28f5abc4bc9007f0d4ec517f479df");
         LicenseRecoverReadOnlyDotNetCatalog.Assessment ysBinding=LicenseRecoverReadOnlyDotNetCatalog.classify(ys,null,null);
-        check(ysBinding.upper!=null&&ysBinding.upper.positiveEntryAudited&&"YS01".equals(ysBinding.upper.product)
+        check(ysBinding.upper!=null&&!ysBinding.upper.positiveEntryAudited&&"YS01".equals(ysBinding.upper.product)
+                &&"MODERN_LOCAL_DIAGNOSTIC".equals(ysBinding.auditScope)
                 &&ysBinding.fingerprintMatches.get(0).requiredAbsentComponents.equals(Collections.singletonList("bin/log4net.dll")),
-                "reviewed YS01 binding records the intentional dependency absence instead of borrowing another build's log hash");
+                "reviewed YS01 local-only binding records dependency absence without claiming native initialization was closed");
+        Map<String,String> ysMissingLower=new HashMap<String,String>(ys);ysMissingLower.remove("itmcRegedit.dll");
+        LicenseRecoverReadOnlyDotNetCatalog.Assessment missingLower=LicenseRecoverReadOnlyDotNetCatalog.classify(ysMissingLower,null,null);
+        check(missingLower.upper==null&&"PARTIAL_REVIEWED_SET".equals(missingLower.fingerprintStatus)
+                &&missingLower.fingerprintMatches.get(0).missingComponents.equals(Collections.singletonList("bin/itmcRegedit.dll")),
+                "a missing website-referenced compatibility dependency withdraws the reviewed modern build binding");
+        Map<String,String> ysChangedLower=new HashMap<String,String>(ys);ysChangedLower.put("itmcRegedit.dll","different-compatibility-build");
+        check(LicenseRecoverReadOnlyDotNetCatalog.classify(ysChangedLower,null,null).upper==null,
+                "replacing a compatibility dependency cannot inherit the reviewed modern build scope");
+        check(ysBinding.fingerprintMatches.get(0).requiredComponents==7,
+                "YS01 whole-entry coverage includes six files plus the reviewed log absence condition");
         ys.put("log4net.dll","unexpected-file");
         check(LicenseRecoverReadOnlyDotNetCatalog.classify(ys,null,null).upper==null,"adding an absent-bound dependency withdraws the exact code-set proof");
         LicenseRecoverLicenseState noRecord=LicenseRecoverLicenseState.localObservation(
