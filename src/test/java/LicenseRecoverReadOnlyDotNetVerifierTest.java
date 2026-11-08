@@ -47,6 +47,7 @@ public final class LicenseRecoverReadOnlyDotNetVerifierTest {
             throw new AssertionError(label);checks++;
     }
     public static void main(String[] args) throws Exception {
+        wholeBeanBoundaries();
         byte[] valid=config(payload(),"1","");byte[] before=valid.clone();
         accepted(run(valid,hardware()),"machine-bound unexpired unlimited current-mode positive");
         LicenseRecoverReadOnlyDotNetCatalog.UpperBinding scoped=new LicenseRecoverReadOnlyDotNetCatalog.UpperBinding(
@@ -152,6 +153,41 @@ public final class LicenseRecoverReadOnlyDotNetVerifierTest {
         if(revokedPositive.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED)
             throw new AssertionError("stale positive observation was not fully revoked");checks++;
         System.out.println("LicenseRecoverReadOnlyDotNetVerifierTest: "+checks+" checks passed");
+    }
+    private static void wholeBeanBoundaries()throws Exception {
+        String base=payload();
+        String[] malformed={"\"UserTimes\":\"not-int\"","\"UserTimes\":2147483648","\"MaxCon\":\"not-int\"",
+                "\"CountDay\":true","\"ClassNum\":null","\"Net\":\"not-bool\"","\"BeginDate\":\"not-date\"",
+                "\"BeginDate\":null","\"beginDate\":\"not-long\"","\"endDate\":false"};
+        for(String field:malformed) {
+            LicenseRecoverLicenseState state=run(config(base.replace("{","{"+field+","),"1",""),hardware());
+            unknown(state,"invalid unused bean properties cannot pass an unlimited record");
+            if(state.localCondition!=LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED)
+                throw new AssertionError("whole-bean type rejection must remain scoped");checks++;
+        }
+        unknown(run(config(base.replace("\"UserID\":\"SYNTHETIC_ONLY\"","\"UserID\":42"),"1",""),hardware()),
+                "numeric coercion for optional strings is outside the canonical audit");
+        String full=base.replace("{","{\"ClassNum\":1,\"BeginDate\":\"/Date(1907625600000+0800)/\",\"beginDate\":0,\"endDate\":0,"
+                +"\"UserTimes\":0,\"Net\":false,\"MaxCon\":20,\"CountDay\":10,");
+        accepted(run(config(full,"1",""),hardware()),"all fourteen canonical reviewed properties remain supported");
+        accepted(run(config(full.replace("\"UserID\":\"SYNTHETIC_ONLY\"","\"UserID\":null"),"1",""),hardware()),
+                "canonical null optional string used by current records remains supported");
+        accepted(run(config(base.replace("{","{\"beginDate\":0,\"endDate\":0,"),"1",""),hardware()),
+                "lowercase zero defaults coexist with the distinct DateTime property");
+        for(String field:new String[]{"\"endDate\":-1","\"endDate\":9223372036854775807","\"endDate\":1907712000000","\"beginDate\":-1"}) {
+            LicenseRecoverLicenseState state=run(config(base.replace("{","{"+field+","),"1",""),hardware());
+            unknown(state,"nonzero lazy date overrides cannot borrow the uppercase date pass");
+            if(state.localCondition!=LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED||!state.evidence.contains("历史时区"))
+                throw new AssertionError("lazy date gap must be explicit rather than a native-invalid verdict");checks++;
+        }
+        for(String key:new String[]{"regID","RegId","endDATE","NET","userTimes","@type","$ref","UnknownField"}) {
+            LicenseRecoverLicenseState state=run(config(base.replace("{","{\""+key+"\":\"SYNTHETIC_UNREVIEWED_VALUE\","),"1",""),hardware());
+            unknown(state,"unknown names and special keys cannot override canonical checks");
+            if(state.evidence.contains("SYNTHETIC_UNREVIEWED_VALUE"))throw new AssertionError("field values leaked");checks++;
+        }
+        LicenseRecoverLicenseState invalidBeforeMachine=run(config(base.replace(MACHINE,"OTHER_SYNTHETIC").replace("{","{\"UserTimes\":\"not-int\","),"1",""),hardware());
+        if(invalidBeforeMachine.localCondition!=LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED)
+            throw new AssertionError("whole-bean parse failures precede machine comparison");checks++;
     }
     static byte[] productConfig(String payload,String product,String version,String mode)throws Exception {
         return ("<ROOT><SystemSoft><SoftVersionID>"+version+"</SoftVersionID></SystemSoft><reg><regType>"+mode

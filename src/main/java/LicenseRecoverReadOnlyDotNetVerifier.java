@@ -112,12 +112,8 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
             if(decrypted.length()<12||!decrypted.matches("[\\x20-\\x7e\\r\\n\\t]*"))
                 return unknown("本地载荷未匹配审核的 ASCII 结构");
             Map<String,Object> info=new Json(decrypted.substring(6,decrypted.length()-6)).object();
-            for(String critical:new String[]{"ProName","RegID","RegStr","TotalTimes"})
-                for(String key:info.keySet())if(key.equalsIgnoreCase(critical)&&!key.equals(critical))
-                    return unknown("载荷字段大小写未匹配审核结构");
-            for(String key:info.keySet())if(key.equalsIgnoreCase("EndDate")&&!"EndDate".equals(key)
-                    &&!("endDate".equals(key)&&info.get(key) instanceof Long))
-                return unknown("日期字段大小写未匹配审核结构");
+            String beanFailure=canonicalBeanFailure(info,zone);
+            if(beanFailure!=null)return local(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,beanFailure);
             // ProName is an additional conservative binding, beyond CheckLocalReg's machine check.
             if(!product.equals(info.get("ProName")))return local(LicenseRecoverLicenseState.LocalCondition.PRODUCT_MISMATCH,"本地载荷未匹配当前审核产品身份；其他授权方式未判断");
             if(identity==null||!identity.complete)return local(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,"独立本机身份快照不完整");
@@ -209,6 +205,39 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
         // Relevant field names, machine IDs and product tokens are ASCII. Reject
         // non-ASCII relevant values below; unrelated display fields are not emitted.
         return new String(des.doFinal(cipher),StandardCharsets.UTF_8);
+    }
+    /**
+     * JSON.NET constructs the entire reviewed bean before CheckLocalReg runs.
+     * Unused fields can fail conversion even on the unlimited-counter branch.
+     * BeginDate/beginDate and EndDate/endDate are distinct public properties.
+     * Nonzero lowercase dates override a getter via an unaudited legacy local epoch.
+     */
+    private static String canonicalBeanFailure(Map<String,Object> info,ZoneId zone) {
+        for(Map.Entry<String,Object> entry:info.entrySet()) {
+            Object value=entry.getValue();
+            switch(entry.getKey()) {
+                case "ProName":case "RegID":case "UserID":case "RegStr":
+                    if(value!=null&&!(value instanceof String))return "载荷字符串属性类型未匹配已审核的完整对象结构";
+                    break;
+                case "ClassNum":case "TotalTimes":case "UserTimes":case "MaxCon":case "CountDay":
+                    if(!(value instanceof Long)||(Long)value<Integer.MIN_VALUE||(Long)value>Integer.MAX_VALUE)
+                        return "载荷整数属性类型或范围未匹配已审核的完整对象结构";
+                    break;
+                case "Net":
+                    if(!(value instanceof Boolean))return "载荷布尔属性类型未匹配已审核的完整对象结构";
+                    break;
+                case "BeginDate":case "EndDate":
+                    try{endDate(value,zone);}catch(RuntimeException e){return "载荷日期属性未匹配已审核的完整对象解析范围";}
+                    break;
+                case "beginDate":case "endDate":
+                    if(!(value instanceof Long))return "载荷历史日期属性类型未匹配已审核的完整对象结构";
+                    if((Long)value!=0)return "非零历史日期字段会覆盖日期 getter；其本地历元和历史时区换算尚未完成等价审核，未沿用大写日期判定";
+                    break;
+                default:
+                    return "载荷包含未审核字段、大小写别名或类型扩展；未采用部分字段的通过结果";
+            }
+        }
+        return null;
     }
     private static LocalDate endDate(Object value,ZoneId zone) {
         if(!(value instanceof String))throw new IllegalArgumentException();

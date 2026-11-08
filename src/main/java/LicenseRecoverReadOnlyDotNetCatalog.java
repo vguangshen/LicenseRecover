@@ -3,6 +3,9 @@ import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.*;
 import java.util.*;
+import javax.xml.XMLConstants;
+import javax.xml.parsers.DocumentBuilderFactory;
+import org.w3c.dom.*;
 
 /** Shared protocol classification and audited data bindings. Neither identifies activation by name. */
 public final class LicenseRecoverReadOnlyDotNetCatalog {
@@ -52,6 +55,9 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
         boolean fixedFields(){return legacy()||format==LocalFormat.RECOVERED_FIXED_FIELDS;}
     }
     private static final String LITE="4091c455a882e3e44c8dc0c4034e6b2536f180ce019695769ef72497a90467ec";
+    private static final String MODE_WEB_A="929d67295961ed453202e4ea44bbeb2614543b7212c50717d58a455558067be4";
+    private static final String MODE_WEB_B="07183f09c19b69c5c4ddcdcb43ad4b8d91cf56f629f6a3d7d675dfc84f761079";
+    private static final String MODE_WEB_C="d22c923d7f11b084e2839b3d0d6ee572e06ad5d41200ff6c8215757f54e7501e";
     private static final String JSON6="78bedd9fce877a71a8d8ff9a813662d8248361e46705c4ef7afc61d440ff2eeb";
     private static final String JSON7="9eca2c5ed187b5e1319c359aabf8382992131efe1854b899c23a93fe227496e3";
     private static final String LOG_OLD="af5610c515d2244db98c662636264c8177e89b1afe407f88fd18a41d66f6e7e2";
@@ -112,7 +118,85 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
     };
     private static final String[] COMPONENTS={"config.xml","ITMC.Web.dll","ITMC.Regedit.dll","itmcRegedit.dll",
             "ItmcBtoB.DBUtility.dll","ITMC.DBUtility.dll","Newtonsoft.Json.dll","log4net.dll","LiteDB.dll"};
-    static final class Changed extends IOException { }
+    private static final String MODE_DB="Data/db/RegisterVersion.db";
+    private static final String[] MODE_FILES={MODE_DB,"Data/db/RegisterVersion-log.db","Data/db/RegisterVersion-tmp.db"};
+    private static final int MODE_FILE_LIMIT=16*1024*1024;
+    private static final String[] MODE_CONSUMERS={MODE_WEB_A,MODE_WEB_B,MODE_WEB_C};
+    // Reviewed current data, not keys or executable license overrides. See the independent audit.
+    private static final ModeReceipt[] MODE_RECEIPTS={
+        new ModeReceipt("MODE-RELATIONS-20261109-1",MODE_WEB_A,LITE,
+            "dd74a18a833f862c21639755742069f1cba8469d669cd1d51c0f2e20136e71e3","YX030107","QT1001:QT100111,QT100113"),
+        new ModeReceipt("MODE-RELATIONS-20261109-2",MODE_WEB_C,LITE,
+            "6d0312991988f6b40686597e42b682c0bc9fedadad9c6cb444265ae2dd892c2b","YX030118","QT04:QT0440,QT0460,QT0462,QT0463;PT02:PT0205"),
+        new ModeReceipt("MODE-RELATIONS-20261109-3",MODE_WEB_A,LITE,
+            "30806a2634fb1d3dd80aac01bea6fc39b0bef8eda75c4a5136b0ef8cc8f6e543","YX030201","QT1001:QT100113;PT02:PT0213"),
+        new ModeReceipt("MODE-RELATIONS-20261109-4",MODE_WEB_B,LITE,
+            "f8a7cd1532ffbc2d243ff4d007e04c2e8cec1b35a8afaa8caf03a02c69887ac0","YX030211","QT04:QT0424;PT02:PT0213")
+    };
+    static final class ModeReceipt {
+        final String id,web,lite,database,mode;final Map<String,List<String>> parents;
+        ModeReceipt(String id,String web,String lite,String database,String mode,String groups) {
+            this.id=id;this.web=web;this.lite=lite;this.database=database;this.mode=mode;
+            Map<String,List<String>> parsed=new LinkedHashMap<String,List<String>>();
+            for(String group:groups.split(";")) {
+                String[] pair=group.split(":",-1);if(pair.length!=2||!pair[0].matches("[A-Za-z0-9._-]+"))throw new IllegalArgumentException("mode-receipt");
+                List<String> values=new ArrayList<String>();for(String value:pair[1].split(",")) {
+                    if(!value.matches("[A-Za-z0-9._-]+"))throw new IllegalArgumentException("mode-receipt");values.add(value);
+                }
+                if(values.isEmpty()||parsed.put(pair[0],Collections.unmodifiableList(values))!=null)throw new IllegalArgumentException("mode-receipt");
+            }
+            parents=Collections.unmodifiableMap(parsed);
+        }
+    }
+    /** Immutable relation-data diagnostic; it never contains or produces a license state. */
+    public static final class ModeRelations {
+        public final String status,profileId,databaseSHA256,currentMode,reason;
+        public final String auditScope;
+        public final Map<String,List<String>> parentModes;
+        public final List<String> companionFiles;
+        public final boolean inspectionReadOnlyAudited=true,fullAuthorizationAudited=false;
+        private ModeRelations(String status,String profile,String database,String mode,String reason,
+                Map<String,List<String>> parents,List<String> companions) {
+            this.status=status;profileId=profile;databaseSHA256=database;currentMode=mode;this.reason=reason;
+            auditScope="EXACT_REVIEWED_DATA".equals(status)?"EXACT_REVIEWED_RELATION_DATA_ONLY"
+                    :"MISSING_DATABASE".equals(status)?"REVIEWED_MISSING_DATABASE_BRANCH":"OBSERVATION_ONLY";
+            Map<String,List<String>> copy=new LinkedHashMap<String,List<String>>();
+            for(Map.Entry<String,List<String>> e:parents.entrySet())copy.put(e.getKey(),Collections.unmodifiableList(new ArrayList<String>(e.getValue())));
+            parentModes=Collections.unmodifiableMap(copy);companionFiles=Collections.unmodifiableList(new ArrayList<String>(companions));
+        }
+        static ModeRelations unassessed(){return modeResult("NOT_ASSESSED","none","","","未收集模式关系的当前输入",null,Collections.<String>emptyList());}
+        static ModeRelations revoked(){return modeResult("CHANGED_OR_REVOKED","none","","","读取期间输入或消费组件绑定变化，已撤回模式关系结论",null,Collections.<String>emptyList());}
+        public String summary() {
+            return "模式关系："+reason+(parentModes.isEmpty()?"":"；先行父产品/模式="+parentModes)
+                    +"；仅为关系数据证据，未验证父产品授权或实际运行顺序";
+        }
+    }
+    private static ModeRelations modeResult(String status,String id,String database,String mode,String reason,
+            Map<String,List<String>> parents,List<String> companions) {
+        return new ModeRelations(status,id,database,mode,reason,parents==null?Collections.<String,List<String>>emptyMap():parents,companions);
+    }
+    private static boolean modeConsumer(String web,String[] consumers) {return web!=null&&Arrays.asList(consumers).contains(web);}
+    static ModeRelations modeRelations(Map<String,String> hashes,ModeReceipt[] receipts,String[] consumers,String lite,boolean consumerBinding) {
+        String web=hashes.get("ITMC.Web.dll"),database=hashes.get(MODE_DB),mode=hashes.get("@mode-current");
+        String dbHash=database==null||"absent".equals(database)?"":database;
+        mode=mode==null?"":mode;
+        List<String> companions=new ArrayList<String>();
+        for(int i=1;i<MODE_FILES.length;i++)if(hashes.containsKey(MODE_FILES[i])&&!"absent".equals(hashes.get(MODE_FILES[i])))companions.add(MODE_FILES[i]);
+        if(!consumerBinding||!modeConsumer(web,consumers)||!lite.equals(hashes.get("LiteDB.dll")))
+            return modeResult("UNREVIEWED_CONSUMER","none",dbHash,mode,"当前 Web/LiteDB 消费组件不匹配模式关系审核绑定",null,companions);
+        if(!hashes.containsKey("@mode-observed"))return ModeRelations.unassessed();
+        if(!companions.isEmpty())return modeResult("COMPANION_PRESENT","none",dbHash,mode,"检测到数据库伴随文件，未按主文件推断当前关系："+companions,null,companions);
+        if("absent".equals(database))return modeResult("MISSING_DATABASE","none","",mode,"已审核入口在关系数据库缺失时直接返回空字典；不表示本地或整体授权无效",null,companions);
+        if(mode.isEmpty())return modeResult("CURRENT_MODE_UNKNOWN","none",dbHash,"","当前模式配置缺失、歧义或格式未审核，未选用其他模式的关系",null,companions);
+        for(ModeReceipt receipt:receipts)if(receipt.web.equals(web)&&receipt.lite.equals(hashes.get("LiteDB.dll"))
+                &&receipt.database.equals(database)&&receipt.mode.equals(mode))
+            return modeResult("EXACT_REVIEWED_DATA",receipt.id,dbHash,mode,"数据库、消费构建与当前模式精确匹配已审核关系；网站先尝试父产品，再检查自身产品",receipt.parents,companions);
+        return modeResult("UNKNOWN_DATABASE_OR_MODE","none",dbHash,mode,"数据库或当前模式没有成套审核凭据；未知关系不能按空字典处理",null,companions);
+    }
+    static final class Changed extends IOException {
+        final boolean modeInputs;
+        Changed(){this(false);}Changed(boolean modeInputs){this.modeInputs=modeInputs;}
+    }
     /** Code-set coverage only. An exact diagnostic binding is not a complete license proof. */
     public static final class FingerprintMatch {
         public final String profileId, auditScope;
@@ -138,10 +222,12 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
         public final boolean auditedBinding;
         public final String fingerprintStatus, auditScope, profileId;
         public final List<FingerprintMatch> fingerprintMatches;
+        public final ModeRelations modeRelations;
         final UpperBinding upper;final ExtendedBinding extended;final Map<String,String> hashes;
         Assessment(Family a,Family b,UpperBinding u,ExtendedBinding e,Map<String,String> hashes) {
             upperFamily=a;compatibilityFamily=b;upper=u;extended=e;auditedBinding=u!=null||e!=null;
             this.hashes=Collections.unmodifiableMap(new TreeMap<String,String>(hashes));
+            modeRelations=modeRelations(this.hashes,MODE_RECEIPTS,MODE_CONSUMERS,LITE,u!=null&&e!=null);
             fingerprintMatches=fingerprintMatches(this.hashes);
             // The same build may support a reviewed modern positive path AND a legacy
             // diagnostic. Those are different scopes, not competing Patch provenances.
@@ -158,7 +244,8 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
             String family=upperFamily==Family.MODERN_JSON_DES?"现代本地记录协议"
                     :upperFamily==Family.REGINFO_API_CANDIDATE?"同系列注册接口候选":"未识别的大写注册协议";
             if(compatibilityFamily!=Family.UNKNOWN)family+="及兼容注册组件";
-            return family+"；"+fingerprintSummary();
+            return family+"；"+fingerprintSummary()
+                    +("UNREVIEWED_CONSUMER".equals(modeRelations.status)?"":"；"+modeRelations.summary());
         }
         public String fingerprintSummary() {
             if("EXACT_REVIEWED_SET".equals(fingerprintStatus))return "构建指纹 "+profileId
@@ -212,6 +299,7 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
             total+=observed.size;hashes.put(file,observed.hash);observations.put(file,observed);
         }
         Assessment known=classify(hashes,null,null);
+        captureModeInputs(app,hashes,MODE_CONSUMERS,known.upper!=null&&known.extended!=null,MAX_SET_BYTES-total);
         LicenseRecoverReadOnlyPeMetadata.ApiShape upper=null,lower=null;
         // Hash every input in constant space first. Unknown API metadata is then read one
         // component at a time, with a smaller cap and the original digest as its receipt.
@@ -238,7 +326,8 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
     }
     private static boolean eq(Map<String,String> h,String file,String sha) {return sha.equals(h.get(file));}
     private static final class Observed {
-        final long size;final String hash;Observed(long size,String hash){this.size=size;this.hash=hash;}
+        final long size;final String hash,identity;
+        Observed(long size,String hash,String identity){this.size=size;this.hash=hash;this.identity=identity;}
     }
     private static BasicFileAttributes attributes(Path p)throws IOException {
         Path cursor=p.getRoot();for(Path part:p){cursor=cursor.resolve(part);BasicFileAttributes a=Files.readAttributes(cursor,BasicFileAttributes.class,LinkOption.NOFOLLOW_LINKS);
@@ -264,10 +353,13 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
             }
             unchanged(p,before,count);
         }catch(NoSuchFileException missing){throw new Changed();}
-        return new Observed(count,hex(digest.digest()));
+        return new Observed(count,hex(digest.digest()),count+":"+before.lastModifiedTime()+":"+before.fileKey());
     }
     private static LicenseRecoverReadOnlyPeMetadata.ApiShape apiShape(Path p,Observed observed)throws IOException {
-        if(observed.size>MAX_METADATA_BYTES)throw new IOException("protocol-metadata-limit");
+        return LicenseRecoverReadOnlyPeMetadata.parseApiShape(readObserved(p,observed,MAX_METADATA_BYTES));
+    }
+    private static byte[] readObserved(Path p,Observed observed,int limit)throws IOException {
+        if(observed.size>limit)throw new IOException("protocol-metadata-limit");
         try {
             BasicFileAttributes before=attributes(p);
             if(!before.isRegularFile()||before.size()!=observed.size)throw new Changed();
@@ -282,8 +374,54 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
             }
             unchanged(p,before,count);
             if(!observed.hash.equals(hex(digest.digest())))throw new Changed();
-            return LicenseRecoverReadOnlyPeMetadata.parseApiShape(bytes);
+            return bytes;
         }catch(NoSuchFileException missing){throw new Changed();}
+    }
+    /** Captures only the audited consumer's data inputs; synthetic seams never enter the production registry. */
+    static void captureModeInputs(Path app,Map<String,String> hashes,String[] consumers,boolean consumerBinding,long remaining)throws IOException {
+        if(!consumerBinding||!modeConsumer(hashes.get("ITMC.Web.dll"),consumers))return;
+        hashes.put("@mode-observed","true");
+        for(String relative:MODE_FILES) {
+            try {
+                Observed value=observe(app.resolve(relative),MODE_FILE_LIMIT,remaining);remaining-=value.size;
+                hashes.put(relative,value.hash);hashes.put("@mode-identity:"+relative,value.identity);
+            }catch(NoSuchFileException missing){hashes.put(relative,"absent");}
+            catch(Changed changed){throw new Changed(true);}
+        }
+        if(hashes.containsKey("config.xml")) {
+            try {
+                Path p=app.resolve("config.xml");Observed current=observe(p,4*1024*1024,4*1024*1024);
+                if(!current.hash.equals(hashes.get("config.xml")))throw new Changed(true);
+                hashes.put("@mode-current",modeVersion(readObserved(p,current,4*1024*1024)));
+            }catch(NoSuchFileException missing){throw new Changed(true);}
+            catch(Changed changed){throw new Changed(true);}
+        }else hashes.put("@mode-current","");
+    }
+    private static String modeVersion(byte[] xml) {
+        try {
+            DocumentBuilderFactory f=DocumentBuilderFactory.newInstance();
+            f.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING,true);
+            f.setFeature("http://apache.org/xml/features/disallow-doctype-decl",true);
+            f.setFeature("http://xml.org/sax/features/external-general-entities",false);
+            f.setFeature("http://xml.org/sax/features/external-parameter-entities",false);
+            f.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD,"");f.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA,"");
+            f.setXIncludeAware(false);f.setExpandEntityReferences(false);
+            javax.xml.parsers.DocumentBuilder builder=f.newDocumentBuilder();builder.setErrorHandler(new org.xml.sax.helpers.DefaultHandler());
+            Element root=builder.parse(new ByteArrayInputStream(xml)).getDocumentElement();
+            if(root==null||!("ROOT".equals(root.getTagName())||"root".equals(root.getTagName())))return "";
+            Element section=null;
+            for(Node n=root.getFirstChild();n!=null;n=n.getNextSibling())if(n instanceof Element&&"SystemSoft".equals(n.getNodeName())) {
+                if(section!=null)return "";section=(Element)n;
+            }
+            if(section==null)return "";
+            String version=null;
+            for(Node n=section.getFirstChild();n!=null;n=n.getNextSibling())if(n instanceof Element&&"SoftVersionID".equals(n.getNodeName())) {
+                if(version!=null)return "";
+                for(Node child=n.getFirstChild();child!=null;child=child.getNextSibling())if(child instanceof Element)return "";
+                version=n.getTextContent();
+            }
+            return version!=null&&version.matches("[A-Za-z0-9._-]{1,64}")?version:"";
+        }catch(Exception malformed){return "";}
     }
     private static MessageDigest sha256() {
         try{return MessageDigest.getInstance("SHA-256");}

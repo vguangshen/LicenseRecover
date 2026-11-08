@@ -1,5 +1,7 @@
 ## 1.2.74 - 2026-11-08
 
+- Bind .NET parent-product/mode evidence to exact reviewed consumer/dependency/database/current-mode tuples. Track database and companion presence, hashes and identities through the final recheck; unknown data never implies an empty parent chain. Relation evidence cannot change authorization acceptance or Patch provenance.
+- Validate all fourteen canonical modern .NET record properties before evaluating local conditions. Reject malformed unused properties and unreviewed names; retain zero lowercase date defaults but withhold acceptance for nonzero lazy-getter overrides until their legacy local-epoch conversion is proved.
 - Correct the v1.2.73 YS01 audit scope: lazy construction in a business fallback does not exclude the compatibility module's native initialization/JIT lookup. Retain satisfied modern local conditions, withdraw whole-entry acceptance, and keep native/Patch provenance unverified.
 
 - Include the website-referenced compatibility DLL in complete YS01 audit bindings. Missing or replaced dependencies revoke the positive binding; shared predicate success cannot substitute for the reviewed website dependency set.
