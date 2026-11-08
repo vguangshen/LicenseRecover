@@ -23,32 +23,32 @@ public final class LicenseRecoverReadOnlyJavaAlternateVerifierTest {
         return new LicenseRecoverReadOnlyJavaAlternateVerifier.Check(scope?LicenseRecoverLicenseState.LocalCondition.SATISFIED
                 :LicenseRecoverLicenseState.LocalCondition.PRODUCT_MISMATCH,"synthetic local facts",core,scope,true,false);
     }
-    private static void localDiagnostics(Path root)throws Exception {
+    private static void configuredEntries(Path root)throws Exception {
         put(root,"systemConfig.yml","global.system.VersionID=MODE\n");
         put(root,"WEB-INF/lib/config.xml","<root><reg><regType>1</regType><regName>PRIVATE_RECORD</regName></reg></root>");
         put(root,"WEB-INF/classes/config.xml","<root><SystemSoft><SoftVersionID>FIRST</SoftVersionID><FinalProduct>LAST</FinalProduct></SystemSoft></root>");
-        LicenseRecoverReadOnlyJavaAlternateVerifier.Profile library=profile(root,LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.LIBRARY_LOCAL_DIAGNOSTIC);
+        LicenseRecoverReadOnlyJavaAlternateVerifier.Profile library=profile(root,LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.LIBRARY_LOCAL_ENTRY);
         LicenseRecoverLicenseState lib=inspect(root,library,(a,product,mode,d,e)->{
             check("LAST".equals(product)&&"MODE".equals(mode),"legacy product is the last direct SystemSoft child, not a guessed field");
             return local(true,true);
         },null);
         check(lib.localCondition==LicenseRecoverLicenseState.LocalCondition.SATISFIED
-                &&lib.acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED,"complete local facts remain diagnostic while whole-entry proof is incomplete");
+                &&lib.acceptance==LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE,"complete local facts prove the reviewed library registration/product gate");
         check(lib.authorization==LicenseRecoverLicenseState.Authorization.UNVERIFIED
                 &&lib.codeIntegrity==LicenseRecoverLicenseState.CodeIntegrity.UNKNOWN,"local facts cannot become native activation or Patch provenance");
-        check(!lib.evidence.contains("PRIVATE_RECORD")&&!lib.evidence.contains("synthetic-machine"),"new diagnostic paths redact real values");
+        check(!lib.evidence.contains("PRIVATE_RECORD")&&!lib.evidence.contains("synthetic-machine"),"configured entry paths redact real values");
         check(!root.getFileName().toString().contains("QT100101")&&lib.localCondition==LicenseRecoverLicenseState.LocalCondition.SATISFIED,
-                "an unrelated directory name receives only the content-bound local observation");
+                "an unrelated directory name receives the content-bound result");
         put(root,"WEB-INF/classes/config.xml.preoneclick.bak","sealed backup A");
         check(inspect(root,library,null,null).localCondition==LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED,
                 "a newly added config backup is still a changed sealed startup resource");
-        LicenseRecoverReadOnlyJavaAlternateVerifier.Profile backup=profile(root,LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.LIBRARY_LOCAL_DIAGNOSTIC);
+        LicenseRecoverReadOnlyJavaAlternateVerifier.Profile backup=profile(root,LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.LIBRARY_LOCAL_ENTRY);
         put(root,"WEB-INF/classes/config.xml.preoneclick.bak","sealed backup B");
         check(inspect(root,backup,null,null).localCondition==LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED,
                 "a same-name changed backup cannot inherit an audited resource variant");
         Files.delete(root.resolve("WEB-INF/classes/config.xml.preoneclick.bak"));
         put(root,"data/config.xml","<root><SystemSoft><SoftVersionID>P1,P2</SoftVersionID><regInfo>A,B</regInfo></SystemSoft></root>");
-        LicenseRecoverReadOnlyJavaAlternateVerifier.Profile qt=profile(root,LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.QT30_LOCAL_DIAGNOSTIC);
+        LicenseRecoverReadOnlyJavaAlternateVerifier.Profile qt=profile(root,LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.QT30_LOCAL_ENTRY);
         final int[] laterProducts={0};
         LicenseRecoverLicenseState firstCore=inspect(root,qt,(a,product,mode,d,e)->{
             if("P2".equals(product))laterProducts[0]++;
@@ -69,9 +69,9 @@ public final class LicenseRecoverReadOnlyJavaAlternateVerifierTest {
             return local(true,"B".equals(mode));
         },null);
         check(qtScope.localCondition==LicenseRecoverLicenseState.LocalCondition.SATISFIED
-                &&qtScope.acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED,"QT local facts use any configured product scope without whole-entry promotion");
+                &&qtScope.acceptance==LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE,"QT accepts its first core-valid constructor and any configured product scope");
         put(root,"WEB-INF/classes/config.xml","<root><SystemSoft><SoftVersionID>XMT-PRODUCT</SoftVersionID><regInfo>ALTERNATE-MODE</regInfo></SystemSoft></root>");
-        LicenseRecoverReadOnlyJavaAlternateVerifier.Profile xmt=profile(root,LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.XMT_LOCAL_DIAGNOSTIC);
+        LicenseRecoverReadOnlyJavaAlternateVerifier.Profile xmt=profile(root,LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.XMT_LOCAL_ENTRY);
         LicenseRecoverLicenseState alternate=inspect(root,xmt,(a,product,mode,d,e)->{
             check("XMT-PRODUCT".equals(product),"XMT uses classes SoftVersionID despite conflicting data metadata");
             return local(true,"ALTERNATE-MODE".equals(mode));
@@ -82,26 +82,88 @@ public final class LicenseRecoverReadOnlyJavaAlternateVerifierTest {
                 .localCondition==LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,"unknown identity is not converted to machine mismatch or acceptance");
         check(inspect(root,xmt,(a,b,c,d,e)->new LicenseRecoverReadOnlyJavaAlternateVerifier.Check(
                 LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,"requires quota write",false,false,true,true),null)
-                .acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED,"diagnostic entry never consumes finite quota or promotes it");
+                .acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED,"configured entry never consumes finite quota or promotes it");
         put(root,"systemConfig.yml","global.system.VersionID=YT00123\n");
-        LicenseRecoverReadOnlyJavaAlternateVerifier.Profile mapped=profile(root,LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.YT_MAPPED_LOCAL_DIAGNOSTIC);
+        LicenseRecoverReadOnlyJavaAlternateVerifier.Profile mapped=profile(root,LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.YT_MAPPED_LOCAL_ENTRY);
         LicenseRecoverLicenseState mappedScope=inspect(root,mapped,(a,product,mode,d,time)->{
             check("QT1001".equals(product),"YT00123 uses its fixed mapped constructor before generic YT001 fallback");
             check(time==2L,"YT checks its stricter end instant after the observation time");
             return local(true,"QT100109".equals(mode));
         },null);
         check(mappedScope.localCondition==LicenseRecoverLicenseState.LocalCondition.SATISFIED
-                &&mappedScope.acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED,"either mapped YT scope supplies local evidence while database/cache startup remains unproved");
+                &&mappedScope.acceptance==LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE,"either mapped YT scope proves the reviewed registration/product gate");
         put(root,"systemConfig.yml","global.system.VersionID=YT00138\n");
         check(inspect(root,mapped,(a,b,c,d,e)->{throw new AssertionError("wrong mapped product must not be evaluated");},null)
                 .localCondition==LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,"a changed dynamic mode cannot reuse YT00123's fixed mapping");
-        LicenseRecoverReadOnlyJavaAlternateVerifier.Profile generic=profile(root,LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.YT_GENERIC_LOCAL_DIAGNOSTIC);
+        LicenseRecoverReadOnlyJavaAlternateVerifier.Profile generic=profile(root,LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.YT_GENERIC_LOCAL_ENTRY);
         check(inspect(root,generic,(a,product,mode,d,e)->{
             check("YT001".equals(product)&&"YT00138".equals(mode),"YT generic fallback uses the code-derived product and configured mode");
             return local(true,true);
         },null).localCondition==LicenseRecoverLicenseState.LocalCondition.SATISFIED,"YT generic local evidence does not depend on a hard-coded application directory");
         check(inspect(root,generic,(a,b,c,d,e)->local(true,true),()->{try{put(root,"systemConfig.yml","global.system.VersionID=CHANGED\n");}catch(Exception e){throw new RuntimeException(e);}})
-                .localCondition==LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED,"changing current product configuration between reads revokes the diagnostic as well as positive proofs");
+                .localCondition==LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED,"changing current product configuration between reads revokes the earlier proof");
+    }
+    private static void configuredProofBoundaries(Path root)throws Exception {
+        LicenseRecoverReadOnlyJavaAlternateVerifier.Layout[] layouts={
+                LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.LIBRARY_LOCAL_ENTRY,
+                LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.QT30_LOCAL_ENTRY,
+                LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.XMT_LOCAL_ENTRY,
+                LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.YT_MAPPED_LOCAL_ENTRY,
+                LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.YT_GENERIC_LOCAL_ENTRY};
+        put(root,"WEB-INF/classes/config.xml","<root><SystemSoft><SoftVersionID>P1</SoftVersionID><regInfo>P1</regInfo></SystemSoft></root>");
+        put(root,"data/config.xml","<root><SystemSoft><SoftVersionID>P1,P2</SoftVersionID><regInfo>A,B</regInfo></SystemSoft></root>");
+        for(LicenseRecoverReadOnlyJavaAlternateVerifier.Layout layout:layouts) {
+            String version=layout==LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.YT_MAPPED_LOCAL_ENTRY?"YT00123"
+                    :layout==LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.YT_GENERIC_LOCAL_ENTRY?"YT00138":"MODE";
+            put(root,"systemConfig.yml","global.system.VersionID="+version+"\n");
+            String path=layout==LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.LIBRARY_LOCAL_ENTRY?"WEB-INF/lib/config.xml":"config.xml";
+            put(root,path,"<root><reg><regType>1</regType><regName>PRIVATE_RECORD</regName></reg></root>");
+            LicenseRecoverReadOnlyJavaAlternateVerifier.Profile current=profile(root,layout);
+            LicenseRecoverLicenseState accepted=inspect(root,current,(a,b,c,d,e)->local(true,true),null);
+            check(accepted.acceptance==LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE
+                    &&accepted.localCondition==LicenseRecoverLicenseState.LocalCondition.SATISFIED,
+                    "each configured gate accepts its independently proven local-first path");
+            check(accepted.authorization==LicenseRecoverLicenseState.Authorization.UNVERIFIED
+                    &&accepted.codeIntegrity==LicenseRecoverLicenseState.CodeIntegrity.UNKNOWN,
+                    "configured acceptance remains separate from native validity and Patch provenance");
+            for(String mode:new String[]{"2","3"}) {
+                put(root,path,"<root><reg><regType>"+mode+"</regType><regName>PRIVATE_RECORD</regName></reg></root>");
+                final int[] primitiveCalls={0};
+                LicenseRecoverLicenseState pending=inspect(root,current,(a,b,c,d,e)->{
+                    primitiveCalls[0]++;return local(true,true);
+                },null);
+                check(pending.acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED&&primitiveCalls[0]==0,
+                        "HASP/network-first dispatch cannot borrow a later synthetic local pass");
+            }
+            put(root,path,"<root><reg><regType>1</regType><regName>PRIVATE_RECORD</regName></reg></root>");
+            check(inspect(root,current,(a,b,c,d,e)->new LicenseRecoverReadOnlyJavaAlternateVerifier.Check(
+                    LicenseRecoverLicenseState.LocalCondition.SATISFIED,"finite quota requires write",true,true,true,true),null)
+                    .acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED,
+                    "every configured layout rejects a successful primitive that requires quota consumption");
+            check(inspect(root,current,(a,b,c,d,e)->new LicenseRecoverReadOnlyJavaAlternateVerifier.Check(
+                    LicenseRecoverLicenseState.LocalCondition.SATISFIED,"unselected local candidate",true,true,false,false),null)
+                    .acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED,
+                    "a primitive cannot promote an unselected local path");
+        }
+        LicenseRecoverReadOnlyJavaAlternateVerifier.Profile generic=profile(root,LicenseRecoverReadOnlyJavaAlternateVerifier.Layout.YT_GENERIC_LOCAL_ENTRY);
+        put(root,"data/system.json","{\"@productId\":\"OTHER\",\"@productModuleId\":\"OTHER-MODE\"}");
+        LicenseRecoverLicenseState earlierPaas=inspect(root,generic,(a,b,c,d,e)->local(true,true),null);
+        check(earlierPaas.localCondition==LicenseRecoverLicenseState.LocalCondition.SATISFIED
+                &&earlierPaas.acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED,
+                "a present earlier PaaS source prevents promotion of the later generic YT local candidate");
+        check(earlierPaas.evidence.contains("data/system.json")&&!earlierPaas.evidence.contains("OTHER-MODE"),
+                "the pending reason identifies the missing dispatch proof without leaking PaaS values");
+        Files.delete(root.resolve("data/system.json"));
+        check(inspect(root,generic,(a,b,c,d,e)->local(true,true),()->{
+            try{put(root,"data/system.json","{}");}catch(Exception e){throw new RuntimeException(e);}
+        }).localCondition==LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED,
+                "adding an earlier PaaS source between input receipts revokes the generic positive result");
+        Files.delete(root.resolve("data/system.json"));
+        check(inspect(root,generic,(a,b,c,d,time)->new LicenseRecoverReadOnlyJavaAlternateVerifier.Check(
+                time<2L?LicenseRecoverLicenseState.LocalCondition.SATISFIED:LicenseRecoverLicenseState.LocalCondition.EXPIRED,
+                "strict application expiry instant",time<2L,time<2L,true,false),null)
+                .acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED,
+                "YT's strict application expiry cannot inherit the library's inclusive date boundary");
     }
     public static void main(String[] args)throws Exception {
         Path root=Files.createTempDirectory("lr-alternate-synthetic-");
@@ -212,7 +274,8 @@ public final class LicenseRecoverReadOnlyJavaAlternateVerifierTest {
             Files.delete(root.resolve("WEB-INF/classes/Extra.class"));
             check(LicenseRecoverReadOnlyJavaAlternateVerifier.verify(root.toFile()).localCondition==LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED,
                     "production does not import synthetic receipts or select by directory name");
-            localDiagnostics(root);
+            configuredEntries(root);
+            configuredProofBoundaries(root);
             System.out.println("LicenseRecoverReadOnlyJavaAlternateVerifierTest: "+checks+" checks passed");
         }finally {
             try(java.util.stream.Stream<Path> stream=Files.walk(root)){

@@ -221,6 +221,7 @@ public final class LicenseRecoverReadOnlyJavaLocalVerifier {
                     "解密载荷缺少完整的原生包装结构",false,false,true,false);
             String raw=new String(decoded,StandardCharsets.US_ASCII);
             Map<String,Object> payload=new FlatJson(raw.substring(6,raw.length()-6)).object();
+            canonicalBeanFields(payload);
             Object binding=payload.get("regID"),end=payload.get("endDate"),total=payload.get("totalTimes"),used=payload.get("userTimes");
             if(!(binding instanceof String)||!(end instanceof Long)||!(total instanceof Long))
                 return check(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,
@@ -270,6 +271,38 @@ public final class LicenseRecoverReadOnlyJavaLocalVerifier {
     }
     private static LocalCheck check(LicenseRecoverLicenseState.LocalCondition c,String r,boolean n,boolean p,boolean s,boolean w) {
         return new LocalCheck(c,r,n,p,s,w);
+    }
+    /**
+     * The target parses the whole RegeditInfo bean before checking any licence field.
+     * An invalid unused property can therefore reject an otherwise valid local record.
+     * Accept a canonical typed subset, not FastJSON's coercions, smart-name aliases or
+     * special keys; an ignored alias could otherwise overwrite a checked property.
+     * Missing optional properties retain the audited bean's zero/null defaults.
+     */
+    private static void canonicalBeanFields(Map<String,Object> payload)throws Unsupported {
+        for(Map.Entry<String,Object> property:payload.entrySet()) {
+            Object value=property.getValue();
+            switch(property.getKey()) {
+                case "regID":case "userID":case "proName":case "regStr":
+                    if(value!=null&&!(value instanceof String))throw beanType();
+                    break;
+                case "classNum":case "totalTimes":case "userTimes":case "maxCon":case "countDay":
+                    if(!(value instanceof Long)||(Long)value<Integer.MIN_VALUE||(Long)value>Integer.MAX_VALUE)
+                        throw beanType();
+                    break;
+                case "beginDate":case "endDate":
+                    if(value!=null&&!(value instanceof Long))throw beanType();
+                    break;
+                case "net":
+                    if(!(value instanceof Boolean))throw beanType();
+                    break;
+                default:
+                    throw new Unsupported("JSON 注册属性超出已审核的规范字段集合；未采用类型扩展或智能别名");
+            }
+        }
+    }
+    private static Unsupported beanType() {
+        return new Unsupported("JSON 注册属性类型超出已审核的完整 Bean 构造范围");
     }
     private static String hashMd5(String s)throws GeneralSecurityException {
         return hex(MessageDigest.getInstance("MD5").digest(s.getBytes(StandardCharsets.US_ASCII)));

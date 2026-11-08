@@ -10,7 +10,7 @@ ITMC 云实训平台离线授权恢复工具，支持 Java 与 .NET 应用。项
 
 双注册组件按证据选择路径，不能一律套用小写旧格式。YS01 与 YX0302 的共享现代本地条件可独立核对，但兼容模块的原生初始化与后续网站门槛尚未闭合，当前均只报告局部结果。v1.2.73 的 YS01 完整入口范围已纠正。见 [YS01 审计](docs/DOTNET_YS01_UPPER_AUDIT_20261107.md) 和 [YX0302 边界](docs/DOTNET_YX0302_UPPER_LOCAL_AUDIT.md)。
 
-当前 Java 记录按完整构建和实际构造产品、产品范围、文件位置核对；.NET 区分相同密码族的 JSON 与固定位置记录。网络/硬件狗优先不会再直接遮蔽可读取的本地字段，但局部字段满足或不符均不代替整体授权结论。见 [Java 当前记录](docs/JAVA_CURRENT_LOCAL_AUDIT_20261108.md) 与 [.NET 固定记录](docs/DOTNET_FIXED_RECORD_FIELDS_AUDIT_20261108.md)。
+当前 Java 记录按完整构建和实际构造产品、产品范围、文件位置核对。已审本地优先分支还会核对设置注册与产品标志的实际调用链，符合条件才报告当前入口接受；未知的先行产品或 PaaS 分支仍待核。该范围与既有入口检测一致，不包含整站数据库健康或全部业务功能。.NET 区分相同密码族的 JSON 与固定位置记录；网络/硬件狗优先不会遮蔽可读取的本地字段，局部字段结果仍保留整体待核。见 [Java 当前记录](docs/JAVA_CURRENT_LOCAL_AUDIT_20261108.md) 与 [.NET 固定记录](docs/DOTNET_FIXED_RECORD_FIELDS_AUDIT_20261108.md)。
 
 ## 下载
 

@@ -8,13 +8,13 @@
 
 | 样本 | 审核入口 | 实际本地注册路径 | 产品/后备边界 |
 | --- | --- | --- | --- |
-| QT100101 | `RegisterListener.run → checkReInfo → getRegisterMain` | `WEB-INF/lib/config.xml` | 两参数构造器按 CodeSource 的 `classes → lib` 默认路径读取；classes/data 同名文件不能替代；该构建未接入正向本地谓词 |
-| QT30103 | `SysParamInit.run` | 根 `config.xml` | 三参数构造器明确使用 Servlet 根；遍历产品族，本地/网络/HASP 后备尚未闭合 |
+| QT100101 | `RegisterListener.run → checkReInfo → getRegisterMain` | `WEB-INF/lib/config.xml` | 两参数构造器按 CodeSource 的 `classes → lib` 默认路径读取；classes/data 同名文件不能替代；当前资源变体已补齐独立注册/产品门槛正向证明 |
+| QT30103 | `SysParamInit.run` | 根 `config.xml` | 三参数构造器明确使用 Servlet 根；首个实际构造产品的本地优先成功及产品范围可独立证明；失败后的网络/HASP/后续产品不猜测 |
 | QT30104 | 同上，与 QT30103 属同组完整构建 | 根 `config.xml` | 同上，不能因为 data 配置存在而认定本地授权有效 |
-| XMT0106 | `RegisterListener.checkReInfoNew` | 根 `config.xml` | 构造参数来自 Servlet 根，包含注册用户与后备调用；未接入正向本地谓词 |
+| XMT0106 | `RegisterListener.checkReInfoNew` | 根 `config.xml` | 构造参数来自 Servlet 根，先行注册用户写入不会修改已审本地载荷字段；用首个成功产品再次取同一 mode 1 记录验证范围 |
 | XMT0107 | `RegisterListener.run → checkReInfoNew` | 根 `config.xml` | 构造产品来自 classes `SystemSoft/SoftVersionID`；产品集合为该节 `regInfo` 加系统 `VersionID`；已审核本地优先模式才允许计算正向条件 |
-| YT00138 | `SysParamInit → RegisterUtil` | 根 `config.xml` | 启动还读取数据库产品，再尝试产品映射、`data/system.json` 和通用产品后备；局部缺失不能证明全局拒绝 |
-| YT00123 | 同一启动/注册链；两处业务 class 与 YT00138 不同，独立绑定完整构建 | 根 `config.xml` | 新安装对照也没有此记录；`Register.xml` 是日志用途，网络/HASP/产品后备和进程缓存尚不能否定 |
+| YT00138 | `SysParamInit → RegisterUtil` | 根 `config.xml` | 启动业务数据库结果不提供许可构造产品；固定映射、PaaS、通用后备按真实顺序审核，局部缺失不能证明全局拒绝 |
+| YT00123 | 同一启动/注册链；两处业务 class 与 YT00138 不同，独立绑定完整构建 | 根 `config.xml` | 新增当前副本记录按固定映射独立检查；`Register.xml` 仍只是日志，不能替代生效记录或证明过去未激活 |
 
 QT100101 的默认路径还依赖 URL 路径替换规则；空格、编码或路径名导致不能证明与已审核规则等价时，返回不适用，不寻找其他“看起来有效”的注册文件。
 
@@ -27,6 +27,14 @@ XMT0107 的旧 `checkReInfo()` 虽固定设置注册标志，实际 `run()` 却�
 有限计次、未知机器取得规则、未知动态配置、网络优先模式、产品元数据歧义和未支持协议均不能通过这条正向证明。任何局部失败只报告相应 `LocalCondition`，不否定网络/HASP 后备。当前六个副本中的五个有效本地路径缺少注册记录，可以报告 `NO_RECORD`；这不是“整个软件未激活”的证明。XMT0107 的当前记录可满足正向谓词，完整打包结果以逐应用最终验收为准。
 
 目标 `getRegisterMain` 在显式路径下还可能调用 `writeRegisterUser`。审核的 J1 实现会查询系统 CRM 凭据，可能联网，并写 `WebSerUserID` / `WebSerPsw`；所见成功写入没有改变 `regType` / `regName` 本地载荷。生产检测器不执行它。正向结果不意味着原软件整个启动流程只读、无网络、不会发生日志/业务异常或全部业务可运行。
+
+## 当前配置布局的共享正向证明
+
+2026-11-08 的资源变体现在复用一条配置本地接受策略：从代码限定的元数据选择首个构造产品及产品范围，要求当前 mode 1、本机、期限、无限计次和字段类型通过，再按已审成功分支设置注册及产品门槛的独立接受结果。QT100101、QT30 两个应用、XMT0106、YT 固定映射和 YT 通用后备采用相同范围；不因完整网站、业务数据库健康或运行缓存未测而把已闭合的许可条件误称为仍待支持。
+
+YT 通用正向还要求先行 `data/system.json` 确实缺失；存在时，通用候选本地条件可以观察，但不能跳过先行 PaaS 分派认定完整入口接受。所有配置均双读，新增该文件、改变模式或完整代码/资源失配会撤回结果。YT 固定映射命中且当前本地成功时，后续 PaaS/通用因已注册而跳过。严格到期时刻判据保留。具体代码偏移、数据库调用范围及写入审计见 [当前 Java 审核](JAVA_CURRENT_LOCAL_AUDIT_20261108.md)。
+
+该策略不执行厂商方法，不冒充原生授权有效或确认 Patch；mode 2/3、有限计次、首个构造产品失败、未知身份及未闭合的先行候选继续待核。正向结果证明注册/产品门槛条件，仍不保证网站启动、全部业务功能、外部插件或当前进程缓存。
 
 ## 精确代码与启动资源
 
