@@ -1,7 +1,6 @@
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
-import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.MessageDigest;
@@ -160,29 +159,7 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
                 // Native getRegNo catches failed decoding, then uses the WMI rule.
             }
         }
-        String cpu="unknow";
-        if(s.cpuIds!=null) {
-            cpu="";
-            for(String c:s.cpuIds) {if(c==null){cpu="unknow";break;}cpu=c;}
-        }
-        String disk="0";
-        if(s.disks==null)disk="unknow";
-        else for(LicenseRecoverReadOnlyMachineIdentity.Disk d:s.disks) {
-            if(d==null||d.signature==null){disk="unknow";break;}
-            try {
-                BigInteger n=new BigInteger(d.signature.trim());
-                if(n.signum()<0||n.compareTo(new BigInteger("4294967295"))>0)throw new NumberFormatException();
-                disk=n.toString();if(n.signum()>0)break;
-            } catch(NumberFormatException e) {disk="unknow";break;}
-        }
-        String board=s.boards==null||s.boards.isEmpty()||s.boards.get(0)==null?"unknow":s.boards.get(0).trim();
-        if("unknow".equalsIgnoreCase(cpu)&&"unknow".equalsIgnoreCase(disk)) {
-            if(s.hostname==null)return null;
-            String h=pad(s.hostname,17);return h.substring(h.length()-17,h.length()-1);
-        }
-        cpu=pad(cpu,9);disk=pad(disk,9);
-        board="unknow".equals(board)||"None".equals(board)?cpu:pad(board,9);
-        return board.substring(board.length()-9,board.length()-1)+disk.substring(disk.length()-9,disk.length()-1);
+        return LicenseRecoverReadOnlyMachineIdentity.defaultDotNetId(s);
     }
     private static boolean asciiIdentity(LicenseRecoverReadOnlyMachineIdentity.Snapshot s) {
         if(s.hostname==null||!ascii(s.hostname)||s.cpuIds==null||s.disks==null||s.boards==null)return false;
@@ -193,7 +170,6 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
         return true;
     }
     private static boolean ascii(String value) {return value.matches("[\\x20-\\x7e]{0,8192}");}
-    private static String pad(String s,int length) {StringBuilder b=new StringBuilder(s);while(b.length()<length)b.insert(0,'0');return b.toString();}
     private static String decrypt(String value,String password) throws Exception {
         if(value.length()>MAX_CONFIG||(value.length()&1)!=0||!value.matches("[0-9A-Fa-f]+"))throw new IllegalArgumentException();
         byte[] cipher=new byte[value.length()/2];

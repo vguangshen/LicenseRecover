@@ -1,5 +1,4 @@
 import java.io.*;
-import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.*;
@@ -156,7 +155,7 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
             }
             if(identity==null||!identity.complete)return result(true,LocalStatus.IDENTITY_UNAVAILABLE,
                     "旧格式本地记录存在，但独立本机身份不可用；网络/硬件狗尚未核验",dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","IDENTITY_UNAVAILABLE");
-            String current=legacyMachine(identity);
+            String current=LicenseRecoverReadOnlyMachineIdentity.defaultDotNetId(identity);
             if(current==null)return result(true,LocalStatus.IDENTITY_UNAVAILABLE,"本机身份规范不属于本次审核范围",dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","IDENTITY_UNAVAILABLE");
             if(!plain.substring(6,22).equals(current))return result(true,LocalStatus.LEGACY_MACHINE_MISMATCH,
                     "当前本地记录的机器字段与本次扫描进程取得的标识不匹配；这不是站点运行身份或缓存的观测，其他注册组件、组合来源、硬件狗及联网仍可能接受",
@@ -229,24 +228,6 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
         if("3".equals(mode))return "upper:network→local→HASP; "+(legacy?"lower:network→local→dog":lower);
         return legacy?"upper:未审核分派; "+lower:"upper:local→HASP→network; "+lower;
     }
-    private static String legacyMachine(LicenseRecoverReadOnlyMachineIdentity.Snapshot s) {
-        if(s.hostname==null||!ascii(s.hostname))return null;
-        String cpu="";
-        for(String value:s.cpuIds){if(value==null){cpu="unknow";break;}if(!ascii(value))return null;cpu=value;}
-        String disk="0";
-        for(LicenseRecoverReadOnlyMachineIdentity.Disk d:s.disks) {
-            if(d==null||d.signature==null){disk="unknow";break;}
-            if(!ascii(d.signature))return null;
-            try{BigInteger n=new BigInteger(d.signature.trim());if(n.signum()<0||n.bitLength()>32)throw new NumberFormatException();disk=n.toString();if(n.signum()>0)break;}
-            catch(NumberFormatException e){disk="unknow";break;}
-        }
-        String board="unknow";
-        if(!s.boards.isEmpty()&&s.boards.get(0)!=null){if(!ascii(s.boards.get(0)))return null;board=s.boards.get(0).trim();}
-        if("unknow".equalsIgnoreCase(cpu)&&"unknow".equalsIgnoreCase(disk)){String h=pad(s.hostname,17);return h.substring(h.length()-17,h.length()-1);}
-        cpu=pad(cpu,9);disk=pad(disk,9);board="unknow".equals(board)||"None".equals(board)?cpu:pad(board,9);
-        return board.substring(board.length()-9,board.length()-1)+disk.substring(disk.length()-9,disk.length()-1);
-    }
-    private static String pad(String s,int n){StringBuilder b=new StringBuilder(s);while(b.length()<n)b.insert(0,'0');return b.toString();}
     private static boolean ascii(String s){return s!=null&&s.matches("[\\x20-\\x7e]{0,8192}");}
     private static String decrypt(String text,String password)throws GeneralSecurityException {
         if(text==null||text.length()>MAX_CONFIG||(text.length()&1)!=0||!text.matches("[0-9A-Fa-f]+"))throw new IllegalArgumentException();
