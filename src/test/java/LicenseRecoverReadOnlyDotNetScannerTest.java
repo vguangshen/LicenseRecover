@@ -62,13 +62,17 @@ public final class LicenseRecoverReadOnlyDotNetScannerTest {
         protectedBuild=LicenseRecoverReadOnlyDotNetCatalog.classify(protectedSet,null,null);
         check(protectedBuild.upper!=null&&protectedBuild.extended!=null&&!protectedBuild.upper.positiveEntryAudited
                 &&"MODERN_LOCAL_DIAGNOSTIC".equals(protectedBuild.auditScope),"one dual-DLL build can expose modern local evidence while its protected website proof stays open");
+        check(protectedBuild.fingerprintSummary().contains("受保护的注册结果构造及模块初始化待核")
+                &&!protectedBuild.fingerprintSummary().contains("数据库"),
+                "fixed code binding describes the initialization gap and leaves database conclusions to the current observation");
         Map<String,String> yx0301=new HashMap<String,String>(protectedSet);
         yx0301.put("ITMC.Web.dll","d22c923d7f11b084e2839b3d0d6ee572e06ad5d41200ff6c8215757f54e7501e");
         yx0301.put("itmcRegedit.dll","e684d265332af25ccc3449c38a38f024ecbf87353b9c48710c5ae2b2433c5183");
         LicenseRecoverReadOnlyDotNetCatalog.Assessment yx0301Binding=LicenseRecoverReadOnlyDotNetCatalog.classify(yx0301,null,null);
         check(yx0301Binding.upper!=null&&!yx0301Binding.upper.positiveEntryAudited&&"YX0301".equals(yx0301Binding.upper.product)
                 &&"MODERN_LOCAL_DIAGNOSTIC".equals(yx0301Binding.auditScope),"a reviewed new product reuses the core local engine without borrowing full entry proof");
-        check(yx0301Binding.fingerprintSummary().contains("RegisterVersion.db"),"an exact local-only binding retains its concrete entry gap for the GUI");
+        check(yx0301Binding.fingerprintSummary().contains("受保护的模块初始化及网站入口分派待核"),
+                "an exact local-only binding retains its concrete entry gap for the GUI");
         yx0301.remove("itmcRegedit.dll");
         check(LicenseRecoverReadOnlyDotNetCatalog.classify(yx0301,null,null).upper==null,"the new website's explicit compatibility dependency is required");
         Map<String,String> ys=new HashMap<String,String>();
@@ -169,7 +173,8 @@ public final class LicenseRecoverReadOnlyDotNetScannerTest {
             LicenseRecoverReadOnlyDotNetCatalog.ModeRelations match=LicenseRecoverReadOnlyDotNetCatalog.modeRelations(first,receipts,consumers,lite,true);
             check("EXACT_REVIEWED_DATA".equals(match.status)&&match.parentModes.size()==2&&match.parentModes.get("PARENT_A").equals(Arrays.asList("MODE_A","MODE_B")),
                     "synthetic exact tuple selects relationship data without a database engine");
-            check(match.inspectionReadOnlyAudited&&!match.fullAuthorizationAudited&&match.summary().contains("未验证父产品授权"),
+            check(match.inspectionReadOnlyAudited&&!match.fullAuthorizationAudited&&match.summary().contains("未验证父产品授权")
+                    &&match.reason.contains("重新校验时先尝试父产品，未通过才检查自身产品"),
                     "exact relationship data has no native or whole-authorization proof");
             boolean immutable=false;try{match.parentModes.clear();}catch(UnsupportedOperationException expected){immutable=true;}
             check(immutable,"parent grouping is immutable");immutable=false;try{match.parentModes.get("PARENT_A").add("OTHER");}catch(UnsupportedOperationException expected){immutable=true;}
@@ -216,7 +221,8 @@ public final class LicenseRecoverReadOnlyDotNetScannerTest {
             modeRevoked(first,changed,"a changed reader withdraws all current binding receipts");
             Files.delete(db);Map<String,String> absent=modeSnapshot(root,web,lite,consumers,true);
             unknown=LicenseRecoverReadOnlyDotNetCatalog.modeRelations(absent,receipts,consumers,lite,true);
-            check("MISSING_DATABASE".equals(unknown.status)&&unknown.parentModes.isEmpty()&&unknown.reason.contains("直接返回空字典")
+            check("MISSING_DATABASE".equals(unknown.status)&&unknown.parentModes.isEmpty()
+                    &&unknown.reason.contains("跳过父产品检查及组合授权导入")
                     &&"REVIEWED_MISSING_DATABASE_BRANCH".equals(unknown.auditScope),"only an observed missing database on a reviewed consumer gets empty-return evidence");
             Files.write(db,database);modeRevoked(absent,modeSnapshot(root,web,lite,consumers,true),"newly created database revokes missing-branch evidence");
             first=modeSnapshot(root,web,lite,consumers,true);Files.write(db,new byte[]{41,42,44});

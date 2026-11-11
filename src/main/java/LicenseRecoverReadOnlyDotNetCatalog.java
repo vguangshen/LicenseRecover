@@ -62,6 +62,7 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
     private static final String JSON7="9eca2c5ed187b5e1319c359aabf8382992131efe1854b899c23a93fe227496e3";
     private static final String LOG_OLD="af5610c515d2244db98c662636264c8177e89b1afe407f88fd18a41d66f6e7e2";
     private static final String LOG_NEW="124b4cd7d62656698d43d5adc3645eab88199717bb99497549d2c74a26c68e1d";
+    private static final String YX0302_ENTRY_GAP="受保护的注册结果构造及模块初始化待核";
     // All three use the SAME JSON/DES predicate. These are evidence/parameter records, not strategies.
     private static final UpperBinding[] UPPER={
         new UpperBinding("16b13b547893b160ef928fd6f06568770da1fdd2326a1dfdd4bc5c54e047562c",
@@ -78,12 +79,12 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
             "222df2d024efb4b30510af9bf5f552646e4e2f75ea9b3795daa7a279d8a6f725","YX0302",
             "ITMC.DBUtility.dll","dc7e1806270ae5dc54c073f417949f7a3b1f24731e70925d16027e645ce150bc",JSON6,
             "c228ad98c76a3b40bbd1bc950b81feff977646b2b99a21310164d4d310c7ea75",false,
-            "网站初始化依赖受保护的原生桥接，产品/父版本数据库映射也未闭合；见 docs/DOTNET_YX0302_UPPER_LOCAL_AUDIT.md"),
+            YX0302_ENTRY_GAP),
         new UpperBinding("07183f09c19b69c5c4ddcdcb43ad4b8d91cf56f629f6a3d7d675dfc84f761079",
             "222df2d024efb4b30510af9bf5f552646e4e2f75ea9b3795daa7a279d8a6f725","YX0302",
             "ITMC.DBUtility.dll","dc7e1806270ae5dc54c073f417949f7a3b1f24731e70925d16027e645ce150bc",JSON6,
             "c228ad98c76a3b40bbd1bc950b81feff977646b2b99a21310164d4d310c7ea75",false,
-            "网站初始化依赖受保护的原生桥接，产品/父版本数据库映射也未闭合；见 docs/DOTNET_YX0302_UPPER_LOCAL_AUDIT.md"),
+            YX0302_ENTRY_GAP),
         // YS01 shares the local JSON predicate, but the compatibility module has native initialization.
         // The lazy business fallback alone does not close module/JIT interposition; keep local-only.
         new UpperBinding("1790526c91b0dc51aa914d80604e600175cfb3d8899c8299bb3b2c85684b9b20",
@@ -95,7 +96,7 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
             "222df2d024efb4b30510af9bf5f552646e4e2f75ea9b3795daa7a279d8a6f725","YX0301",
             "ITMC.DBUtility.dll","dc7e1806270ae5dc54c073f417949f7a3b1f24731e70925d16027e645ce150bc",JSON6,
             "c228ad98c76a3b40bbd1bc950b81feff977646b2b99a21310164d4d310c7ea75",false,
-            "网站先读取 Data/db/RegisterVersion.db 的当前模式/父产品映射；数据库查询、解密及模式选择尚未纳入完整入口证明；见 docs/DOTNET_YX0301_LOCAL_AUDIT_20261108.md",
+            "受保护的模块初始化及网站入口分派待核",
             "e684d265332af25ccc3449c38a38f024ecbf87353b9c48710c5ae2b2433c5183")
     };
     private static final ExtendedBinding[] EXTENDED={
@@ -186,11 +187,13 @@ public final class LicenseRecoverReadOnlyDotNetCatalog {
             return modeResult("UNREVIEWED_CONSUMER","none",dbHash,mode,"当前 Web/LiteDB 消费组件不匹配模式关系审核绑定",null,companions);
         if(!hashes.containsKey("@mode-observed"))return ModeRelations.unassessed();
         if(!companions.isEmpty())return modeResult("COMPANION_PRESENT","none",dbHash,mode,"检测到数据库伴随文件，未按主文件推断当前关系："+companions,null,companions);
-        if("absent".equals(database))return modeResult("MISSING_DATABASE","none","",mode,"已审核入口在关系数据库缺失时直接返回空字典；不表示本地或整体授权无效",null,companions);
+        if("absent".equals(database))return modeResult("MISSING_DATABASE","none","",mode,
+                "关系库缺失时直接返回空字典；此路径跳过父产品检查及组合授权导入",null,companions);
         if(mode.isEmpty())return modeResult("CURRENT_MODE_UNKNOWN","none",dbHash,"","当前模式配置缺失、歧义或格式未审核，未选用其他模式的关系",null,companions);
         for(ModeReceipt receipt:receipts)if(receipt.web.equals(web)&&receipt.lite.equals(hashes.get("LiteDB.dll"))
                 &&receipt.database.equals(database)&&receipt.mode.equals(mode))
-            return modeResult("EXACT_REVIEWED_DATA",receipt.id,dbHash,mode,"数据库、消费构建与当前模式精确匹配已审核关系；网站先尝试父产品，再检查自身产品",receipt.parents,companions);
+            return modeResult("EXACT_REVIEWED_DATA",receipt.id,dbHash,mode,
+                    "当前模式的父产品关系已匹配；网站重新校验时先尝试父产品，未通过才检查自身产品",receipt.parents,companions);
         return modeResult("UNKNOWN_DATABASE_OR_MODE","none",dbHash,mode,"数据库或当前模式没有成套审核凭据；未知关系不能按空字典处理",null,companions);
     }
     static final class Changed extends IOException {
