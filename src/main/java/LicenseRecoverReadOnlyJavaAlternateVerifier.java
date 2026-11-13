@@ -12,7 +12,9 @@ import org.w3c.dom.*;
 /** Audited alternate Java entry paths. No vendor classes, registration writes or target processes. */
 public final class LicenseRecoverReadOnlyJavaAlternateVerifier {
     private LicenseRecoverReadOnlyJavaAlternateVerifier() { }
-    enum Layout { DEFAULT_LIBRARY, SERVLET_ROOT, DATABASE_PRODUCT_CHAIN, XMT_ANY_MODE }
+    enum Layout { DEFAULT_LIBRARY, SERVLET_ROOT, DATABASE_PRODUCT_CHAIN, XMT_ANY_MODE,
+        LIBRARY_LOCAL_ENTRY, QT30_LOCAL_ENTRY, XMT_LOCAL_ENTRY,
+        YT_MAPPED_LOCAL_ENTRY, YT_GENERIC_LOCAL_ENTRY }
     static final class Profile {
         final String id, anchor, anchorHash, classes, libraries, wiring;
         final int classCount, libraryCount;
@@ -29,8 +31,17 @@ public final class LicenseRecoverReadOnlyJavaAlternateVerifier {
                     && wiring.equals(digest(s.wiring));
         }
     }
-    // Exact code and bootstrap-resource review: docs/JAVA_ALTERNATE_ENTRY_AUDIT.md.
+    // Exact code/bootstrap reviews: docs/JAVA_ALTERNATE_ENTRY_AUDIT.md and JAVA_CURRENT_LOCAL_AUDIT_20261108.md.
     private static final Profile[] REVIEWED = {
+        // Current code/resource variants; the configured local gate has an independent positive proof.
+        new Profile("DS50108-entry-20261108","com/itmc/register/service/RegisterListener.class","e9036df8f40fc800d344a6b8f134fb48ceca75812d48d30e6228f900f976fe12",966,"50f54336e3ccdab70e26c30b8182285b302e67770aa18f0485072afebdaa4992",160,"8117318eb47a1ab4950adf173efc9fec13a7c98632cf86cc741cc5f2855790fc","1949de1b30639a9760d69725d3ab0219de8bcc556f80fa6afa1f31cc33eb5025",Layout.DEFAULT_LIBRARY),
+        new Profile("DS50109-entry-20261108","com/itmc/register/service/RegisterListener.class","d6485da42fbd525cccb26365f05a8fffa9f946b5995b491118e84d3d89374264",738,"47e53db1bfde161a8799ee26bdca4b4b9df8b2310d5cc00e3c4eca04477f7f1b",136,"a167474b8a8bbd1889f2cd8503b6a61fda401f1e2cd1dc26c2fcb0203e0fc344","540f2eadb2b8741534a03fba5a38dab70f0134e06c4d363f7a37dfe8fe4b8594",Layout.DEFAULT_LIBRARY),
+        new Profile("PT0405-entry-20261108","com/common/sys/configuration/SysParamInit.class","aea6455c0f9d486d70fa5804ac4dcc55469a8c2425f4b3fe1a60ce7359840a5c",512,"1d374e83dfc555ef50ea59c5cd8b0dd06313727fc64c641ca17864ff2b010ebf",254,"ace299f610130c22aeae1440f84eb0380e90fb085bb10642b1870a7b46e1117f","529d31c5338ff153ef7cb0f254e0e516c29cee81ceae9b868f99f5d497f3d020",Layout.SERVLET_ROOT),
+        new Profile("QT100101-entry-20261108","com/itmc/register/service/RegisterListener.class","0dfd053113cd98d709473a5c52c2d1875108d017e6ea6167a26ff9f145d900d6",281,"54f2fd6fa37d7028f7a76c3f8069622574d070fbc0a0a43319fcfa4f3606d592",147,"2a793f281f5d6d01f79234161022b02bbd0e6b2881ba585fdad54e31107961f9","2d93664f32c1728b6a3c3ba63736e34bad5c747081f689363e30fb12b998e52f",Layout.LIBRARY_LOCAL_ENTRY),
+        new Profile("QT30-local-entry-20261108","cn/itmc/analysis/common/sys/configuration/SysParamInit.class","1864277050a2ce63adeb51a3f5521bf533203c5b3059a5c0cc692b8fba95d618",377,"a79473e7892b9c6ef7eaf7ae35f9f2e86799e8755a28400e532eb5d247203fb1",118,"34c61eb026103cbe50d657faac21be56670e3fd051a91ed2dad1a78c6867efab","e5c411a91cdb8cb61646f50c7149a5d726c8a11284b91166da04c2ebe480aea1",Layout.QT30_LOCAL_ENTRY),
+        new Profile("XMT0106-entry-20261108","com/itmc/register/service/RegisterListener.class","3a60505c228eb529cee51f5be058c9774d2134799b51b28ca8fe0b87073028ce",225,"6a5d688cfba6751acd006fb703a0f724e490d5ea0dbf02821f64c33590aba6e9",107,"48a6251e4786b5a16d399269e70d35e76248f6478482822611758f1d790964cc","e7c5ea418ef9ab3c7cdf04443b71ce0967ef1ca49eee348d2100248d3f44d4bf",Layout.XMT_LOCAL_ENTRY),
+        new Profile("YT00123-entry-20261108","com/common/sys/configuration/SysParamInit.class","3a376103f2200bdf9dea33be43b8d0e907877701968d1cfc7ec4c8fe8ff9874b",664,"62eb86c5f351f12430961958f595566baa5a011018092bee74ae2312a35064d6",278,"db7e6ddf97496f6a485d923265d5ca440ab78079376bc34c4add846eb8ae672c","ec4eba595c24a3f6a528cc177367247fd61d6ae0c23bad9df86f3add21333503",Layout.YT_MAPPED_LOCAL_ENTRY),
+        new Profile("YT00138-entry-20261108","com/common/sys/configuration/SysParamInit.class","3a376103f2200bdf9dea33be43b8d0e907877701968d1cfc7ec4c8fe8ff9874b",664,"a4e9ed3e5410e095cebf07c5d9aba6db5ff911d4f18269bd7f17166424d25192",278,"db7e6ddf97496f6a485d923265d5ca440ab78079376bc34c4add846eb8ae672c","466760bf23f0331b3800522bda80b6938a9edaee71f5bc0485b54ca34367d120",Layout.YT_GENERIC_LOCAL_ENTRY),
         new Profile("QT1001-entry-20261031","com/itmc/register/service/RegisterListener.class",
                 "0dfd053113cd98d709473a5c52c2d1875108d017e6ea6167a26ff9f145d900d6",281,
                 "54f2fd6fa37d7028f7a76c3f8069622574d070fbc0a0a43319fcfa4f3606d592",147,
@@ -119,7 +130,7 @@ public final class LicenseRecoverReadOnlyJavaAlternateVerifier {
             for(Profile profile:profiles) {
                 if(!valid(profile))return LicenseRecoverLicenseState.scanError("Java 备用入口审核凭据损坏");
                 if(!profile.matches(first))continue;
-                if(profile.layout==Layout.DEFAULT_LIBRARY && (!root.getAbsolutePath().matches("[A-Za-z0-9_:/\\\\.\\-]+")
+                if(libraryLayout(profile.layout) && (!root.getAbsolutePath().matches("[A-Za-z0-9_:/\\\\.\\-]+")
                         || root.getAbsolutePath().contains("classes")))
                     return LicenseRecoverLicenseState.localObservation(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,
                             "默认注册组件的 CodeSource 路径替换需要额外审核，未选择看似有效的其他注册文件");
@@ -140,7 +151,7 @@ public final class LicenseRecoverReadOnlyJavaAlternateVerifier {
     }
     private static LicenseRecoverLicenseState evaluate(Profile p,Snapshot s,LocalEvaluator evaluator,long now,
             LicenseRecoverReadOnlyJavaMachineIdentity.Identity identity)throws Exception {
-        String effective=p.layout==Layout.DEFAULT_LIBRARY?"WEB-INF/lib/config.xml":"config.xml";
+        String effective=libraryLayout(p.layout)?"WEB-INF/lib/config.xml":"config.xml";
         Item record=s.inputs.get(effective);
         String prefix="审核入口 "+p.id+"：";
         if(record==null)return LicenseRecoverLicenseState.localObservation(LicenseRecoverLicenseState.LocalCondition.NO_RECORD,
@@ -151,6 +162,7 @@ public final class LicenseRecoverReadOnlyJavaAlternateVerifier {
         String type=element(config,"reg","regType"),name=element(config,"reg","regName");
         if(name==null||name.isEmpty())return LicenseRecoverLicenseState.localObservation(LicenseRecoverLicenseState.LocalCondition.NO_RECORD,
                 prefix+"已定位 "+effective+"，但没有本地授权载荷；其他授权分支仍待核");
+        if(configuredLocalLayout(p.layout))return evaluateConfiguredLocal(p,s,evaluator,now,identity,record,prefix,type);
         if(p.layout!=Layout.XMT_ANY_MODE || !"1".equals(type))
             return LicenseRecoverLicenseState.localObservation(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,
                     prefix+"已定位当前注册文件；该构建的本地、网络/HASP 与产品后备尚未全部闭合，不能依据载荷存在认定有效");
@@ -183,6 +195,105 @@ public final class LicenseRecoverReadOnlyJavaAlternateVerifier {
         }
         return LicenseRecoverLicenseState.localObservation(local==null?LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED:local.condition,
                 prefix+(local==null?"没有可审核的本地结果":local.reason)+"；未证明网络/HASP 后备与运行态，整体仍待核");
+    }
+    private static boolean libraryLayout(Layout layout) {
+        return layout==Layout.DEFAULT_LIBRARY||layout==Layout.LIBRARY_LOCAL_ENTRY;
+    }
+    private static boolean configuredLocalLayout(Layout layout) {
+        return layout==Layout.LIBRARY_LOCAL_ENTRY||layout==Layout.QT30_LOCAL_ENTRY
+                ||layout==Layout.XMT_LOCAL_ENTRY||layout==Layout.YT_MAPPED_LOCAL_ENTRY
+                ||layout==Layout.YT_GENERIC_LOCAL_ENTRY;
+    }
+    /** Current registration/product gate only; deployment/DB health and running process state are separate. */
+    private static LicenseRecoverLicenseState evaluateConfiguredLocal(Profile p,Snapshot s,LocalEvaluator evaluator,
+            long now,LicenseRecoverReadOnlyJavaMachineIdentity.Identity identity,Item record,String prefix,String type)throws Exception {
+        if(!"1".equals(type))return configuredUnsupported(prefix,"当前模式不是已审核的本地优先分支；先行联网/HASP 未闭合");
+        Item properties=s.inputs.get("systemConfig.yml");
+        if(properties==null)return configuredUnsupported(prefix,"缺少确定实际产品模式的 systemConfig.yml");
+        Properties props=properties(properties.bytes);
+        for(String key:props.stringPropertyNames())if(!key.matches("global\\.system\\.[A-Za-z0-9._-]+"))
+            return configuredUnsupported(prefix,"系统属性含未审核启动键，不能计算该入口的当前本地条件");
+        String version=props.getProperty("global.system.VersionID");
+        if(!token(version))return configuredUnsupported(prefix,"实际产品模式没有可靠来源");
+        LinkedHashSet<String> products=new LinkedHashSet<String>(),modes=new LinkedHashSet<String>();
+        String selection;
+        if(p.layout==Layout.YT_MAPPED_LOCAL_ENTRY) {
+            // The complete reviewed Global class fixes this mapping; the display directory is unused.
+            if(!"YT00123".equals(version))return configuredUnsupported(prefix,"当前模式超出已审核的映射产品分支");
+            products.add("QT1001");modes.add("QT100105");modes.add("QT100109");
+            selection="固定映射的构造产品及替代产品范围";
+        } else if(p.layout==Layout.YT_GENERIC_LOCAL_ENTRY) {
+            if(!"YT00138".equals(version))return configuredUnsupported(prefix,"当前模式超出已审核的通用产品后备分支");
+            products.add("YT001");modes.add(version);selection="通用产品后备的构造产品及当前产品范围";
+        } else {
+            String metadata=p.layout==Layout.QT30_LOCAL_ENTRY?"data/config.xml":"WEB-INF/classes/config.xml";
+            Item system=s.inputs.get(metadata);
+            if(system==null)return configuredUnsupported(prefix,"缺少确定构造产品与产品范围的实际元数据 "+metadata);
+            Document productConfig=xml(system.bytes);
+            if(p.layout==Layout.LIBRARY_LOCAL_ENTRY) {
+                String product=lastSystemSoftValue(productConfig);
+                if(!token(product))return configuredUnsupported(prefix,"SystemSoft 最后赋值的构造产品形式未审核");
+                products.add(product);modes.add(version);selection="SystemSoft 最后赋值的构造产品及当前产品范围";
+            } else {
+                String configuredProducts=element(productConfig,"SystemSoft","SoftVersionID");
+                String configuredModes=element(productConfig,"SystemSoft","regInfo");
+                if(!tokens(configuredProducts)||!tokens(configuredModes))
+                    return configuredUnsupported(prefix,"构造产品或产品范围列表缺失、重复或形式未审核");
+                products.addAll(Arrays.asList(configuredProducts.split(",")));
+                modes.addAll(Arrays.asList(configuredModes.split(",")));modes.add(version);
+                selection="实际元数据的首个构造产品及 regInfo/VersionID 产品集合";
+            }
+        }
+        if(identity==null)identity=LicenseRecoverReadOnlyJavaMachineIdentity.current();
+        Check observed=null;
+        boolean strictTime=p.layout==Layout.YT_MAPPED_LOCAL_ENTRY||p.layout==Layout.YT_GENERIC_LOCAL_ENTRY;
+        if(strictTime&&now==Long.MAX_VALUE)return configuredUnsupported(prefix,"当前时间超出可审核边界");
+        // YT's application gate uses Calendar.after(now), stricter than the library's date check.
+        long predicateNow=strictTime?now+1L:now;
+        // Observe the first actual constructor candidate. Its local failure does not prove
+        // its network/HASP fallbacks failed, so later constructor selection remains unknown.
+        // A finite-write or unknown result must not be replaced by a later candidate's pass.
+        String product=products.iterator().next();
+        for(String mode:modes) {
+                Check current=evaluator==null?checkLocal(record.bytes,product,mode,identity,predicateNow)
+                        :evaluator.check(record.bytes,product,mode,identity,predicateNow);
+                observed=current;
+                if(current.nativePass&&current.productPass&&current.selected&&!current.writes) {
+                    // The generic YT call is reached only after the earlier PaaS candidate fails.
+                    // Its absence is a real input receipt, not an assumption about an omitted copy.
+                    if(p.layout==Layout.YT_GENERIC_LOCAL_ENTRY&&s.inputs.get("data/system.json")!=null)
+                        return LicenseRecoverLicenseState.localObservation(LicenseRecoverLicenseState.LocalCondition.SATISFIED,
+                                prefix+selection+"的本地条件通过；但先行 data/system.json 产品候选存在，尚未证明其分派结果，整体入口仍待核");
+                    return LicenseRecoverLicenseState.authorizationAcceptance(prefix
+                            +"完整应用类、依赖及启动资源精确匹配；"+selection+"已定位；"
+                            +"独立本地机器绑定、期限、无限计次、启动数值字段和产品范围通过，当前注册/产品入口接受；"
+                            +"未执行厂商代码或消耗计次；不证明厂商签发、Patch 来源、全部业务或运行中缓存",
+                            LicenseRecoverLicenseState.LocalCondition.SATISFIED);
+                }
+        }
+        return LicenseRecoverLicenseState.localObservation(observed==null?LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED:observed.condition,
+                prefix+selection+"已定位；"+(observed==null?"没有可审核本地结果":observed.reason)
+                +"；这仅描述该本地分支，网络/HASP、产品后备和运行态仍未证明，整体授权待核");
+    }
+    private static LicenseRecoverLicenseState configuredUnsupported(String prefix,String reason) {
+        return LicenseRecoverLicenseState.localObservation(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,
+                prefix+reason+"；未推断整体授权失败");
+    }
+    private static boolean tokens(String value){return value!=null&&value.matches("[A-Za-z0-9._-]+(,[A-Za-z0-9._-]+)*");}
+    /** Target legacy SystemInfo loops every direct SystemSoft child and keeps its last text. */
+    private static String lastSystemSoftValue(Document d)throws MalformedConfig {
+        Node selected=null;NodeList groups=d.getDocumentElement().getChildNodes();
+        for(int i=0;i<groups.getLength();i++)if(groups.item(i) instanceof Element&&"SystemSoft".equals(groups.item(i).getNodeName())) {
+            if(selected!=null)throw new MalformedConfig();selected=groups.item(i);
+        }
+        if(selected==null)return null;
+        String value=null;NodeList children=selected.getChildNodes();
+        for(int i=0;i<children.getLength();i++)if(children.item(i) instanceof Element) {
+            Node child=children.item(i);NodeList nested=child.getChildNodes();
+            for(int n=0;n<nested.getLength();n++)if(nested.item(n) instanceof Element)throw new MalformedConfig();
+            value=child.getTextContent();
+        }
+        return value;
     }
     private static Check checkLocal(byte[] bytes,String product,String mode,LicenseRecoverReadOnlyJavaMachineIdentity.Identity identity,long now) {
         LicenseRecoverReadOnlyJavaLocalVerifier.LocalCheck result=

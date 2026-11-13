@@ -1,5 +1,7 @@
 # 当前文件证据扫描（2026-10-30）
 
+> v1.2.74 将已审核入口通过、已验证激活、已确认 Patch 和已审核本地条件通过统一显示为绿色「授权可用」，JSON 的 `status` 为 `VERIFIED_USABLE`。机器标识未匹配且其余适用的本地条件通过时，绿色标签显示「授权可用（机器标识未匹配）」。无本地授权记录显示白色。查阅旧报告时，`NATIVE_VALID`、`PATCHED_UNVERIFIED` 和 `VERIFIED_USABLE` 都对应绿色一类。`acceptance`、`authorization`、`codeIntegrity` 和 `localCondition` 记录各自的证据结论。下文的旧版颜色和样本数记录当时的实测。
+
 > v1.2.69 补充：新增独立 `Acceptance` 授权条件维度，不再全部未知。当前本机副本 8 项满足已审核的正向证明、18 项未验证；激活/Patch/独立条件通过统一绿色，但不混淆证据来源。详情见 [独立 .NET 条件](DOTNET_READ_ONLY_ACCEPTANCE.md) 与 [Java 静态门槛](JAVA_STATIC_ACCEPTANCE_PROOF.md)。以下 26 项均灰与原生副作用说明记录的是 v1.2.68 的旧检测能力。
 
 本轮在 PR #54 基础上新增 `LicenseRecoverReadOnlyInspection`，复用应用检测器、五色模型和严格双指纹扫描器。GUI 批量扫描会显示检测方法、当前组件数、安全审计结论和不能验证的原因。独立命令输出 JSON Lines，每项包含应用目录标识、配置产品码、运行时/组件元数据、状态、方法、证据来源、原因、文件读取与原生验证各自的只读审计结论，以及组件相对路径、大小、SHA-256。

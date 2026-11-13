@@ -1,7 +1,6 @@
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
-import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.MessageDigest;
@@ -100,11 +99,10 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
             LicenseRecoverReadOnlyMachineIdentity.Snapshot identity,Instant now,ZoneId zone,
             LicenseRecoverReadOnlyWmicCpuIdentity.Identity cpu) {
         try {
-            if(identity==null||!identity.complete)return local(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,"独立本机身份快照不完整");
-            if(!asciiIdentity(identity))return local(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,"本机身份包含未审核的非 ASCII 规范");
             Document config=parseXml(xml);
-            // In the supported cold-start branch, local is first and succeeds before network/HASP.
-            if(!"1".equals(element(config,"reg","regType")))return local(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,"当前注册分派尚未证明本地优先接受");
+            // Record facts are independent of dispatch. Only the audited local-first
+            // branch may promote them to entry acceptance; prior network/HASP stays unknown.
+            boolean localFirst="1".equals(element(config,"reg","regType"));
             String version=element(config,"SystemSoft","SoftVersionID");
             if(!version.matches("[A-Za-z0-9][A-Za-z0-9._-]{0,79}"))return unknown("网站当前产品/模式标识不明确");
             String encrypted=element(config,"reg","regName");
@@ -113,22 +111,18 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
             if(decrypted.length()<12||!decrypted.matches("[\\x20-\\x7e\\r\\n\\t]*"))
                 return unknown("本地载荷未匹配审核的 ASCII 结构");
             Map<String,Object> info=new Json(decrypted.substring(6,decrypted.length()-6)).object();
-            for(String critical:new String[]{"ProName","RegID","RegStr","TotalTimes"})
-                for(String key:info.keySet())if(key.equalsIgnoreCase(critical)&&!key.equals(critical))
-                    return unknown("载荷字段大小写未匹配审核结构");
-            for(String key:info.keySet())if(key.equalsIgnoreCase("EndDate")&&!"EndDate".equals(key)
-                    &&!("endDate".equals(key)&&info.get(key) instanceof Long))
-                return unknown("日期字段大小写未匹配审核结构");
+            String beanFailure=canonicalBeanFailure(info,zone);
+            if(beanFailure!=null)return local(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,beanFailure);
             // ProName is an additional conservative binding, beyond CheckLocalReg's machine check.
             if(!product.equals(info.get("ProName")))return local(LicenseRecoverLicenseState.LocalCondition.PRODUCT_MISMATCH,"本地载荷未匹配当前审核产品身份；其他授权方式未判断");
+            if(identity==null||!identity.complete)return local(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,"独立本机身份快照不完整");
+            if(!asciiIdentity(identity))return local(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,"本机身份包含未审核的非 ASCII 规范");
             String machine=machine(config,identity,cpu);
             if(machine==null||machine.isEmpty())return local(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,
                     "本机覆盖号或身份规则尚未形成独立证明；未判机器不匹配"
                     +(cpu!=null&&!cpu.complete?"；"+cpu.reason:""));
             if(!(info.get("RegID") instanceof String)||!((String)info.get("RegID")).matches("[\\x20-\\x7e]{1,256}"))
                 return local(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,"授权载荷机器字段类型尚未匹配审核结构；未判机器不匹配");
-            if(!machine.equals(info.get("RegID")))
-                return local(LicenseRecoverLicenseState.LocalCondition.MACHINE_MISMATCH,"本地载荷与当前独立本机身份未匹配；其他授权方式未判断");
             LocalDate end=endDate(info.get("EndDate"),zone);
             if(end.isBefore(now.atZone(zone).toLocalDate()))return local(LicenseRecoverLicenseState.LocalCondition.EXPIRED,"本地正向日期条件未满足；其他授权方式未判断");
             // Finite counters mutate during target verification. They require a separate audit.
@@ -138,6 +132,11 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
                 return local(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,"授权产品字段格式尚未匹配审核结构；未判当前产品缺失");
             if(!((String)reg).toLowerCase(Locale.ROOT).contains(version.toLowerCase(Locale.ROOT)))
                 return local(LicenseRecoverLicenseState.LocalCondition.PRODUCT_MISMATCH,"本地载荷未覆盖网站当前模式；兼容/父版本路径未判断");
+            if(!machine.equals(info.get("RegID")))
+                return local(LicenseRecoverLicenseState.LocalCondition.SATISFIED_EXCEPT_MACHINE,
+                        "本地载荷的产品、期限、无限计次及当前模式匹配；本次扫描的机器标识未匹配，整体入口与其他授权方式仍待核");
+            if(!localFirst)return local(LicenseRecoverLicenseState.LocalCondition.SATISFIED,
+                    "现代本地载荷的产品、本机、日期、无限计次及当前模式条件匹配；当前分派非已审核的本地优先路径，先行联网/硬件狗及整体入口仍待核；未执行厂商代码");
             return LicenseRecoverLicenseState.authorizationAcceptance(
                     "审核 .NET 当前构建的独立本地正向谓词通过：产品绑定、本机绑定、日期、无限计次及网站当前模式均匹配；"
                     +"未执行厂商程序集；"+(!element(config,"reg","WebSerSoftNo").isEmpty()?"已按审核的只读 WMIC 覆盖号/回退规则核验；":"")
@@ -161,29 +160,7 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
                 // Native getRegNo catches failed decoding, then uses the WMI rule.
             }
         }
-        String cpu="unknow";
-        if(s.cpuIds!=null) {
-            cpu="";
-            for(String c:s.cpuIds) {if(c==null){cpu="unknow";break;}cpu=c;}
-        }
-        String disk="0";
-        if(s.disks==null)disk="unknow";
-        else for(LicenseRecoverReadOnlyMachineIdentity.Disk d:s.disks) {
-            if(d==null||d.signature==null){disk="unknow";break;}
-            try {
-                BigInteger n=new BigInteger(d.signature.trim());
-                if(n.signum()<0||n.compareTo(new BigInteger("4294967295"))>0)throw new NumberFormatException();
-                disk=n.toString();if(n.signum()>0)break;
-            } catch(NumberFormatException e) {disk="unknow";break;}
-        }
-        String board=s.boards==null||s.boards.isEmpty()||s.boards.get(0)==null?"unknow":s.boards.get(0).trim();
-        if("unknow".equalsIgnoreCase(cpu)&&"unknow".equalsIgnoreCase(disk)) {
-            if(s.hostname==null)return null;
-            String h=pad(s.hostname,17);return h.substring(h.length()-17,h.length()-1);
-        }
-        cpu=pad(cpu,9);disk=pad(disk,9);
-        board="unknow".equals(board)||"None".equals(board)?cpu:pad(board,9);
-        return board.substring(board.length()-9,board.length()-1)+disk.substring(disk.length()-9,disk.length()-1);
+        return LicenseRecoverReadOnlyMachineIdentity.defaultDotNetId(s);
     }
     private static boolean asciiIdentity(LicenseRecoverReadOnlyMachineIdentity.Snapshot s) {
         if(s.hostname==null||!ascii(s.hostname)||s.cpuIds==null||s.disks==null||s.boards==null)return false;
@@ -194,7 +171,6 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
         return true;
     }
     private static boolean ascii(String value) {return value.matches("[\\x20-\\x7e]{0,8192}");}
-    private static String pad(String s,int length) {StringBuilder b=new StringBuilder(s);while(b.length()<length)b.insert(0,'0');return b.toString();}
     private static String decrypt(String value,String password) throws Exception {
         if(value.length()>MAX_CONFIG||(value.length()&1)!=0||!value.matches("[0-9A-Fa-f]+"))throw new IllegalArgumentException();
         byte[] cipher=new byte[value.length()/2];
@@ -206,6 +182,39 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
         // Relevant field names, machine IDs and product tokens are ASCII. Reject
         // non-ASCII relevant values below; unrelated display fields are not emitted.
         return new String(des.doFinal(cipher),StandardCharsets.UTF_8);
+    }
+    /**
+     * JSON.NET constructs the entire reviewed bean before CheckLocalReg runs.
+     * Unused fields can fail conversion even on the unlimited-counter branch.
+     * BeginDate/beginDate and EndDate/endDate are distinct public properties.
+     * Nonzero lowercase dates override a getter via an unaudited legacy local epoch.
+     */
+    private static String canonicalBeanFailure(Map<String,Object> info,ZoneId zone) {
+        for(Map.Entry<String,Object> entry:info.entrySet()) {
+            Object value=entry.getValue();
+            switch(entry.getKey()) {
+                case "ProName":case "RegID":case "UserID":case "RegStr":
+                    if(value!=null&&!(value instanceof String))return "载荷字符串属性类型未匹配已审核的完整对象结构";
+                    break;
+                case "ClassNum":case "TotalTimes":case "UserTimes":case "MaxCon":case "CountDay":
+                    if(!(value instanceof Long)||(Long)value<Integer.MIN_VALUE||(Long)value>Integer.MAX_VALUE)
+                        return "载荷整数属性类型或范围未匹配已审核的完整对象结构";
+                    break;
+                case "Net":
+                    if(!(value instanceof Boolean))return "载荷布尔属性类型未匹配已审核的完整对象结构";
+                    break;
+                case "BeginDate":case "EndDate":
+                    try{endDate(value,zone);}catch(RuntimeException e){return "载荷日期属性未匹配已审核的完整对象解析范围";}
+                    break;
+                case "beginDate":case "endDate":
+                    if(!(value instanceof Long))return "载荷历史日期属性类型未匹配已审核的完整对象结构";
+                    if((Long)value!=0)return "非零历史日期字段会覆盖日期 getter；其本地历元和历史时区换算尚未完成等价审核，未沿用大写日期判定";
+                    break;
+                default:
+                    return "载荷包含未审核字段、大小写别名或类型扩展；未采用部分字段的通过结果";
+            }
+        }
+        return null;
     }
     private static LocalDate endDate(Object value,ZoneId zone) {
         if(!(value instanceof String))throw new IllegalArgumentException();

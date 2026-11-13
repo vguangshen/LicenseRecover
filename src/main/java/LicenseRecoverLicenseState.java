@@ -10,7 +10,7 @@ public final class LicenseRecoverLicenseState {
     /** Current authorization-entry acceptance does not identify activation versus a Patch. */
     public enum Acceptance { VERIFIED_USABLE, VERIFIED_REJECTED, UNVERIFIED }
     /** Local evidence is not a verdict on network/HASP or the whole authorization chain. */
-    public enum LocalCondition { NOT_CHECKED, SATISFIED, NO_RECORD, MACHINE_MISMATCH, EXPIRED,
+    public enum LocalCondition { NOT_CHECKED, SATISFIED, SATISFIED_EXCEPT_MACHINE, NO_RECORD, MACHINE_MISMATCH, EXPIRED,
         QUOTA_EXCEEDED, PRODUCT_MISMATCH, MALFORMED, UNSUPPORTED, IDENTITY_UNAVAILABLE }
 
     public final Authorization authorization;
@@ -96,6 +96,7 @@ public final class LicenseRecoverLicenseState {
     public static LicenseRecoverLicenseState authorizationRejection(String auditedEvidence,LocalCondition condition) {
         if(auditedEvidence==null||auditedEvidence.trim().isEmpty()||condition==null
                 ||condition==LocalCondition.NOT_CHECKED||condition==LocalCondition.SATISFIED
+                ||condition==LocalCondition.SATISFIED_EXCEPT_MACHINE
                 ||condition==LocalCondition.UNSUPPORTED||condition==LocalCondition.IDENTITY_UNAVAILABLE)
             throw new IllegalArgumentException("complete audited rejection evidence required");
         return new LicenseRecoverLicenseState(Authorization.UNVERIFIED,CodeIntegrity.UNKNOWN,
@@ -159,8 +160,12 @@ public final class LicenseRecoverLicenseState {
     }
 
     public enum VisualStatus {
-        NATIVE_VALID, PATCHED_UNVERIFIED, NATIVE_INVALID, SCAN_ERROR, UNVERIFIED, VERIFIED_USABLE, AUTHORIZATION_REJECTED
+        VERIFIED_USABLE, NO_LOCAL_RECORD, NATIVE_INVALID, SCAN_ERROR, UNVERIFIED, AUTHORIZATION_REJECTED
     }
+
+    private static final String USABLE_LABEL = "授权可用";
+    private static final String USABLE_MACHINE_MISMATCH_LABEL = "授权可用（机器标识未匹配）";
+    private static final String NO_LOCAL_RECORD_LABEL = "无本地授权（其他方式待核）";
 
     /** A failed evidence channel is an inspection error, not a license verdict. */
     public boolean isScanError() {
@@ -170,73 +175,66 @@ public final class LicenseRecoverLicenseState {
     /** A typed state is authoritative; the label is only for display. */
     public VisualStatus visualStatus() {
         if (isScanError()) return VisualStatus.SCAN_ERROR;
-        // Preserve independent native/Patch evidence before scoped entry acceptance.
-        // An accepted entry does not prove native activation or Patch provenance.
-        if (codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED) return VisualStatus.PATCHED_UNVERIFIED;
-        if (authorization == Authorization.VERIFIED_VALID) return VisualStatus.NATIVE_VALID;
-        if (authorization == Authorization.VERIFIED_INVALID) return VisualStatus.NATIVE_INVALID;
-        if (acceptance == Acceptance.VERIFIED_USABLE) return VisualStatus.VERIFIED_USABLE;
         if (acceptance == Acceptance.VERIFIED_REJECTED) return VisualStatus.AUTHORIZATION_REJECTED;
+        if (authorization == Authorization.VERIFIED_VALID
+                || codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED
+                || acceptance == Acceptance.VERIFIED_USABLE) return VisualStatus.VERIFIED_USABLE;
+        if (authorization == Authorization.VERIFIED_INVALID) return VisualStatus.NATIVE_INVALID;
+        if (localCondition == LocalCondition.SATISFIED || localCondition == LocalCondition.SATISFIED_EXCEPT_MACHINE)
+            return VisualStatus.VERIFIED_USABLE;
+        if (localCondition == LocalCondition.NO_RECORD) return VisualStatus.NO_LOCAL_RECORD;
         return VisualStatus.UNVERIFIED;
     }
 
     /**
-     * Compatibility with the table's textual status column. Match only labels
-     * emitted by display(); an arbitrary prefix or diagnostic message is NOT
-     * authorization evidence and must never acquire a green background.
+     * Match current and historical table labels exactly. Diagnostic text and
+     * arbitrary label suffixes do not carry the status of a verified result.
      */
     public static VisualStatus visualStatus(String label) {
         if (label == null) return VisualStatus.UNVERIFIED;
         if ("检测失败".equals(label)) return VisualStatus.SCAN_ERROR;
-        if ("已验证激活（代码已 Patch）".equals(label)
+        if (USABLE_LABEL.equals(label)
+                || USABLE_MACHINE_MISMATCH_LABEL.equals(label)
+                || "已验证激活".equals(label)
+                || "已验证激活（代码已 Patch）".equals(label)
                 || "已验证未激活（代码已 Patch）".equals(label)
                 || "已确认 Patch（授权未验证）".equals(label)
                 || "授权检查通过（代码已 Patch）".equals(label)
-                || "授权入口拒绝（代码已 Patch）".equals(label))
-            return VisualStatus.PATCHED_UNVERIFIED;
-        if ("已验证激活".equals(label)) return VisualStatus.NATIVE_VALID;
-        if ("当前入口条件通过（来源未确认）".equals(label)
+                || "当前入口条件通过（来源未确认）".equals(label)
                 || "授权检查通过（激活或 Patch）".equals(label)) return VisualStatus.VERIFIED_USABLE;
         if ("已验证未激活".equals(label)) return VisualStatus.NATIVE_INVALID;
+        if (NO_LOCAL_RECORD_LABEL.equals(label)) return VisualStatus.NO_LOCAL_RECORD;
         if ("当前入口条件拒绝（原生状态待核）".equals(label)
+                || "授权入口拒绝（代码已 Patch）".equals(label)
                 || "授权入口明确拒绝（未激活）".equals(label)) return VisualStatus.AUTHORIZATION_REJECTED;
         return VisualStatus.UNVERIFIED;
     }
 
     public static boolean selectedByDefault(String label) {
-        VisualStatus status = visualStatus(label);
-        return status != VisualStatus.NATIVE_VALID
-                && status != VisualStatus.PATCHED_UNVERIFIED
-                && status != VisualStatus.VERIFIED_USABLE
-                && status != VisualStatus.SCAN_ERROR;
+        return selectedByDefault(visualStatus(label));
     }
 
     public boolean selectedByDefault() {
-        if (isScanError()) return false;
-        if (authorization == Authorization.VERIFIED_VALID) return false;
-        if (codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED) return false;
-        if (acceptance == Acceptance.VERIFIED_USABLE) return false;
-        return true;
+        return selectedByDefault(visualStatus());
+    }
+
+    private static boolean selectedByDefault(VisualStatus status) {
+        return status != VisualStatus.VERIFIED_USABLE && status != VisualStatus.SCAN_ERROR;
     }
 
     public String display() {
-        if (isScanError()) return "检测失败";
-        if (acceptance == Acceptance.VERIFIED_USABLE)
-            return codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED
-                    ? "授权检查通过（代码已 Patch）" : "当前入口条件通过（来源未确认）";
-        if (acceptance == Acceptance.VERIFIED_REJECTED)
-            return codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED
-                    ? "授权入口拒绝（代码已 Patch）" : "当前入口条件拒绝（原生状态待核）";
-        if (authorization == Authorization.VERIFIED_VALID && codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED)
-            return "已验证激活（代码已 Patch）";
-        if (authorization == Authorization.VERIFIED_VALID) return "已验证激活";
-        if (authorization == Authorization.VERIFIED_INVALID && codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED)
-            return "已验证未激活（代码已 Patch）";
-        if (authorization == Authorization.VERIFIED_INVALID) return "已验证未激活";
-        if (codeIntegrity == CodeIntegrity.CONFIRMED_PATCHED) return "已确认 Patch（授权未验证）";
+        switch (visualStatus()) {
+            case SCAN_ERROR: return "检测失败";
+            case VERIFIED_USABLE: return acceptance == Acceptance.UNVERIFIED
+                    && authorization == Authorization.UNVERIFIED && codeIntegrity != CodeIntegrity.CONFIRMED_PATCHED
+                    && localCondition == LocalCondition.SATISFIED_EXCEPT_MACHINE
+                    ? USABLE_MACHINE_MISMATCH_LABEL : USABLE_LABEL;
+            case NO_LOCAL_RECORD: return NO_LOCAL_RECORD_LABEL;
+            case AUTHORIZATION_REJECTED: return "当前入口条件拒绝（原生状态待核）";
+            case NATIVE_INVALID: return "已验证未激活";
+            default: break;
+        }
         switch(localCondition) {
-            case SATISFIED: return "本地条件通过（整体待核）";
-            case NO_RECORD: return "无本地授权（其他方式待核）";
             case MACHINE_MISMATCH: return "本地记录标识未匹配（站点待核）";
             case EXPIRED: return "本地已过期（其他方式待核）";
             case QUOTA_EXCEEDED: return "本地次数不足（其他方式待核）";

@@ -221,6 +221,7 @@ public final class LicenseRecoverReadOnlyJavaLocalVerifier {
                     "解密载荷缺少完整的原生包装结构",false,false,true,false);
             String raw=new String(decoded,StandardCharsets.US_ASCII);
             Map<String,Object> payload=new FlatJson(raw.substring(6,raw.length()-6)).object();
+            canonicalBeanFields(payload);
             Object binding=payload.get("regID"),end=payload.get("endDate"),total=payload.get("totalTimes"),used=payload.get("userTimes");
             if(!(binding instanceof String)||!(end instanceof Long)||!(total instanceof Long))
                 return check(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,
@@ -228,8 +229,7 @@ public final class LicenseRecoverReadOnlyJavaLocalVerifier {
             if(machine==null||!machine.complete||machine.machineId==null)
                 return check(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,
                         "当前机器标识首选规则未获得可靠结果；未读取旧机器记录代替",false,false,true,false);
-            if(!binding.equals(machine.machineId))return check(LicenseRecoverLicenseState.LocalCondition.MACHINE_MISMATCH,
-                    "现有本地授权的机器绑定与当前服务器不匹配",false,false,true,false);
+            boolean machineMatches=binding.equals(machine.machineId);
             long endMs=(Long)end;
             // Native compares against target-JVM local midnight. These two bounds are
             // independent of the unobserved target timezone; near-boundary values stay unknown.
@@ -257,8 +257,13 @@ public final class LicenseRecoverReadOnlyJavaLocalVerifier {
             }
             Object modes=payload.get("regStr");
             if(!(modes instanceof String))return check(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,
-                    "本地机器、期限和无限计次通过，但产品范围字段缺失或格式未知",true,false,true,false);
+                    "本地期限和无限计次通过，产品范围字段缺失或格式未知",machineMatches,false,true,false);
             boolean productPass=((String)modes).contains(expectedMode);
+            if(!machineMatches)return check(productPass?LicenseRecoverLicenseState.LocalCondition.SATISFIED_EXCEPT_MACHINE
+                            :LicenseRecoverLicenseState.LocalCondition.PRODUCT_MISMATCH,
+                    productPass?"本地期限、无限计次及启动产品范围均匹配；扫描机器标识未匹配，整体入口仍待核"
+                            :"本地记录未覆盖启动产品范围，扫描机器标识也未匹配",
+                    false,productPass,true,false);
             return check(productPass?LicenseRecoverLicenseState.LocalCondition.SATISFIED
                             :LicenseRecoverLicenseState.LocalCondition.PRODUCT_MISMATCH,
                     productPass?"本地优先模式：当前机器绑定、期限、无限计次及启动产品范围全部通过；未调用目标代码或执行写回"
@@ -270,6 +275,38 @@ public final class LicenseRecoverReadOnlyJavaLocalVerifier {
     }
     private static LocalCheck check(LicenseRecoverLicenseState.LocalCondition c,String r,boolean n,boolean p,boolean s,boolean w) {
         return new LocalCheck(c,r,n,p,s,w);
+    }
+    /**
+     * The target parses the whole RegeditInfo bean before checking any licence field.
+     * An invalid unused property can therefore reject an otherwise valid local record.
+     * Accept a canonical typed subset, not FastJSON's coercions, smart-name aliases or
+     * special keys; an ignored alias could otherwise overwrite a checked property.
+     * Missing optional properties retain the audited bean's zero/null defaults.
+     */
+    private static void canonicalBeanFields(Map<String,Object> payload)throws Unsupported {
+        for(Map.Entry<String,Object> property:payload.entrySet()) {
+            Object value=property.getValue();
+            switch(property.getKey()) {
+                case "regID":case "userID":case "proName":case "regStr":
+                    if(value!=null&&!(value instanceof String))throw beanType();
+                    break;
+                case "classNum":case "totalTimes":case "userTimes":case "maxCon":case "countDay":
+                    if(!(value instanceof Long)||(Long)value<Integer.MIN_VALUE||(Long)value>Integer.MAX_VALUE)
+                        throw beanType();
+                    break;
+                case "beginDate":case "endDate":
+                    if(value!=null&&!(value instanceof Long))throw beanType();
+                    break;
+                case "net":
+                    if(!(value instanceof Boolean))throw beanType();
+                    break;
+                default:
+                    throw new Unsupported("JSON 注册属性超出已审核的规范字段集合；未采用类型扩展或智能别名");
+            }
+        }
+    }
+    private static Unsupported beanType() {
+        return new Unsupported("JSON 注册属性类型超出已审核的完整 Bean 构造范围");
     }
     private static String hashMd5(String s)throws GeneralSecurityException {
         return hex(MessageDigest.getInstance("MD5").digest(s.getBytes(StandardCharsets.US_ASCII)));

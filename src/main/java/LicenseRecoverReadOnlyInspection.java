@@ -28,6 +28,7 @@ public final class LicenseRecoverReadOnlyInspection {
         public final LicenseRecoverLicenseState state;
         public final List<Artifact> artifacts;
         public final LicenseRecoverReadOnlyDotNetCatalog.Assessment protocol;
+        public final LicenseRecoverReadOnlyDotNetCatalog.ModeRelations modeRelations;
         Result(File root, String version, String runtime, LicenseRecoverLicenseState state,
                List<Artifact> artifacts, String reason) {
             this(root,version,runtime,state,artifacts,reason,null);
@@ -41,7 +42,15 @@ public final class LicenseRecoverReadOnlyInspection {
         Result(File root,String version,String runtime,LicenseRecoverLicenseState state,List<Artifact> artifacts,
                String reason,LicenseRecoverReadOnlyDotNetCatalog.Assessment protocol,
                LicenseRecoverReadOnlyCodeEvidence codeEvidence,String codeComparisonEvidence,String acceptanceEvidence) {
+            this(root,version,runtime,state,artifacts,reason,protocol,codeEvidence,codeComparisonEvidence,acceptanceEvidence,
+                    protocol==null?LicenseRecoverReadOnlyDotNetCatalog.ModeRelations.unassessed():protocol.modeRelations);
+        }
+        Result(File root,String version,String runtime,LicenseRecoverLicenseState state,List<Artifact> artifacts,
+               String reason,LicenseRecoverReadOnlyDotNetCatalog.Assessment protocol,
+               LicenseRecoverReadOnlyCodeEvidence codeEvidence,String codeComparisonEvidence,String acceptanceEvidence,
+               LicenseRecoverReadOnlyDotNetCatalog.ModeRelations modeRelations) {
             this.protocol=protocol;
+            this.modeRelations=modeRelations;
             this.codeEvidence=codeEvidence;this.codeComparisonEvidence=codeComparisonEvidence;this.acceptanceEvidence=acceptanceEvidence;
             this.name = root.getName(); this.version = canonicalVersion(version);
             this.runtime = runtime; this.state = state;
@@ -59,7 +68,8 @@ public final class LicenseRecoverReadOnlyInspection {
                     ? "audited-current-code; current-inputs; independent-read-only-predicate"
                     : "current-files; compiled-reviewed-registry; audited-acceptance-profiles";
             this.reason = reason+"；代码比对："+codeComparisonEvidence
-                    +(protocol==null?"":"；构建审核："+protocol.fingerprintSummary());
+                    +(protocol==null?"":"；构建审核："+protocol.fingerprintSummary())
+                    +("NOT_ASSESSED".equals(modeRelations.status)||"UNREVIEWED_CONSUMER".equals(modeRelations.status)?"":"；"+modeRelations.summary());
             this.nativeVerifierSafety = LicenseRecoverReadOnlyVerifierSafety.rejection(artifacts);
             this.artifacts = Collections.unmodifiableList(new ArrayList<Artifact>(artifacts));
         }
@@ -98,6 +108,16 @@ public final class LicenseRecoverReadOnlyInspection {
                 stringArray(b,"requiredAbsentComponents",match.requiredAbsentComponents);b.append('}');
             }
             b.append("],");
+            pair(b,"modeRelationStatus",modeRelations.status);pair(b,"modeRelationProfileId",modeRelations.profileId);
+            pair(b,"modeRelationAuditScope",modeRelations.auditScope);pair(b,"modeRelationCurrentMode",modeRelations.currentMode);
+            pair(b,"modeDatabaseSHA256",modeRelations.databaseSHA256);pair(b,"modeRelationReason",modeRelations.reason);
+            stringArray(b,"modeRelationCompanionFiles",modeRelations.companionFiles);b.append(',');
+            b.append("\"modeRelationParentGroups\":[");boolean firstParent=true;
+            for(Map.Entry<String,List<String>> entry:modeRelations.parentModes.entrySet()) {
+                if(!firstParent)b.append(',');firstParent=false;b.append('{');pair(b,"product",entry.getKey());
+                stringArray(b,"modes",entry.getValue());b.append('}');
+            }
+            b.append("],\"modeRelationInspectionReadOnlyAudited\":true,\"modeRelationFullAuthorizationAudited\":false,");
             pair(b,"method",method); pair(b,"evidenceSource",evidenceSource); pair(b,"reason",reason);
             pair(b,"codeBehavior",codeEvidence.behavior.name());pair(b,"registrationComponent",codeEvidence.component.name());
             pair(b,"codeEvidenceLabel",codeEvidence.display());pair(b,"codeBehaviorEvidence",codeEvidence.behaviorEvidence);
@@ -137,6 +157,7 @@ public final class LicenseRecoverReadOnlyInspection {
         String codeComparisonEvidence=codeState.evidence,acceptanceEvidence="当前授权入口尚未获得独立证明";
         LicenseRecoverReadOnlyCodeEvidence codeEvidence=LicenseRecoverReadOnlyCodeEvidence.unassessed("当前组件尚无代码结构对照");
         LicenseRecoverReadOnlyDotNetCatalog.Assessment protocol=null;
+        LicenseRecoverReadOnlyDotNetCatalog.ModeRelations modeRelations=LicenseRecoverReadOnlyDotNetCatalog.ModeRelations.unassessed();
         String reason = codeState.evidence + "；"
                 + (runtime == LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA
                 ? "RegisterMain 构造/初始化及 checkReInfo 传递副作用尚未完整证明只读"
@@ -202,7 +223,7 @@ public final class LicenseRecoverReadOnlyInspection {
             LicenseRecoverLicenseState accepted;
             if(runtime==LicenseRecoverReadOnlyPatchScanner.Runtime.DOTNET) {
                 LicenseRecoverReadOnlyDotNetScanner.Result scan=LicenseRecoverReadOnlyDotNetScanner.inspect(root);
-                accepted=scan.state;protocol=scan.protocol;codeEvidence=scan.codeEvidence;
+                accepted=scan.state;protocol=scan.protocol;codeEvidence=scan.codeEvidence;modeRelations=scan.modeRelations;
             } else {
                 LicenseRecoverReadOnlyJavaScanner.Result scan=LicenseRecoverReadOnlyJavaScanner.inspect(root);
                 accepted=scan.state;codeEvidence=scan.codeEvidence;
@@ -230,13 +251,15 @@ public final class LicenseRecoverReadOnlyInspection {
                         state=LicenseRecoverLicenseState.combineLocalObservation(accepted,finalCode);
                     else state=finalCode;
                     reason=accepted.evidence;
-                } catch(Changed | NoSuchFileException ex) {
+                } catch(Changed | LicenseRecoverReadOnlyDotNetCatalog.Changed | NoSuchFileException ex) {
                     protocol=null;
+                    modeRelations=LicenseRecoverReadOnlyDotNetCatalog.ModeRelations.revoked();
                     codeEvidence=LicenseRecoverReadOnlyCodeEvidence.unassessed("代码证据读取期间变化，已撤销原结构结论");
                     state=LicenseRecoverLicenseState.unverified("接受条件与文件观测不再一致；扫描期间文件发生变化");reason=state.evidence;
                     codeComparisonEvidence=acceptanceEvidence=state.evidence;
                 } catch(IOException | java.security.GeneralSecurityException | SecurityException ex) {
                     protocol=null;
+                    modeRelations=LicenseRecoverReadOnlyDotNetCatalog.ModeRelations.revoked();
                     codeEvidence=LicenseRecoverReadOnlyCodeEvidence.unassessed("最终代码复核失败，未保留结构结论");
                     state=LicenseRecoverLicenseState.scanError("接受条件最终文件复核失败: "+ex.getClass().getSimpleName());reason=state.evidence;
                     codeComparisonEvidence=acceptanceEvidence=state.evidence;
@@ -244,7 +267,7 @@ public final class LicenseRecoverReadOnlyInspection {
             }
         }
         if(state.isScanError())codeEvidence=LicenseRecoverReadOnlyCodeEvidence.unassessed("扫描失败，代码结构证据未确认");
-        return new Result(root,version,runtime.name(),state,artifacts,reason,protocol,codeEvidence,codeComparisonEvidence,acceptanceEvidence);
+        return new Result(root,version,runtime.name(),state,artifacts,reason,protocol,codeEvidence,codeComparisonEvidence,acceptanceEvidence,modeRelations);
     }
 
     private static void stringArray(StringBuilder b,String name,List<String> values) {

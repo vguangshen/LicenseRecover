@@ -47,6 +47,7 @@ public final class LicenseRecoverReadOnlyDotNetVerifierTest {
             throw new AssertionError(label);checks++;
     }
     public static void main(String[] args) throws Exception {
+        wholeBeanBoundaries();
         byte[] valid=config(payload(),"1","");byte[] before=valid.clone();
         accepted(run(valid,hardware()),"machine-bound unexpired unlimited current-mode positive");
         LicenseRecoverReadOnlyDotNetCatalog.UpperBinding scoped=new LicenseRecoverReadOnlyDotNetCatalog.UpperBinding(
@@ -77,12 +78,30 @@ public final class LicenseRecoverReadOnlyDotNetVerifierTest {
         unknown(run(config(payload().replace("DS0101,DS0109","QT100101"),"1",""),hardware()),"current website mode must be covered");
         unknown(run(config(payload().replace("itmcIEC","OTHER_SYNTHETIC_PRODUCT"),"1",""),hardware()),"product must match reviewed key and website");
         unknown(run(config(payload(),"3",""),hardware()),"unreviewed earlier network branch stays unknown");
+        LicenseRecoverLicenseState networkFirst=run(config(payload(),"3",""),hardware());
+        if(networkFirst.localCondition!=LicenseRecoverLicenseState.LocalCondition.SATISFIED
+                ||!networkFirst.evidence.contains("先行联网/硬件狗"))throw new AssertionError("dispatch must not hide independently verified local record conditions");checks++;
+        LicenseRecoverLicenseState dogFirst=run(config(payload(),"2",""),hardware());
+        unknown(dogFirst,"HASP-first cannot use local success as whole-entry acceptance");
+        if(dogFirst.localCondition!=LicenseRecoverLicenseState.LocalCondition.SATISFIED)throw new AssertionError("HASP-first local condition was discarded");checks++;
+        LicenseRecoverLicenseState wrongModeMachine=run(config(payload().replace(MACHINE,"OTHER_SYNTHETIC"),"3",""),hardware());
+        unknown(wrongModeMachine,"network-first local machine mismatch is not global invalidity");
+        if(wrongModeMachine.localCondition!=LicenseRecoverLicenseState.LocalCondition.SATISFIED_EXCEPT_MACHINE)throw new AssertionError("dispatch hid the other matching local conditions");checks++;
+        LicenseRecoverLicenseState expiredWrongMachine=run(config(payload().replace(MACHINE,"OTHER_SYNTHETIC")
+                .replace("1907712000000","1907625600000"),"3",""),hardware());
+        if(expiredWrongMachine.localCondition!=LicenseRecoverLicenseState.LocalCondition.EXPIRED
+                ||expiredWrongMachine.visualStatus()!=LicenseRecoverLicenseState.VisualStatus.UNVERIFIED)
+            throw new AssertionError("machine mismatch cannot overlook expiry");checks++;
         unknown(run(config(payload()+"trailing","1",""),hardware()),"malformed JSON not accepted");
         unknown(run(config(payload().replace("\"TotalTimes\":-1","\"TotalTimes\":-1,\"TotalTimes\":-1"),"1",""),hardware()),"duplicate fields rejected");
         unknown(run(config(payload().replace("\"TotalTimes\":-1","\"totaltimes\":-1"),"1",""),hardware()),"case-aliased critical fields rejected");
         unknown(run(config(payload().replace("\"TotalTimes\":-1","\"TotalTimes\":{}"),"1",""),hardware()),"unsupported nested field rejected");
         unknown(run("<ROOT><reg><regType>1</regType><regName>FF</regName></reg></ROOT>".getBytes("UTF-8"),hardware()),"file presence is insufficient");
         unknown(run(config(payload(),"1",""),null),"missing independent identity");
+        LicenseRecoverLicenseState noRecordWithoutIdentity=run("<ROOT><SystemSoft><SoftVersionID>DS0109</SoftVersionID></SystemSoft><reg><regType>3</regType></reg></ROOT>".getBytes("UTF-8"),null);
+        unknown(noRecordWithoutIdentity,"absent local record cannot establish global invalidity");
+        if(noRecordWithoutIdentity.localCondition!=LicenseRecoverLicenseState.LocalCondition.NO_RECORD)
+            throw new AssertionError("missing hardware metadata must not hide an independently absent local record");checks++;
         LicenseRecoverReadOnlyMachineIdentity.Snapshot incomplete=new LicenseRecoverReadOnlyMachineIdentity.Snapshot(
                 hardware().cpuIds,hardware().disks,hardware().boards,hardware().hostname,false,"synthetic incomplete");
         unknown(run(valid,incomplete),"incomplete independent identity cannot promote");
@@ -125,7 +144,7 @@ public final class LicenseRecoverReadOnlyDotNetVerifierTest {
         accepted(run(config(payload().replace("DS0101,DS0109","ds0109"),"1",""),hardware()),"reviewed case-insensitive website mode constraint");
         if(run(valid,hardware()).evidence.contains(MACHINE)||run(valid,hardware()).evidence.contains("SYNTHETIC_ONLY"))throw new AssertionError("sensitive values in evidence");checks++;
         LicenseRecoverLicenseState mismatched=run(config(payload().replace(MACHINE,"SYNTHETIC_OTHER"),"1",""),hardware());
-        if(mismatched.localCondition!=LicenseRecoverLicenseState.LocalCondition.MACHINE_MISMATCH)
+        if(mismatched.localCondition!=LicenseRecoverLicenseState.LocalCondition.SATISFIED_EXCEPT_MACHINE)
             throw new AssertionError("synthetic mismatch fixture must produce a scoped local observation");checks++;
         if(LicenseRecoverReadOnlyDotNetVerifier.retainIfStable(mismatched,true)!=mismatched)
             throw new AssertionError("stable local evidence must remain unchanged");checks++;
@@ -139,6 +158,41 @@ public final class LicenseRecoverReadOnlyDotNetVerifierTest {
         if(revokedPositive.localCondition!=LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED)
             throw new AssertionError("stale positive observation was not fully revoked");checks++;
         System.out.println("LicenseRecoverReadOnlyDotNetVerifierTest: "+checks+" checks passed");
+    }
+    private static void wholeBeanBoundaries()throws Exception {
+        String base=payload();
+        String[] malformed={"\"UserTimes\":\"not-int\"","\"UserTimes\":2147483648","\"MaxCon\":\"not-int\"",
+                "\"CountDay\":true","\"ClassNum\":null","\"Net\":\"not-bool\"","\"BeginDate\":\"not-date\"",
+                "\"BeginDate\":null","\"beginDate\":\"not-long\"","\"endDate\":false"};
+        for(String field:malformed) {
+            LicenseRecoverLicenseState state=run(config(base.replace("{","{"+field+","),"1",""),hardware());
+            unknown(state,"invalid unused bean properties cannot pass an unlimited record");
+            if(state.localCondition!=LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED)
+                throw new AssertionError("whole-bean type rejection must remain scoped");checks++;
+        }
+        unknown(run(config(base.replace("\"UserID\":\"SYNTHETIC_ONLY\"","\"UserID\":42"),"1",""),hardware()),
+                "numeric coercion for optional strings is outside the canonical audit");
+        String full=base.replace("{","{\"ClassNum\":1,\"BeginDate\":\"/Date(1907625600000+0800)/\",\"beginDate\":0,\"endDate\":0,"
+                +"\"UserTimes\":0,\"Net\":false,\"MaxCon\":20,\"CountDay\":10,");
+        accepted(run(config(full,"1",""),hardware()),"all fourteen canonical reviewed properties remain supported");
+        accepted(run(config(full.replace("\"UserID\":\"SYNTHETIC_ONLY\"","\"UserID\":null"),"1",""),hardware()),
+                "canonical null optional string used by current records remains supported");
+        accepted(run(config(base.replace("{","{\"beginDate\":0,\"endDate\":0,"),"1",""),hardware()),
+                "lowercase zero defaults coexist with the distinct DateTime property");
+        for(String field:new String[]{"\"endDate\":-1","\"endDate\":9223372036854775807","\"endDate\":1907712000000","\"beginDate\":-1"}) {
+            LicenseRecoverLicenseState state=run(config(base.replace("{","{"+field+","),"1",""),hardware());
+            unknown(state,"nonzero lazy date overrides cannot borrow the uppercase date pass");
+            if(state.localCondition!=LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED||!state.evidence.contains("历史时区"))
+                throw new AssertionError("lazy date gap must be explicit rather than a native-invalid verdict");checks++;
+        }
+        for(String key:new String[]{"regID","RegId","endDATE","NET","userTimes","@type","$ref","UnknownField"}) {
+            LicenseRecoverLicenseState state=run(config(base.replace("{","{\""+key+"\":\"SYNTHETIC_UNREVIEWED_VALUE\","),"1",""),hardware());
+            unknown(state,"unknown names and special keys cannot override canonical checks");
+            if(state.evidence.contains("SYNTHETIC_UNREVIEWED_VALUE"))throw new AssertionError("field values leaked");checks++;
+        }
+        LicenseRecoverLicenseState invalidBeforeMachine=run(config(base.replace(MACHINE,"OTHER_SYNTHETIC").replace("{","{\"UserTimes\":\"not-int\","),"1",""),hardware());
+        if(invalidBeforeMachine.localCondition!=LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED)
+            throw new AssertionError("whole-bean parse failures precede machine comparison");checks++;
     }
     static byte[] productConfig(String payload,String product,String version,String mode)throws Exception {
         return ("<ROOT><SystemSoft><SoftVersionID>"+version+"</SoftVersionID></SystemSoft><reg><regType>"+mode

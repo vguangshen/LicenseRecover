@@ -18,8 +18,8 @@ public final class LicenseRecoverLicenseStateTest {
         check(accepted.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE,
                 "audited entry acceptance has an independent evidence channel");
         check(accepted.visualStatus() == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE,
-                "accepted entry has its own visual category");
-        check("当前入口条件通过（来源未确认）".equals(accepted.display()),
+                "accepted entry is usable");
+        check("授权可用".equals(accepted.display()),
                 "entry label must not claim native activation or Patch origin");
         check(LicenseRecoverLicenseState.visualStatus(accepted.display()) == accepted.visualStatus(),
                 "typed and textual acceptance agree");
@@ -34,7 +34,7 @@ public final class LicenseRecoverLicenseStateTest {
             catch (IllegalArgumentException expected) { rejected = true; }
             check(rejected, "entry acceptance requires nonblank audited evidence");
         }
-        check(LicenseRecoverLicenseState.visualStatus("授权检查通过（激活或 Patch）（仅配置存在）")
+        check(LicenseRecoverLicenseState.visualStatus("授权可用（仅配置存在）")
                         == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
                 "an arbitrary acceptance prefix cannot turn green");
         check(LicenseRecoverLicenseState.unverified(accepted.display()).visualStatus()
@@ -60,17 +60,12 @@ public final class LicenseRecoverLicenseStateTest {
         check(acceptedPatched.acceptance == LicenseRecoverLicenseState.Acceptance.VERIFIED_USABLE
                         && acceptedPatched.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED,
                 "accepted Patch retains independent entry and Patch evidence");
-        check(acceptedPatched.visualStatus() == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED
-                        && acceptedPatched.display().contains("代码已 Patch")
-                        && LicenseRecoverLicenseState.visualStatus(acceptedPatched.display()) == acceptedPatched.visualStatus(),
-                "accepted Patch display must retain current entry acceptance and the confirmed code fact");
-        check(valid.visualStatus() == LicenseRecoverLicenseState.VisualStatus.NATIVE_VALID,
-                "native verification keeps its own dark-green category");
-        check(accepted.visualStatus() == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE,
-                "independent entry acceptance must not become native-valid or patched");
-        check(LicenseRecoverLicenseState.visualStatus("授权检查通过（代码已 Patch）")
-                        == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED,
-                "reviewed Patch takes precedence over accepted entry in table labels");
+        for (LicenseRecoverLicenseState usable : new LicenseRecoverLicenseState[]{valid, patched, acceptedPatched}) {
+            check(usable.visualStatus() == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE
+                            && usable.display().equals(accepted.display())
+                            && LicenseRecoverLicenseState.visualStatus(usable.display()) == usable.visualStatus(),
+                    "native success, confirmed Patch and an accepted entry share the usable category");
+        }
         LicenseRecoverLicenseState rejectedEntry = LicenseRecoverLicenseState.authorizationRejection(
                 "audited complete current entry", LicenseRecoverLicenseState.LocalCondition.NO_RECORD);
         check(rejectedEntry.authorization == LicenseRecoverLicenseState.Authorization.UNVERIFIED
@@ -84,6 +79,12 @@ public final class LicenseRecoverLicenseStateTest {
                         && LicenseRecoverLicenseState.visualStatus("授权入口明确拒绝（未激活）")
                         == LicenseRecoverLicenseState.VisualStatus.AUTHORIZATION_REJECTED,
                 "new and legacy entry rejection labels must remain amber, never native-invalid white");
+        LicenseRecoverLicenseState rejectedPatched = LicenseRecoverLicenseState.combineAcceptance(rejectedEntry, patched);
+        check(rejectedPatched.visualStatus() == LicenseRecoverLicenseState.VisualStatus.AUTHORIZATION_REJECTED
+                        && rejectedPatched.display().equals(rejectedEntry.display())
+                        && LicenseRecoverLicenseState.visualStatus("授权入口拒绝（代码已 Patch）")
+                        == LicenseRecoverLicenseState.VisualStatus.AUTHORIZATION_REJECTED,
+                "an explicit current entry rejection takes precedence over confirmed code modification");
         check(acceptedPatched.evidence.contains(accepted.evidence) && acceptedPatched.evidence.contains(patched.evidence),
                 "both independent evidence descriptions survive the merge");
         check(LicenseRecoverLicenseState.combineAcceptance(accepted, unknown).acceptance
@@ -108,7 +109,7 @@ public final class LicenseRecoverLicenseStateTest {
                 "native evidence must survive merge");
         check(both.codeIntegrity == LicenseRecoverLicenseState.CodeIntegrity.CONFIRMED_PATCHED,
                 "patch evidence must survive merge");
-        check(both.display().contains("代码已 Patch"), "combined status must show both facts");
+        check(both.display().equals(accepted.display()), "both verified facts share the usable label");
         boolean badSource = false;
         try { LicenseRecoverLicenseState.combine(unknown, patched); }
         catch (IllegalArgumentException expected) { badSource = true; }
@@ -117,27 +118,27 @@ public final class LicenseRecoverLicenseStateTest {
         try { LicenseRecoverLicenseState.combine(accepted, patched); }
         catch (IllegalArgumentException expected) { acceptedIsNotNative = true; }
         check(acceptedIsNotNative, "entry acceptance cannot masquerade as target-native license evidence");
-        check(LicenseRecoverLicenseState.visualStatus("已验证激活（代码已 Patch）")
-                == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED,
-                "patched and valid must use the light green patch color");
-        check(!LicenseRecoverLicenseState.selectedByDefault("已验证激活（代码已 Patch）"),
-                "combined verified state must be deselected");
+        for (String legacy : new String[]{"已验证激活", "已验证激活（代码已 Patch）", "已验证未激活（代码已 Patch）",
+                "已确认 Patch（授权未验证）", "授权检查通过（代码已 Patch）", "当前入口条件通过（来源未确认）",
+                "授权检查通过（激活或 Patch）"}) {
+            check(LicenseRecoverLicenseState.visualStatus(legacy) == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE
+                            && !LicenseRecoverLicenseState.selectedByDefault(legacy),
+                    "historical confirmed-positive labels share the usable category: " + legacy);
+        }
         check(!LicenseRecoverLicenseState.selectedByDefault("检测失败"),
                 "failed inspection must be deselected");
         check(LicenseRecoverLicenseState.selectedByDefault("未验证"),
                 "unknown evidence must remain selectable");
-        check(LicenseRecoverLicenseState.visualStatus("已确认 Patch（授权未验证）")
-                == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED,
-                "patch color must not imply native license validity");
         LicenseRecoverLicenseState invalidAndPatched =
                 LicenseRecoverLicenseState.combine(
                         LicenseRecoverLicenseState.nativeVerification(false, "native check returned invalid"),
                         LicenseRecoverLicenseState.codeComparison(true, "known-version bytecode diff"));
-        check(invalidAndPatched.display().contains("未激活（代码已 Patch）"),
-                "a patch must never hide a failed native license check");
+        check(invalidAndPatched.authorization == LicenseRecoverLicenseState.Authorization.VERIFIED_INVALID
+                        && invalidAndPatched.display().equals(accepted.display()),
+                "confirmed Patch uses the common label and retains the negative native finding in evidence");
         check(invalidAndPatched.visualStatus()
-                == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED,
-                "confirmed patch uses light green even when native validation differs");
+                == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE,
+                "native invalidity does not discard a confirmed Patch result");
         check(LicenseRecoverLicenseState.visualStatus(invalidAndPatched.display())
                 == invalidAndPatched.visualStatus(), "typed and table status must agree");
         check(LicenseRecoverLicenseState.visualStatus("未知异常：代码已 Patch 字样")
@@ -145,10 +146,10 @@ public final class LicenseRecoverLicenseStateTest {
                 "arbitrary labels must never be promoted to confirmed patch");
         check(LicenseRecoverLicenseState.visualStatus("已验证激活（检测尚未执行）")
                 == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
-                "untrusted native-valid prefix must not turn dark green");
+                "untrusted native-valid prefix must not turn green");
         check(LicenseRecoverLicenseState.visualStatus("已确认 Patch（仅根据历史日志）")
                 == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
-                "untrusted patch prefix must not turn light green");
+                "untrusted patch prefix must not turn green");
         check(LicenseRecoverLicenseState.visualStatus("检测失败后又发现状态")
                 == LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,
                 "diagnostics must not masquerade as a typed scan error");
@@ -203,7 +204,7 @@ public final class LicenseRecoverLicenseStateTest {
                         "exact reviewed patch fingerprint");
                 check(patchFingerprint.authorization == LicenseRecoverLicenseState.Authorization.UNVERIFIED,
                         "confirmed patch must not imply native license verification");
-                check(patchFingerprint.visualStatus() == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED,
+                check(patchFingerprint.visualStatus() == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE,
                         "reviewed patch must be light green");
                 check("reviewed-patch".equals(new String(java.nio.file.Files.readAllBytes(artifact), "UTF-8")),
                         "read-only comparison must never modify target bytes");

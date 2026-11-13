@@ -5,8 +5,12 @@ public final class LicenseRecoverLocalObservationTest {
             if(local==LicenseRecoverLicenseState.LocalCondition.NOT_CHECKED)continue;
             LicenseRecoverLicenseState s=LicenseRecoverLicenseState.localObservation(local,"synthetic audited local fact");
             check(s.authorization==LicenseRecoverLicenseState.Authorization.UNVERIFIED,"local result cannot prove global invalid");
-            check(s.acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED,"local result alone cannot turn green");
-            check(s.visualStatus()==LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,"fallback unresolved remains gray");
+            check(s.acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED,"local observation preserves whole-entry evidence scope");
+            LicenseRecoverLicenseState.VisualStatus expected=local==LicenseRecoverLicenseState.LocalCondition.NO_RECORD
+                    ?LicenseRecoverLicenseState.VisualStatus.NO_LOCAL_RECORD
+                    :local==LicenseRecoverLicenseState.LocalCondition.SATISFIED||local==LicenseRecoverLicenseState.LocalCondition.SATISFIED_EXCEPT_MACHINE
+                    ?LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE:LicenseRecoverLicenseState.VisualStatus.UNVERIFIED;
+            check(s.visualStatus()==expected,"local evidence uses the requested visual category");
             check(!"未验证".equals(s.display()),"specific local reason visible in primary status");
             check(LicenseRecoverLicenseState.visualStatus(s.display())==s.visualStatus(),"typed and table labels agree");
             LicenseRecoverLicenseState merged=LicenseRecoverLicenseState.combineLocalObservation(s,
@@ -27,7 +31,7 @@ public final class LicenseRecoverLocalObservationTest {
                 LicenseRecoverLicenseState.LocalCondition.PRODUCT_MISMATCH);
         check(fullReject.acceptance==LicenseRecoverLicenseState.Acceptance.VERIFIED_REJECTED,"complete entry rejection separate from local observations");
         check(fullReject.authorization==LicenseRecoverLicenseState.Authorization.UNVERIFIED,"independent rejection is not literal native execution");
-        check(fullReject.visualStatus()==LicenseRecoverLicenseState.VisualStatus.AUTHORIZATION_REJECTED,"complete rejection has white category");
+        check(fullReject.visualStatus()==LicenseRecoverLicenseState.VisualStatus.AUTHORIZATION_REJECTED,"complete rejection has its own category");
         check(LicenseRecoverLicenseState.visualStatus(fullReject.display())==fullReject.visualStatus(),"rejection table label agrees");
         check(LicenseRecoverLicenseState.combineAcceptance(fullReject,LicenseRecoverLicenseState.unverified("no provenance baseline"))
                 .acceptance==LicenseRecoverLicenseState.Acceptance.VERIFIED_REJECTED,"complete rejection survives code evidence merge");

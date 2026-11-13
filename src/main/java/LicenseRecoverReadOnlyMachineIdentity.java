@@ -1,4 +1,5 @@
 import java.io.*;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
@@ -33,6 +34,63 @@ public final class LicenseRecoverReadOnlyMachineIdentity {
         return new Snapshot(Collections.<String>emptyList(),Collections.<Disk>emptyList(),
                 Collections.<String>emptyList(),null,false,reason);
     }
+
+    /** Default WMI binding shared by the audited .NET record formats. */
+    static String defaultDotNetId(Snapshot snapshot) {
+        if (snapshot == null || !ascii(snapshot.hostname)) return null;
+        String cpu = "";
+        for (String value : snapshot.cpuIds) {
+            if (value == null) {
+                cpu = "unknow";
+                break;
+            }
+            if (!ascii(value)) return null;
+            cpu = value;
+        }
+
+        String disk = "0";
+        for (Disk row : snapshot.disks) {
+            if (row == null || row.signature == null) {
+                disk = "unknow";
+                break;
+            }
+            if (!ascii(row.signature)) return null;
+            try {
+                BigInteger signature = new BigInteger(row.signature.trim());
+                if (signature.signum() < 0 || signature.bitLength() > 32) {
+                    disk = "unknow";
+                    break;
+                }
+                disk = signature.toString();
+                if (signature.signum() > 0) break;
+            } catch (NumberFormatException malformed) {
+                disk = "unknow";
+                break;
+            }
+        }
+
+        String board = "unknow";
+        if (!snapshot.boards.isEmpty() && snapshot.boards.get(0) != null) {
+            String serial = snapshot.boards.get(0);
+            if (!ascii(serial)) return null;
+            board = serial.trim();
+        }
+        if ("unknow".equalsIgnoreCase(cpu) && "unknow".equalsIgnoreCase(disk)) {
+            return bindingPart(snapshot.hostname, 17);
+        }
+        String first = "unknow".equals(board) || "None".equals(board) ? cpu : board;
+        return bindingPart(first, 9) + bindingPart(disk, 9);
+    }
+
+    private static String bindingPart(String value, int width) {
+        String padded = "00000000000000000".substring(0, Math.max(0, width - value.length())) + value;
+        return padded.substring(padded.length() - width, padded.length() - 1);
+    }
+
+    private static boolean ascii(String value) {
+        return value != null && value.matches("[\\x20-\\x7e]{0,8192}");
+    }
+
     /** A short process-local cache keeps a batch from querying WMI for every application. */
     public static synchronized Snapshot current() {
         long now=System.nanoTime();

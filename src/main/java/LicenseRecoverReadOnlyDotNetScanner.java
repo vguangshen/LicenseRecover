@@ -8,12 +8,17 @@ public final class LicenseRecoverReadOnlyDotNetScanner {
         public final LicenseRecoverLicenseState state;
         public final LicenseRecoverReadOnlyDotNetCatalog.Assessment protocol;
         public final LicenseRecoverReadOnlyCodeEvidence codeEvidence;
+        public final LicenseRecoverReadOnlyDotNetCatalog.ModeRelations modeRelations;
         Result(LicenseRecoverLicenseState state,LicenseRecoverReadOnlyDotNetCatalog.Assessment protocol) {
             this(state,protocol,LicenseRecoverReadOnlyCodeEvidence.unassessed("当前 .NET 代码结构尚未获得独立证明"));
         }
         Result(LicenseRecoverLicenseState state,LicenseRecoverReadOnlyDotNetCatalog.Assessment protocol,
                LicenseRecoverReadOnlyCodeEvidence codeEvidence) {
-            this.state=state;this.protocol=protocol;this.codeEvidence=codeEvidence;
+            this(state,protocol,codeEvidence,protocol==null?LicenseRecoverReadOnlyDotNetCatalog.ModeRelations.unassessed():protocol.modeRelations);
+        }
+        Result(LicenseRecoverLicenseState state,LicenseRecoverReadOnlyDotNetCatalog.Assessment protocol,
+               LicenseRecoverReadOnlyCodeEvidence codeEvidence,LicenseRecoverReadOnlyDotNetCatalog.ModeRelations modeRelations) {
+            this.state=state;this.protocol=protocol;this.codeEvidence=codeEvidence;this.modeRelations=modeRelations;
         }
     }
     public static LicenseRecoverLicenseState scan(File root) {return inspect(root).state;}
@@ -27,10 +32,10 @@ public final class LicenseRecoverReadOnlyDotNetScanner {
                 state=LicenseRecoverReadOnlyDotNetVerifier.verifyMatched(root,first.upper);
                 if(!state.isScanError()&&state.acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED&&first.extended!=null)
                     state=combineDiagnostics(state,LicenseRecoverReadOnlyDotNetExtendedVerifier.inspectMatched(root,first.extended,
-                            first.extended.legacy()?LicenseRecoverReadOnlyMachineIdentity.current():null).state);
+                            first.extended.fixedFields()?LicenseRecoverReadOnlyMachineIdentity.current():null).state);
             }
             else if(first.extended!=null)state=LicenseRecoverReadOnlyDotNetExtendedVerifier.inspectMatched(root,first.extended,
-                    first.extended.legacy()?LicenseRecoverReadOnlyMachineIdentity.current():null).state;
+                    first.extended.fixedFields()?LicenseRecoverReadOnlyMachineIdentity.current():null).state;
             else state=LicenseRecoverLicenseState.unverified(first.summary()
                     +"；识别同族不等于授权通过；未按软件名、版本前缀或接口同名推定有效");
             if(state.isScanError())return new Result(state,null);
@@ -38,7 +43,9 @@ public final class LicenseRecoverReadOnlyDotNetScanner {
             Result retained=retainIfStable(state,first,last);
             return retained.protocol==null?retained:new Result(retained.state,retained.protocol,codeEvidence);
         }catch(LicenseRecoverReadOnlyDotNetCatalog.Changed e) {
-            return new Result(LicenseRecoverLicenseState.unverified(".NET 协议组件在读取期间发生变化"),null);
+            return new Result(LicenseRecoverLicenseState.unverified(".NET 协议、配置或模式关系输入在读取期间发生变化"),null,
+                    LicenseRecoverReadOnlyCodeEvidence.unassessed("输入变化，已撤回代码结构结论"),
+                    e.modeInputs||first!=null?LicenseRecoverReadOnlyDotNetCatalog.ModeRelations.revoked():LicenseRecoverReadOnlyDotNetCatalog.ModeRelations.unassessed());
         }catch(IOException|SecurityException e) {
             return new Result(LicenseRecoverLicenseState.scanError(".NET 统一只读检查失败: "+e.getClass().getSimpleName()),null);
         }catch(IllegalStateException e) {
@@ -67,7 +74,8 @@ public final class LicenseRecoverReadOnlyDotNetScanner {
             LicenseRecoverReadOnlyDotNetCatalog.Assessment last) {
         if(state.isScanError())return new Result(state,null);
         if(first==null||!first.sameInputs(last))return new Result(LicenseRecoverLicenseState.unverified(
-                ".NET 协议组件或根配置在读取期间发生变化，已撤销当前结论"),null);
+                ".NET 协议组件、根配置或模式关系输入在读取期间发生变化，已撤销当前结论"),null,
+                LicenseRecoverReadOnlyCodeEvidence.unassessed("输入变化，已撤回代码结构结论"),LicenseRecoverReadOnlyDotNetCatalog.ModeRelations.revoked());
         return new Result(state,first);
     }
 }

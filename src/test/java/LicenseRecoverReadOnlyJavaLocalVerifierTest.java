@@ -21,7 +21,8 @@ public final class LicenseRecoverReadOnlyJavaLocalVerifierTest {
         condition("<root/>".getBytes(StandardCharsets.UTF_8),MACHINE,LicenseRecoverLicenseState.LocalCondition.NO_RECORD);
         condition("<root><reg><regType>1</regType><regName/></reg></root>".getBytes(StandardCharsets.UTF_8),MACHINE,LicenseRecoverLicenseState.LocalCondition.NO_RECORD);
         condition(valid,null,LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE);
-        condition(config(payload("OTHER",NOW+86400000L,-1,0,MODE),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.MACHINE_MISMATCH);
+        condition(config(payload("OTHER",NOW+86400000L,-1,0,MODE),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.SATISFIED_EXCEPT_MACHINE);
+        condition(config(payload("OTHER",NOW+86400000L,-1,0,"OTHER_MODE"),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.PRODUCT_MISMATCH);
         condition(config(payload(ID,NOW-86400000L*3,-1,0,MODE),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.EXPIRED);
         condition(config(payload(ID,NOW-1,-1,0,MODE),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED);
         LicenseRecoverReadOnlyJavaLocalVerifier.LocalCheck finite=local(config(payload(ID,NOW+86400000L,10,1,MODE),"1"),MACHINE);
@@ -35,6 +36,7 @@ public final class LicenseRecoverReadOnlyJavaLocalVerifierTest {
         condition("<root><reg><regType>1</regType><regName>zz</regName></reg></root>".getBytes(StandardCharsets.UTF_8),MACHINE,LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED);
         condition("<root><reg><regType>1</regType><regName>0000000000000000</regName></reg></root>".getBytes(StandardCharsets.UTF_8),MACHINE,LicenseRecoverLicenseState.LocalCondition.MALFORMED);
         condition(config(payload.replace("\"regID\":", "\"regID\":\"duplicate\",\"regID\":"),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED);
+        completeBeanBoundaries(payload);
         condition(("<!DOCTYPE r SYSTEM 'file:///this-must-never-be-read'><r/>").getBytes(StandardCharsets.UTF_8),MACHINE,LicenseRecoverLicenseState.LocalCondition.MALFORMED);
         LicenseRecoverReadOnlyJavaLocalVerifier.LocalCheck mismatch=local(config(payload(ID,NOW+86400000L,-1,0,"OTHER"),"1"),MACHINE);
         require(LicenseRecoverReadOnlyJavaLocalVerifier.decision(mismatch,"synthetic audit",false).acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED,
@@ -48,6 +50,28 @@ public final class LicenseRecoverReadOnlyJavaLocalVerifierTest {
                 "synthetic audit",true).acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED,"expiry cannot bypass network/HASP fallback proof");
         endToEnd();
         System.out.println("PASS: Java local predicate, complete entry scope, bootstrap changes, damaged inputs and read-only boundaries ("+checks+" checks)");
+    }
+    private static void completeBeanBoundaries(String payload)throws Exception {
+        // Target whole-bean conversion can fail before the unlimited quota branch.
+        condition(config(payload.replace("\"userTimes\":0","\"userTimes\":\"not-an-int\""),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED);
+        condition(config(payload.replace("\"userTimes\":0","\"userTimes\":true"),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED);
+        condition(config(payload.replace("\"userTimes\":0","\"userTimes\":2147483648"),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED);
+        condition(config(payload.replace("{","{\"beginDate\":\"not-a-date\","),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED);
+        condition(config(payload.replace("{","{\"net\":\"not-a-bool\","),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED);
+        condition(config(payload.replace("{","{\"countDay\":\"not-an-int\","),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED);
+        condition(config(payload.replace("{","{\"proName\":false,"),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED);
+        condition(config(payload.replace("{","{\"userID\":123,"),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED);
+        // Canonical optional properties are supported without invoking the vendor parser.
+        condition(config(payload.replace("{","{\"beginDate\":1799000000000,\"net\":false,\"countDay\":0,\"proName\":\"synthetic\",\"userID\":null,"),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.SATISFIED);
+        condition(config(payload.replace("{","{\"beginDate\":null,\"net\":true,"),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.SATISFIED);
+        condition(config(payload.replace("\"userTimes\":0,",""),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.SATISFIED);
+        // FastJSON smart matching or special keys must not override canonical checks.
+        for(String alternate:new String[]{"RegID","reg_id","REGID","reg-id","isNet","@type","$ref","unknownProperty"}) {
+            LicenseRecoverReadOnlyJavaLocalVerifier.LocalCheck unknown=local(config(payload.replace("{","{\""+alternate+"\":\"SYNTHETIC_ALIAS_VALUE\","),"1"),MACHINE);
+            require(unknown.condition==LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED&&!unknown.nativeLocalPass,
+                    "unreviewed names cannot bypass canonical whole-bean construction: "+alternate);
+            require(!unknown.reason.contains("SYNTHETIC_ALIAS_VALUE"),"unsupported fields do not leak their values");
+        }
     }
     private static void endToEnd()throws Exception {
         Path root=Files.createTempDirectory("lr-j1-fixture-");

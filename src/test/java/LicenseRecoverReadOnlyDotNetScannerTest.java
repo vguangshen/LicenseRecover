@@ -62,15 +62,40 @@ public final class LicenseRecoverReadOnlyDotNetScannerTest {
         protectedBuild=LicenseRecoverReadOnlyDotNetCatalog.classify(protectedSet,null,null);
         check(protectedBuild.upper!=null&&protectedBuild.extended!=null&&!protectedBuild.upper.positiveEntryAudited
                 &&"MODERN_LOCAL_DIAGNOSTIC".equals(protectedBuild.auditScope),"one dual-DLL build can expose modern local evidence while its protected website proof stays open");
+        check(protectedBuild.fingerprintSummary().contains("受保护的注册结果构造及模块初始化待核")
+                &&!protectedBuild.fingerprintSummary().contains("数据库"),
+                "fixed code binding describes the initialization gap and leaves database conclusions to the current observation");
+        Map<String,String> yx0301=new HashMap<String,String>(protectedSet);
+        yx0301.put("ITMC.Web.dll","d22c923d7f11b084e2839b3d0d6ee572e06ad5d41200ff6c8215757f54e7501e");
+        yx0301.put("itmcRegedit.dll","e684d265332af25ccc3449c38a38f024ecbf87353b9c48710c5ae2b2433c5183");
+        LicenseRecoverReadOnlyDotNetCatalog.Assessment yx0301Binding=LicenseRecoverReadOnlyDotNetCatalog.classify(yx0301,null,null);
+        check(yx0301Binding.upper!=null&&!yx0301Binding.upper.positiveEntryAudited&&"YX0301".equals(yx0301Binding.upper.product)
+                &&"MODERN_LOCAL_DIAGNOSTIC".equals(yx0301Binding.auditScope),"a reviewed new product reuses the core local engine without borrowing full entry proof");
+        check(yx0301Binding.fingerprintSummary().contains("受保护的模块初始化及网站入口分派待核"),
+                "an exact local-only binding retains its concrete entry gap for the GUI");
+        yx0301.remove("itmcRegedit.dll");
+        check(LicenseRecoverReadOnlyDotNetCatalog.classify(yx0301,null,null).upper==null,"the new website's explicit compatibility dependency is required");
         Map<String,String> ys=new HashMap<String,String>();
         ys.put("ITMC.Web.dll","1790526c91b0dc51aa914d80604e600175cfb3d8899c8299bb3b2c85684b9b20");
         ys.put("ITMC.Regedit.dll","c942c3c21466979e63eee1ffadbfe7273c83c2dc0a455f324c9da7e187953f46");
         ys.put("ITMC.DBUtility.dll","236cfe610b87fb7a4f6589cb2a9e319a048b8a8e2a1b79d3028d4d7e1b5fcb6b");
         ys.put("Newtonsoft.Json.dll","9eca2c5ed187b5e1319c359aabf8382992131efe1854b899c23a93fe227496e3");ys.put("LiteDB.dll",ds01.get("LiteDB.dll"));
+        ys.put("itmcRegedit.dll","36f58b8657bce75a19356796f21c135104e28f5abc4bc9007f0d4ec517f479df");
         LicenseRecoverReadOnlyDotNetCatalog.Assessment ysBinding=LicenseRecoverReadOnlyDotNetCatalog.classify(ys,null,null);
-        check(ysBinding.upper!=null&&ysBinding.upper.positiveEntryAudited&&"YS01".equals(ysBinding.upper.product)
+        check(ysBinding.upper!=null&&!ysBinding.upper.positiveEntryAudited&&"YS01".equals(ysBinding.upper.product)
+                &&"MODERN_LOCAL_DIAGNOSTIC".equals(ysBinding.auditScope)
                 &&ysBinding.fingerprintMatches.get(0).requiredAbsentComponents.equals(Collections.singletonList("bin/log4net.dll")),
-                "reviewed YS01 binding records the intentional dependency absence instead of borrowing another build's log hash");
+                "reviewed YS01 local-only binding records dependency absence without claiming native initialization was closed");
+        Map<String,String> ysMissingLower=new HashMap<String,String>(ys);ysMissingLower.remove("itmcRegedit.dll");
+        LicenseRecoverReadOnlyDotNetCatalog.Assessment missingLower=LicenseRecoverReadOnlyDotNetCatalog.classify(ysMissingLower,null,null);
+        check(missingLower.upper==null&&"PARTIAL_REVIEWED_SET".equals(missingLower.fingerprintStatus)
+                &&missingLower.fingerprintMatches.get(0).missingComponents.equals(Collections.singletonList("bin/itmcRegedit.dll")),
+                "a missing website-referenced compatibility dependency withdraws the reviewed modern build binding");
+        Map<String,String> ysChangedLower=new HashMap<String,String>(ys);ysChangedLower.put("itmcRegedit.dll","different-compatibility-build");
+        check(LicenseRecoverReadOnlyDotNetCatalog.classify(ysChangedLower,null,null).upper==null,
+                "replacing a compatibility dependency cannot inherit the reviewed modern build scope");
+        check(ysBinding.fingerprintMatches.get(0).requiredComponents==7,
+                "YS01 whole-entry coverage includes six files plus the reviewed log absence condition");
         ys.put("log4net.dll","unexpected-file");
         check(LicenseRecoverReadOnlyDotNetCatalog.classify(ys,null,null).upper==null,"adding an absent-bound dependency withdraws the exact code-set proof");
         LicenseRecoverLicenseState noRecord=LicenseRecoverLicenseState.localObservation(
@@ -132,8 +157,101 @@ public final class LicenseRecoverReadOnlyDotNetScannerTest {
             Files.write(one.resolve("ITMC.Regedit.dll"),new byte[]{1});
             check(LicenseRecoverReadOnlyDotNetScanner.inspect(one.getParent().toFile()).state.isScanError(),"damaged metadata is a scan error rather than license invalidity");
         }finally {try(java.util.stream.Stream<Path> files=Files.walk(root)){files.sorted(Comparator.reverseOrder()).forEach(p->{try{Files.delete(p);}catch(Exception e){throw new RuntimeException(e);}});}}
-        resourceChecks();
+        modeRelationChecks();resourceChecks();
         System.out.println("PASS: common .NET family classification, parameterized modes and candidate/proof separation ("+checks+" checks)");
+    }
+    private static void modeRelationChecks()throws Exception {
+        Path root=Files.createTempDirectory("lr-mode-relations-");
+        String web=LicenseRecoverReadOnlyDotNetCatalog.hash(new byte[]{31}),lite=LicenseRecoverReadOnlyDotNetCatalog.hash(new byte[]{32});
+        String[] consumers={web};byte[] database={41,42,43};String dbHash=LicenseRecoverReadOnlyDotNetCatalog.hash(database);
+        LicenseRecoverReadOnlyDotNetCatalog.ModeReceipt[] receipts={new LicenseRecoverReadOnlyDotNetCatalog.ModeReceipt(
+                "SYNTHETIC-MODE",web,lite,dbHash,"TEST_MODE","PARENT_A:MODE_A,MODE_B;PARENT_B:MODE_C")};
+        Path db=Files.createDirectories(root.resolve("Data/db")).resolve("RegisterVersion.db"),log=db.resolveSibling("RegisterVersion-log.db"),tmp=db.resolveSibling("RegisterVersion-tmp.db");
+        try {
+            modeConfig(root,"TEST_MODE");Files.write(db,database);
+            Map<String,String> first=modeSnapshot(root,web,lite,consumers,true);
+            LicenseRecoverReadOnlyDotNetCatalog.ModeRelations match=LicenseRecoverReadOnlyDotNetCatalog.modeRelations(first,receipts,consumers,lite,true);
+            check("EXACT_REVIEWED_DATA".equals(match.status)&&match.parentModes.size()==2&&match.parentModes.get("PARENT_A").equals(Arrays.asList("MODE_A","MODE_B")),
+                    "synthetic exact tuple selects relationship data without a database engine");
+            check(match.inspectionReadOnlyAudited&&!match.fullAuthorizationAudited&&match.summary().contains("未验证父产品授权")
+                    &&match.reason.contains("重新校验时先尝试父产品，未通过才检查自身产品"),
+                    "exact relationship data has no native or whole-authorization proof");
+            boolean immutable=false;try{match.parentModes.clear();}catch(UnsupportedOperationException expected){immutable=true;}
+            check(immutable,"parent grouping is immutable");immutable=false;try{match.parentModes.get("PARENT_A").add("OTHER");}catch(UnsupportedOperationException expected){immutable=true;}
+            check(immutable,"parent modes are deeply immutable");
+            for(LicenseRecoverLicenseState.LocalCondition condition:new LicenseRecoverLicenseState.LocalCondition[]{
+                    LicenseRecoverLicenseState.LocalCondition.SATISFIED,LicenseRecoverLicenseState.LocalCondition.MACHINE_MISMATCH,LicenseRecoverLicenseState.LocalCondition.NO_RECORD}) {
+                LicenseRecoverLicenseState state=LicenseRecoverLicenseState.localObservation(condition,"synthetic scoped condition");
+                LicenseRecoverReadOnlyInspection.Result result=new LicenseRecoverReadOnlyInspection.Result(root.toFile(),"TEST_MODE","DOTNET",state,
+                        Collections.<LicenseRecoverReadOnlyInspection.Artifact>emptyList(),"synthetic reason",null,
+                        LicenseRecoverReadOnlyCodeEvidence.unassessed("synthetic"),"synthetic code","synthetic local",match);
+                String json=result.toJson();
+                check(result.state==state&&result.state.acceptance==LicenseRecoverLicenseState.Acceptance.UNVERIFIED
+                        &&result.state.authorization==LicenseRecoverLicenseState.Authorization.UNVERIFIED&&result.state.codeIntegrity==LicenseRecoverLicenseState.CodeIntegrity.UNKNOWN,
+                        "adding relation evidence does not promote, reject or replace a local condition");
+                check(json.contains("\"modeRelationStatus\":\"EXACT_REVIEWED_DATA\"")&&json.contains("\"product\":\"PARENT_A\"")
+                        &&json.contains("\"modeRelationFullAuthorizationAudited\":false"),"JSON exposes typed relation scope without authorization promotion");
+            }
+            Files.write(db,new byte[]{44});
+            LicenseRecoverReadOnlyDotNetCatalog.ModeRelations unknown=LicenseRecoverReadOnlyDotNetCatalog.modeRelations(modeSnapshot(root,web,lite,consumers,true),receipts,consumers,lite,true);
+            check("UNKNOWN_DATABASE_OR_MODE".equals(unknown.status)&&unknown.parentModes.isEmpty(),"an unknown database is not guessed to have no parents");Files.write(db,database);
+            modeConfig(root,"OTHER_MODE");unknown=LicenseRecoverReadOnlyDotNetCatalog.modeRelations(modeSnapshot(root,web,lite,consumers,true),receipts,consumers,lite,true);
+            check("UNKNOWN_DATABASE_OR_MODE".equals(unknown.status)&&unknown.parentModes.isEmpty(),"a known database cannot lend relationships to an unreviewed config mode");
+            Files.write(root.resolve("config.xml"),"<ROOT><SystemSoft><SoftVersionID>TEST_MODE</SoftVersionID><SoftVersionID>OTHER_MODE</SoftVersionID></SystemSoft></ROOT>".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            unknown=LicenseRecoverReadOnlyDotNetCatalog.modeRelations(modeSnapshot(root,web,lite,consumers,true),receipts,consumers,lite,true);
+            check("CURRENT_MODE_UNKNOWN".equals(unknown.status)&&unknown.parentModes.isEmpty(),"duplicate mode configuration cannot choose a favorable relation receipt");modeConfig(root,"TEST_MODE");
+            modeConfig(root,new String(new char[65]).replace('\0','A'));
+            unknown=LicenseRecoverReadOnlyDotNetCatalog.modeRelations(modeSnapshot(root,web,lite,consumers,true),receipts,consumers,lite,true);
+            check("CURRENT_MODE_UNKNOWN".equals(unknown.status)&&unknown.currentMode.isEmpty(),"oversized mode text is neither trusted nor copied to diagnostics");modeConfig(root,"TEST_MODE");
+            for(Path companion:Arrays.asList(log,tmp)) {
+                Files.write(companion,new byte[0]);Map<String,String> current=modeSnapshot(root,web,lite,consumers,true);
+                unknown=LicenseRecoverReadOnlyDotNetCatalog.modeRelations(current,receipts,consumers,lite,true);
+                check("COMPANION_PRESENT".equals(unknown.status)&&unknown.parentModes.isEmpty()&&unknown.companionFiles.size()==1,
+                        "even an empty WAL/tmp companion prevents a main-file-only relationship claim");
+                modeRevoked(first,current,"new companion withdraws previous relationships");Files.delete(companion);
+            }
+            Map<String,String> changed=new HashMap<String,String>(first);changed.put("ITMC.Web.dll",LicenseRecoverReadOnlyDotNetCatalog.hash(new byte[]{33}));
+            check("UNREVIEWED_CONSUMER".equals(LicenseRecoverReadOnlyDotNetCatalog.modeRelations(changed,receipts,consumers,lite,true).status),
+                    "a database hash cannot identify an unreviewed website consumer");
+            changed=new HashMap<String,String>(first);changed.put("LiteDB.dll",LicenseRecoverReadOnlyDotNetCatalog.hash(new byte[]{34}));
+            check("UNREVIEWED_CONSUMER".equals(LicenseRecoverReadOnlyDotNetCatalog.modeRelations(changed,receipts,consumers,lite,true).status),
+                    "changing the database reader withdraws relation semantics");
+            check("UNREVIEWED_CONSUMER".equals(LicenseRecoverReadOnlyDotNetCatalog.modeRelations(first,receipts,consumers,lite,false).status),
+                    "the rest of the reviewed consumer dependency set is mandatory");
+            modeRevoked(first,changed,"a changed reader withdraws all current binding receipts");
+            Files.delete(db);Map<String,String> absent=modeSnapshot(root,web,lite,consumers,true);
+            unknown=LicenseRecoverReadOnlyDotNetCatalog.modeRelations(absent,receipts,consumers,lite,true);
+            check("MISSING_DATABASE".equals(unknown.status)&&unknown.parentModes.isEmpty()
+                    &&unknown.reason.contains("跳过父产品检查及组合授权导入")
+                    &&"REVIEWED_MISSING_DATABASE_BRANCH".equals(unknown.auditScope),"only an observed missing database on a reviewed consumer gets empty-return evidence");
+            Files.write(db,database);modeRevoked(absent,modeSnapshot(root,web,lite,consumers,true),"newly created database revokes missing-branch evidence");
+            first=modeSnapshot(root,web,lite,consumers,true);Files.write(db,new byte[]{41,42,44});
+            modeRevoked(first,modeSnapshot(root,web,lite,consumers,true),"same-size database mutation is not hidden by matching component hashes");Files.write(db,database);
+            first=modeSnapshot(root,web,lite,consumers,true);Files.setLastModifiedTime(db,java.nio.file.attribute.FileTime.fromMillis(Files.getLastModifiedTime(db).toMillis()+2000));
+            modeRevoked(first,modeSnapshot(root,web,lite,consumers,true),"database identity receipts retain same-byte modification evidence");
+            modeConfig(root,"OTHER_MODE");modeRevoked(first,modeSnapshot(root,web,lite,consumers,true),"configuration mode changes revoke prior matching relationship data");modeConfig(root,"TEST_MODE");
+            Path renamed=root.resolveSibling(root.getFileName()+"-UnrelatedName");Files.move(root,renamed);root=renamed;
+            unknown=LicenseRecoverReadOnlyDotNetCatalog.modeRelations(modeSnapshot(root,web,lite,consumers,true),receipts,consumers,lite,true);
+            check("EXACT_REVIEWED_DATA".equals(unknown.status),"application directory names do not select a mode relationship strategy");
+            Map<String,String> budget=new HashMap<String,String>();budget.put("ITMC.Web.dll",web);budget.put("LiteDB.dll",lite);
+            boolean bounded=false;try{LicenseRecoverReadOnlyDotNetCatalog.captureModeInputs(root,budget,consumers,true,2);}catch(java.io.IOException expected){bounded=true;}
+            check(bounded,"mode files participate in the bounded aggregate metadata read budget");
+        }finally {try(java.util.stream.Stream<Path> files=Files.walk(root)){files.sorted(Comparator.reverseOrder()).forEach(p->{try{Files.delete(p);}catch(Exception e){throw new RuntimeException(e);}});}}
+    }
+    private static void modeConfig(Path root,String mode)throws Exception {
+        Files.write(root.resolve("config.xml"),("<ROOT><SystemSoft><SoftVersionID>"+mode+"</SoftVersionID></SystemSoft></ROOT>").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+    private static Map<String,String> modeSnapshot(Path root,String web,String lite,String[] consumers,boolean binding)throws Exception {
+        Map<String,String> hashes=new TreeMap<String,String>();hashes.put("ITMC.Web.dll",web);hashes.put("LiteDB.dll",lite);
+        if(Files.isRegularFile(root.resolve("config.xml")))hashes.put("config.xml",LicenseRecoverReadOnlyDotNetCatalog.hash(Files.readAllBytes(root.resolve("config.xml"))));
+        LicenseRecoverReadOnlyDotNetCatalog.captureModeInputs(root,hashes,consumers,binding,32*1024*1024);
+        return hashes;
+    }
+    private static void modeRevoked(Map<String,String> before,Map<String,String> after,String reason) {
+        LicenseRecoverReadOnlyDotNetScanner.Result result=LicenseRecoverReadOnlyDotNetScanner.retainIfStable(
+                LicenseRecoverLicenseState.localObservation(LicenseRecoverLicenseState.LocalCondition.SATISFIED,"synthetic"),
+                LicenseRecoverReadOnlyDotNetCatalog.classify(before,null,null),LicenseRecoverReadOnlyDotNetCatalog.classify(after,null,null));
+        check(result.protocol==null&&"CHANGED_OR_REVOKED".equals(result.modeRelations.status)&&result.modeRelations.parentModes.isEmpty(),reason);
     }
     /** A small heap must be sufficient even when an unrelated component is near the file limit. */
     private static void resourceChecks()throws Exception {

@@ -27,7 +27,7 @@ public final class LicenseRecoverBatchEvidenceTableTest {
             try { inspectTable(args); }
             catch (Exception failure) { throw new RuntimeException(failure); }
         });
-        System.out.println("PASS: common green preserves distinct proof labels; sorted code evidence, reasons and tooltips");
+        System.out.println("PASS: unified usable status; sorted code evidence, reasons and tooltips");
     }
 
     private static void inspectTable(String[] args) throws Exception {
@@ -45,9 +45,8 @@ public final class LicenseRecoverBatchEvidenceTableTest {
         JPanel results = (JPanel) ((java.awt.BorderLayout) panel.getLayout())
                 .getLayoutComponent(java.awt.BorderLayout.CENTER);
         javax.swing.JLabel legend = (javax.swing.JLabel) results.getComponent(1);
-        check(legend.getText().contains("绿色=已审入口通过 / 原生有效 / 确认 Patch")
-                        && legend.getText().contains("以文字证据细分")
-                        && legend.getText().contains("白色=原生无效")
+        check(legend.getText().contains("绿色=授权可用")
+                        && legend.getText().contains("白色=原生无效或无本地授权记录")
                         && legend.getText().contains("琥珀=入口拒绝"),
                 "visible legend must agree with independent evidence categories");
         Field field = LicenseRecoverModernGUI.class.getDeclaredField("batchTable");
@@ -72,9 +71,16 @@ public final class LicenseRecoverBatchEvidenceTableTest {
             LicenseRecoverLicenseState.unverified("configuration exists").display(),
             LicenseRecoverLicenseState.scanError("synthetic read error").display(),
             LicenseRecoverLicenseState.authorizationRejection("synthetic audited complete entry rejection",
-                    LicenseRecoverLicenseState.LocalCondition.NO_RECORD).display()
+                    LicenseRecoverLicenseState.LocalCondition.NO_RECORD).display(),
+            LicenseRecoverLicenseState.localObservation(LicenseRecoverLicenseState.LocalCondition.SATISFIED,
+                    "synthetic audited local authorization conditions passed").display(),
+            LicenseRecoverLicenseState.localObservation(LicenseRecoverLicenseState.LocalCondition.NO_RECORD,
+                    "synthetic no local authorization record").display(),
+            LicenseRecoverLicenseState.localObservation(LicenseRecoverLicenseState.LocalCondition.SATISFIED_EXCEPT_MACHINE,
+                    "synthetic audited local conditions passed except machine identity").display()
         };
-        String[] names = {"Z-native", "A-entry", "B-patch", "C-invalid", "D-unknown", "E-error", "F-entry-rejected"};
+        String[] names = {"Z-native", "A-entry", "B-patch", "C-invalid", "D-unknown", "E-error", "F-entry-rejected",
+                "G-local-passed", "H-no-local-record", "I-local-passed-except-machine"};
         for (int i = 0; i < statuses.length; i++) {
             Object[] row = new Object[13];
             java.util.Arrays.fill(row, "—");
@@ -89,18 +95,25 @@ public final class LicenseRecoverBatchEvidenceTableTest {
         Color nativeGreen = color(table, 0, 2);
         Color acceptedGreen = color(table, 1, 2);
         Color patchGreen = color(table, 2, 2);
-        check(new Color(22, 94, 58).equals(nativeGreen), "native valid must be dark green");
-        check(new Color(205, 239, 210).equals(patchGreen), "reviewed Patch must be light green");
-        check(new Color(205, 239, 210).equals(acceptedGreen), "user-selected green represents audited acceptance");
-        check(!nativeGreen.equals(patchGreen) && acceptedGreen.equals(patchGreen),
-                "common green presentation must not change the distinct evidence labels");
-        check(!statuses[1].equals(statuses[2])&&statuses[1].contains("来源未确认"),
-                "green entry must never be mislabeled as confirmed Patch");
+        check(new Color(205, 239, 210).equals(acceptedGreen)
+                        && nativeGreen.equals(acceptedGreen) && patchGreen.equals(acceptedGreen),
+                "all verified usable rows share the same green background");
+        check("授权可用".equals(statuses[0]) && statuses[0].equals(statuses[1]) && statuses[0].equals(statuses[2]),
+                "all verified usable rows share the same status text");
         check(Color.WHITE.equals(color(table, 3, 2)), "verified native invalid remains white");
         check(new Color(241, 243, 246).equals(color(table, 4, 2)), "unknown evidence remains gray");
         check(new Color(165, 45, 45).equals(color(table, 5, 2)), "read error remains red");
         check(new Color(255, 244, 214).equals(color(table, 6, 2)),
                 "audited entry rejection is amber, not native-invalid white");
+        check(acceptedGreen.equals(color(table, 7, 2)) && statuses[1].equals(statuses[7])
+                        && !LicenseRecoverLicenseState.selectedByDefault(statuses[7]),
+                "passed local conditions use the common green status and stay clear of bulk recovery by default");
+        check(Color.WHITE.equals(color(table, 8, 2)) && !statuses[3].equals(statuses[8])
+                        && LicenseRecoverLicenseState.selectedByDefault(statuses[8]),
+                "no local record displays white with a distinct label and remains selected by default");
+        check(acceptedGreen.equals(color(table, 9, 2)) && statuses[9].contains("机器标识未匹配")
+                        && !LicenseRecoverLicenseState.selectedByDefault(statuses[9]),
+                "audited local pass except machine identity uses green and displays the mismatch");
         check(acceptedGreen.equals(color(table, 1, 0)), "checkbox uses the sorted row's evidence color");
         int acceptedViewRow = table.convertRowIndexToView(1);
         table.setRowSelectionInterval(acceptedViewRow, acceptedViewRow);
@@ -109,7 +122,7 @@ public final class LicenseRecoverBatchEvidenceTableTest {
         check(cell.x < 250, "authorization state starts inside the first viewport");
         String tooltip = table.getToolTipText(new MouseEvent(table, MouseEvent.MOUSE_MOVED,
                 System.currentTimeMillis(), 0, cell.x + 2, cell.y + 2, 0, false));
-        check(tooltip.contains("当前授权入口判定通过") && tooltip.contains("不证明原生许可证有效")
+        check(tooltip.contains("按当前只读证据归为授权可用")
                         && tooltip.contains("synthetic-current-evidence-1")&&tooltip.contains("synthetic-code-evidence-1"),
                 "sorted acceptance tooltip must include precise scope and current detection reason");
         if (args.length == 1) {

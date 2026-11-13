@@ -2,7 +2,7 @@
 
 ## 状态语义
 
-`LicenseRecoverReadOnlyJavaVerifier` 只在完整代码与启动/拦截器配置匹配已审核构建时返回“授权检查通过（激活或 Patch）”。这个维度表示当前磁盘代码的授权门槛会放行，不证明厂商签发的原生授权，也不声称存在来源可信的原版/Patch 文件对。
+`LicenseRecoverReadOnlyJavaVerifier` 在完整代码与启动、拦截器配置匹配已审核构建时，确认当前磁盘代码的授权门槛会放行。这项入口证据显示为绿色「授权可用」。原生授权和原版或 Patch 的来源由各自的证据字段记录。
 
 `authorization` 仍为 `UNVERIFIED`，`codeIntegrity` 仍为 `UNKNOWN`；接受证据单独存放在 `acceptance`。不匹配、缺少输入、代码或配置变化保持未验证；实际读取或格式错误为检测错误。这个检测器不会调用厂商构造器、初始化器、注册方法、硬件方法或子进程，不读取或解密真实注册码。
 
