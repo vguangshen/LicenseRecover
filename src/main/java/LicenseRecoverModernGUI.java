@@ -87,12 +87,8 @@ public final class LicenseRecoverModernGUI {
                     LicenseRecoverLicenseState.visualStatus(state);
             String reason = String.valueOf(getModel().getValueAt(modelRow, BATCH_COL_VERIFY));
             String meaning;
-            if (visual == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED)
-                meaning = "精确原版/Patch 比对已确认代码修改；Patch 本身不等于原生授权校验成功";
-            else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_VALID)
-                meaning = "独立原生只读校验已确认授权有效";
-            else if (visual == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE)
-                meaning = "当前授权入口判定通过，未区分激活与 Patch；不证明原生许可证有效或所有业务功能可用";
+            if (visual == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE)
+                meaning = "当前只读证据确认授权可用";
             else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID)
                 meaning = "独立原生校验明确返回授权无效";
             else if (visual == LicenseRecoverLicenseState.VisualStatus.AUTHORIZATION_REJECTED)
@@ -500,7 +496,7 @@ public final class LicenseRecoverModernGUI {
         });
         JPanel results = new JPanel(new BorderLayout(0, 5));
         results.add(new JScrollPane(batchTable), BorderLayout.CENTER);
-        JLabel legend = new JLabel("绿色=已审入口通过 / 原生有效 / 确认 Patch（以文字证据细分）   白色=原生无效   琥珀=入口拒绝   灰色=未验证   红色=检测错误");
+        JLabel legend = new JLabel("绿色=授权可用   白色=原生无效   琥珀=入口拒绝   灰色=未验证   红色=检测错误");
         legend.setFont(legend.getFont().deriveFont(11f));
         legend.setBorder(new EmptyBorder(3, 7, 3, 7));
         results.add(legend, BorderLayout.SOUTH);
@@ -521,14 +517,7 @@ public final class LicenseRecoverModernGUI {
         Color background;
         Color foreground;
         LicenseRecoverLicenseState.VisualStatus visual = LicenseRecoverLicenseState.visualStatus(state);
-        if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_VALID) {
-            background = new Color(22, 94, 58);
-            foreground = Color.WHITE;
-        } else if (visual == LicenseRecoverLicenseState.VisualStatus.PATCHED_UNVERIFIED) {
-            background = new Color(205, 239, 210);
-            foreground = new Color(20, 75, 37);
-        } else if (visual == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE) {
-            // User-selected common green presentation; labels and typed evidence remain distinct.
+        if (visual == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE) {
             background = new Color(205, 239, 210);
             foreground = new Color(20, 75, 37);
         } else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID) {

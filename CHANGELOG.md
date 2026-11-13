@@ -1,5 +1,6 @@
 ## 1.2.74 - 2026-11-08
 
+- Use one green status, `VERIFIED_USABLE` (授权可用), for audited entry acceptance, verified native activation and confirmed Patch. Historical positive labels map to this status. Read-only evidence and unresolved results remain available, and earlier release entries record the behavior shipped at the time.
 - Bind .NET parent-product/mode evidence to exact reviewed consumer/dependency/database/current-mode tuples. Track database and companion presence, hashes and identities through the final recheck; unknown data never implies an empty parent chain. Relation evidence cannot change authorization acceptance or Patch provenance.
 - Validate all fourteen canonical modern .NET record properties before evaluating local conditions. Reject malformed unused properties and unreviewed names; retain zero lowercase date defaults but withhold acceptance for nonzero lazy-getter overrides until their legacy local-epoch conversion is proved.
 - Correct the v1.2.73 YS01 audit scope: lazy construction in a business fallback does not exclude the compatibility module's native initialization/JIT lookup. Retain satisfied modern local conditions, withdraw whole-entry acceptance, and keep native/Patch provenance unverified.
