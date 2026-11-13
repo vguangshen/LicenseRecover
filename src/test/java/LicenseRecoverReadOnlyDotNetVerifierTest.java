@@ -86,7 +86,12 @@ public final class LicenseRecoverReadOnlyDotNetVerifierTest {
         if(dogFirst.localCondition!=LicenseRecoverLicenseState.LocalCondition.SATISFIED)throw new AssertionError("HASP-first local condition was discarded");checks++;
         LicenseRecoverLicenseState wrongModeMachine=run(config(payload().replace(MACHINE,"OTHER_SYNTHETIC"),"3",""),hardware());
         unknown(wrongModeMachine,"network-first local machine mismatch is not global invalidity");
-        if(wrongModeMachine.localCondition!=LicenseRecoverLicenseState.LocalCondition.MACHINE_MISMATCH)throw new AssertionError("dispatch hid specific local mismatch");checks++;
+        if(wrongModeMachine.localCondition!=LicenseRecoverLicenseState.LocalCondition.SATISFIED_EXCEPT_MACHINE)throw new AssertionError("dispatch hid the other matching local conditions");checks++;
+        LicenseRecoverLicenseState expiredWrongMachine=run(config(payload().replace(MACHINE,"OTHER_SYNTHETIC")
+                .replace("1907712000000","1907625600000"),"3",""),hardware());
+        if(expiredWrongMachine.localCondition!=LicenseRecoverLicenseState.LocalCondition.EXPIRED
+                ||expiredWrongMachine.visualStatus()!=LicenseRecoverLicenseState.VisualStatus.UNVERIFIED)
+            throw new AssertionError("machine mismatch cannot overlook expiry");checks++;
         unknown(run(config(payload()+"trailing","1",""),hardware()),"malformed JSON not accepted");
         unknown(run(config(payload().replace("\"TotalTimes\":-1","\"TotalTimes\":-1,\"TotalTimes\":-1"),"1",""),hardware()),"duplicate fields rejected");
         unknown(run(config(payload().replace("\"TotalTimes\":-1","\"totaltimes\":-1"),"1",""),hardware()),"case-aliased critical fields rejected");
@@ -139,7 +144,7 @@ public final class LicenseRecoverReadOnlyDotNetVerifierTest {
         accepted(run(config(payload().replace("DS0101,DS0109","ds0109"),"1",""),hardware()),"reviewed case-insensitive website mode constraint");
         if(run(valid,hardware()).evidence.contains(MACHINE)||run(valid,hardware()).evidence.contains("SYNTHETIC_ONLY"))throw new AssertionError("sensitive values in evidence");checks++;
         LicenseRecoverLicenseState mismatched=run(config(payload().replace(MACHINE,"SYNTHETIC_OTHER"),"1",""),hardware());
-        if(mismatched.localCondition!=LicenseRecoverLicenseState.LocalCondition.MACHINE_MISMATCH)
+        if(mismatched.localCondition!=LicenseRecoverLicenseState.LocalCondition.SATISFIED_EXCEPT_MACHINE)
             throw new AssertionError("synthetic mismatch fixture must produce a scoped local observation");checks++;
         if(LicenseRecoverReadOnlyDotNetVerifier.retainIfStable(mismatched,true)!=mismatched)
             throw new AssertionError("stable local evidence must remain unchanged");checks++;

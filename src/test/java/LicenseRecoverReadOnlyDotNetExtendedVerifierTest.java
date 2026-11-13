@@ -47,7 +47,11 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifierTest {
                 ||r.state.acceptance!=LicenseRecoverLicenseState.Acceptance.UNVERIFIED
                 ||r.state.codeIntegrity!=LicenseRecoverLicenseState.CodeIntegrity.UNKNOWN)
             throw new AssertionError("local observation must not promote global/native/Patch status");
-        if(r.state.visualStatus()!=LicenseRecoverLicenseState.VisualStatus.UNVERIFIED)throw new AssertionError("local failures remain gray");
+        LicenseRecoverLicenseState.VisualStatus visual=local==LicenseRecoverLicenseState.LocalCondition.NO_RECORD
+                ?LicenseRecoverLicenseState.VisualStatus.NO_LOCAL_RECORD
+                :local==LicenseRecoverLicenseState.LocalCondition.SATISFIED||local==LicenseRecoverLicenseState.LocalCondition.SATISFIED_EXCEPT_MACHINE
+                ?LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE:LicenseRecoverLicenseState.VisualStatus.UNVERIFIED;
+        if(r.state.visualStatus()!=visual)throw new AssertionError("local result has the wrong visual category");
         checks++;
     }
     private static LicenseRecoverReadOnlyDotNetExtendedVerifier.Result run(byte[] config,boolean legacy) {
@@ -96,8 +100,11 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifierTest {
                 LicenseRecoverReadOnlyDotNetExtendedVerifier.LocalStatus.LEGACY_FORMAT_UNSUPPORTED,LicenseRecoverLicenseState.LocalCondition.MALFORMED,
                 "machine/date success cannot hide unsupported numeric/date conversion fields");
         expect(LicenseRecoverReadOnlyDotNetExtendedVerifier.diagnose(config(encrypt(plain("OTHER_SYNTHETIC_",TODAY.plusDays(1)),"*ITMCYX0302OK*"),"3"),recovered,identity(),TODAY),
-                LicenseRecoverReadOnlyDotNetExtendedVerifier.LocalStatus.LEGACY_MACHINE_MISMATCH,LicenseRecoverLicenseState.LocalCondition.MACHINE_MISMATCH,
-                "network-first recovered machine mismatch is never whole invalidity");
+                LicenseRecoverReadOnlyDotNetExtendedVerifier.LocalStatus.LEGACY_FORMAT_UNSUPPORTED,LicenseRecoverLicenseState.LocalCondition.MALFORMED,
+                "machine mismatch does not overlook nonconvertible fixed fields");
+        expect(LicenseRecoverReadOnlyDotNetExtendedVerifier.diagnose(config(encrypt(fixedFields("OTHER_SYNTHETIC_",TODAY.plusDays(1)),"*ITMCYX0302OK*"),"3"),recovered,identity(),TODAY),
+                LicenseRecoverReadOnlyDotNetExtendedVerifier.LocalStatus.FIXED_FIELDS_MATCH_EXCEPT_MACHINE,LicenseRecoverLicenseState.LocalCondition.SATISFIED_EXCEPT_MACHINE,
+                "complete fixed fields and future expiration support the local display exception");
         expect(LicenseRecoverReadOnlyDotNetExtendedVerifier.diagnose(config(encrypt(plain(MACHINE,TODAY),"*ITMCYX0302OK*"),"1"),recovered,identity(),TODAY),
                 LicenseRecoverReadOnlyDotNetExtendedVerifier.LocalStatus.LEGACY_EXPIRED,LicenseRecoverLicenseState.LocalCondition.EXPIRED,"recovered fixed record rejects equality date locally");
         expect(LicenseRecoverReadOnlyDotNetExtendedVerifier.diagnose(config(vmRecord,"1"),recovered,null,TODAY),

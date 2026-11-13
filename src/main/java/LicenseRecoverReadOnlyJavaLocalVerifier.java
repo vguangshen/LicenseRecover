@@ -229,8 +229,7 @@ public final class LicenseRecoverReadOnlyJavaLocalVerifier {
             if(machine==null||!machine.complete||machine.machineId==null)
                 return check(LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE,
                         "当前机器标识首选规则未获得可靠结果；未读取旧机器记录代替",false,false,true,false);
-            if(!binding.equals(machine.machineId))return check(LicenseRecoverLicenseState.LocalCondition.MACHINE_MISMATCH,
-                    "现有本地授权的机器绑定与当前服务器不匹配",false,false,true,false);
+            boolean machineMatches=binding.equals(machine.machineId);
             long endMs=(Long)end;
             // Native compares against target-JVM local midnight. These two bounds are
             // independent of the unobserved target timezone; near-boundary values stay unknown.
@@ -258,8 +257,13 @@ public final class LicenseRecoverReadOnlyJavaLocalVerifier {
             }
             Object modes=payload.get("regStr");
             if(!(modes instanceof String))return check(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,
-                    "本地机器、期限和无限计次通过，但产品范围字段缺失或格式未知",true,false,true,false);
+                    "本地期限和无限计次通过，产品范围字段缺失或格式未知",machineMatches,false,true,false);
             boolean productPass=((String)modes).contains(expectedMode);
+            if(!machineMatches)return check(productPass?LicenseRecoverLicenseState.LocalCondition.SATISFIED_EXCEPT_MACHINE
+                            :LicenseRecoverLicenseState.LocalCondition.PRODUCT_MISMATCH,
+                    productPass?"本地期限、无限计次及启动产品范围均匹配；扫描机器标识未匹配，整体入口仍待核"
+                            :"本地记录未覆盖启动产品范围，扫描机器标识也未匹配",
+                    false,productPass,true,false);
             return check(productPass?LicenseRecoverLicenseState.LocalCondition.SATISFIED
                             :LicenseRecoverLicenseState.LocalCondition.PRODUCT_MISMATCH,
                     productPass?"本地优先模式：当前机器绑定、期限、无限计次及启动产品范围全部通过；未调用目标代码或执行写回"

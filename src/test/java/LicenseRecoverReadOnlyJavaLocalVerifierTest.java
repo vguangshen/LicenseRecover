@@ -21,7 +21,8 @@ public final class LicenseRecoverReadOnlyJavaLocalVerifierTest {
         condition("<root/>".getBytes(StandardCharsets.UTF_8),MACHINE,LicenseRecoverLicenseState.LocalCondition.NO_RECORD);
         condition("<root><reg><regType>1</regType><regName/></reg></root>".getBytes(StandardCharsets.UTF_8),MACHINE,LicenseRecoverLicenseState.LocalCondition.NO_RECORD);
         condition(valid,null,LicenseRecoverLicenseState.LocalCondition.IDENTITY_UNAVAILABLE);
-        condition(config(payload("OTHER",NOW+86400000L,-1,0,MODE),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.MACHINE_MISMATCH);
+        condition(config(payload("OTHER",NOW+86400000L,-1,0,MODE),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.SATISFIED_EXCEPT_MACHINE);
+        condition(config(payload("OTHER",NOW+86400000L,-1,0,"OTHER_MODE"),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.PRODUCT_MISMATCH);
         condition(config(payload(ID,NOW-86400000L*3,-1,0,MODE),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.EXPIRED);
         condition(config(payload(ID,NOW-1,-1,0,MODE),"1"),MACHINE,LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED);
         LicenseRecoverReadOnlyJavaLocalVerifier.LocalCheck finite=local(config(payload(ID,NOW+86400000L,10,1,MODE),"1"),MACHINE);

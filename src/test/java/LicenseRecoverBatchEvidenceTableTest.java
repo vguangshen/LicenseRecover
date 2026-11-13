@@ -46,7 +46,7 @@ public final class LicenseRecoverBatchEvidenceTableTest {
                 .getLayoutComponent(java.awt.BorderLayout.CENTER);
         javax.swing.JLabel legend = (javax.swing.JLabel) results.getComponent(1);
         check(legend.getText().contains("绿色=授权可用")
-                        && legend.getText().contains("白色=原生无效")
+                        && legend.getText().contains("白色=原生无效或无本地授权记录")
                         && legend.getText().contains("琥珀=入口拒绝"),
                 "visible legend must agree with independent evidence categories");
         Field field = LicenseRecoverModernGUI.class.getDeclaredField("batchTable");
@@ -71,9 +71,16 @@ public final class LicenseRecoverBatchEvidenceTableTest {
             LicenseRecoverLicenseState.unverified("configuration exists").display(),
             LicenseRecoverLicenseState.scanError("synthetic read error").display(),
             LicenseRecoverLicenseState.authorizationRejection("synthetic audited complete entry rejection",
-                    LicenseRecoverLicenseState.LocalCondition.NO_RECORD).display()
+                    LicenseRecoverLicenseState.LocalCondition.NO_RECORD).display(),
+            LicenseRecoverLicenseState.localObservation(LicenseRecoverLicenseState.LocalCondition.SATISFIED,
+                    "synthetic audited local authorization conditions passed").display(),
+            LicenseRecoverLicenseState.localObservation(LicenseRecoverLicenseState.LocalCondition.NO_RECORD,
+                    "synthetic no local authorization record").display(),
+            LicenseRecoverLicenseState.localObservation(LicenseRecoverLicenseState.LocalCondition.SATISFIED_EXCEPT_MACHINE,
+                    "synthetic audited local conditions passed except machine identity").display()
         };
-        String[] names = {"Z-native", "A-entry", "B-patch", "C-invalid", "D-unknown", "E-error", "F-entry-rejected"};
+        String[] names = {"Z-native", "A-entry", "B-patch", "C-invalid", "D-unknown", "E-error", "F-entry-rejected",
+                "G-local-passed", "H-no-local-record", "I-local-passed-except-machine"};
         for (int i = 0; i < statuses.length; i++) {
             Object[] row = new Object[13];
             java.util.Arrays.fill(row, "—");
@@ -98,6 +105,15 @@ public final class LicenseRecoverBatchEvidenceTableTest {
         check(new Color(165, 45, 45).equals(color(table, 5, 2)), "read error remains red");
         check(new Color(255, 244, 214).equals(color(table, 6, 2)),
                 "audited entry rejection is amber, not native-invalid white");
+        check(acceptedGreen.equals(color(table, 7, 2)) && statuses[1].equals(statuses[7])
+                        && !LicenseRecoverLicenseState.selectedByDefault(statuses[7]),
+                "passed local conditions use the common green status and stay clear of bulk recovery by default");
+        check(Color.WHITE.equals(color(table, 8, 2)) && !statuses[3].equals(statuses[8])
+                        && LicenseRecoverLicenseState.selectedByDefault(statuses[8]),
+                "no local record displays white with a distinct label and remains selected by default");
+        check(acceptedGreen.equals(color(table, 9, 2)) && statuses[9].contains("机器标识未匹配")
+                        && !LicenseRecoverLicenseState.selectedByDefault(statuses[9]),
+                "audited local pass except machine identity uses green and displays the mismatch");
         check(acceptedGreen.equals(color(table, 1, 0)), "checkbox uses the sorted row's evidence color");
         int acceptedViewRow = table.convertRowIndexToView(1);
         table.setRowSelectionInterval(acceptedViewRow, acceptedViewRow);
@@ -106,7 +122,7 @@ public final class LicenseRecoverBatchEvidenceTableTest {
         check(cell.x < 250, "authorization state starts inside the first viewport");
         String tooltip = table.getToolTipText(new MouseEvent(table, MouseEvent.MOUSE_MOVED,
                 System.currentTimeMillis(), 0, cell.x + 2, cell.y + 2, 0, false));
-        check(tooltip.contains("当前只读证据确认授权可用")
+        check(tooltip.contains("按当前只读证据归为授权可用")
                         && tooltip.contains("synthetic-current-evidence-1")&&tooltip.contains("synthetic-code-evidence-1"),
                 "sorted acceptance tooltip must include precise scope and current detection reason");
         if (args.length == 1) {

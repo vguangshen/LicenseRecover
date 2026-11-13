@@ -88,9 +88,11 @@ public final class LicenseRecoverModernGUI {
             String reason = String.valueOf(getModel().getValueAt(modelRow, BATCH_COL_VERIFY));
             String meaning;
             if (visual == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE)
-                meaning = "当前只读证据确认授权可用";
+                meaning = "按当前只读证据归为授权可用";
             else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID)
                 meaning = "独立原生校验明确返回授权无效";
+            else if (visual == LicenseRecoverLicenseState.VisualStatus.NO_LOCAL_RECORD)
+                meaning = "未发现本地授权记录，其他授权方式待核";
             else if (visual == LicenseRecoverLicenseState.VisualStatus.AUTHORIZATION_REJECTED)
                 meaning = "已审核当前授权入口的完整拒绝条件，已排除该分支的接受后备；这是独立判定，没有执行厂商代码";
             else if (visual == LicenseRecoverLicenseState.VisualStatus.SCAN_ERROR)
@@ -496,7 +498,7 @@ public final class LicenseRecoverModernGUI {
         });
         JPanel results = new JPanel(new BorderLayout(0, 5));
         results.add(new JScrollPane(batchTable), BorderLayout.CENTER);
-        JLabel legend = new JLabel("绿色=授权可用   白色=原生无效   琥珀=入口拒绝   灰色=未验证   红色=检测错误");
+        JLabel legend = new JLabel("绿色=授权可用   白色=原生无效或无本地授权记录   琥珀=入口拒绝   灰色=未验证   红色=检测错误");
         legend.setFont(legend.getFont().deriveFont(11f));
         legend.setBorder(new EmptyBorder(3, 7, 3, 7));
         results.add(legend, BorderLayout.SOUTH);
@@ -520,7 +522,8 @@ public final class LicenseRecoverModernGUI {
         if (visual == LicenseRecoverLicenseState.VisualStatus.VERIFIED_USABLE) {
             background = new Color(205, 239, 210);
             foreground = new Color(20, 75, 37);
-        } else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID) {
+        } else if (visual == LicenseRecoverLicenseState.VisualStatus.NATIVE_INVALID
+                || visual == LicenseRecoverLicenseState.VisualStatus.NO_LOCAL_RECORD) {
             background = Color.WHITE;
             foreground = Color.BLACK;
         } else if (visual == LicenseRecoverLicenseState.VisualStatus.AUTHORIZATION_REJECTED) {
@@ -530,8 +533,6 @@ public final class LicenseRecoverModernGUI {
             background = new Color(165, 45, 45);
             foreground = Color.WHITE;
         } else {
-            // UNVERIFIED: a neutral light gray, distinct from the white
-            // background reserved for a verified invalid native license.
             background = new Color(241, 243, 246);
             foreground = new Color(55, 65, 81);
         }

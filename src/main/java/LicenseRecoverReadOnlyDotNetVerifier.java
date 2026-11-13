@@ -123,8 +123,6 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
                     +(cpu!=null&&!cpu.complete?"；"+cpu.reason:""));
             if(!(info.get("RegID") instanceof String)||!((String)info.get("RegID")).matches("[\\x20-\\x7e]{1,256}"))
                 return local(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,"授权载荷机器字段类型尚未匹配审核结构；未判机器不匹配");
-            if(!machine.equals(info.get("RegID")))
-                return local(LicenseRecoverLicenseState.LocalCondition.MACHINE_MISMATCH,"本地载荷与当前独立本机身份未匹配；其他授权方式未判断");
             LocalDate end=endDate(info.get("EndDate"),zone);
             if(end.isBefore(now.atZone(zone).toLocalDate()))return local(LicenseRecoverLicenseState.LocalCondition.EXPIRED,"本地正向日期条件未满足；其他授权方式未判断");
             // Finite counters mutate during target verification. They require a separate audit.
@@ -134,6 +132,9 @@ public final class LicenseRecoverReadOnlyDotNetVerifier {
                 return local(LicenseRecoverLicenseState.LocalCondition.UNSUPPORTED,"授权产品字段格式尚未匹配审核结构；未判当前产品缺失");
             if(!((String)reg).toLowerCase(Locale.ROOT).contains(version.toLowerCase(Locale.ROOT)))
                 return local(LicenseRecoverLicenseState.LocalCondition.PRODUCT_MISMATCH,"本地载荷未覆盖网站当前模式；兼容/父版本路径未判断");
+            if(!machine.equals(info.get("RegID")))
+                return local(LicenseRecoverLicenseState.LocalCondition.SATISFIED_EXCEPT_MACHINE,
+                        "本地载荷的产品、期限、无限计次及当前模式匹配；本次扫描的机器标识未匹配，整体入口与其他授权方式仍待核");
             if(!localFirst)return local(LicenseRecoverLicenseState.LocalCondition.SATISFIED,
                     "现代本地载荷的产品、本机、日期、无限计次及当前模式条件匹配；当前分派非已审核的本地优先路径，先行联网/硬件狗及整体入口仍待核；未执行厂商代码");
             return LicenseRecoverLicenseState.authorizationAcceptance(

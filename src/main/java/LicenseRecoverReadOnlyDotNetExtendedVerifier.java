@@ -21,7 +21,7 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
     private LicenseRecoverReadOnlyDotNetExtendedVerifier() { }
     private static final int MAX_CONFIG=4*1024*1024, MAX_BINARY=128*1024*1024;
     public enum LocalStatus {
-        NOT_APPLICABLE, NO_LOCAL_RECORD, LEGACY_MACHINE_MISMATCH, LEGACY_EXPIRED,
+        NOT_APPLICABLE, NO_LOCAL_RECORD, LEGACY_MACHINE_MISMATCH, FIXED_FIELDS_MATCH_EXCEPT_MACHINE, LEGACY_EXPIRED,
         LEGACY_LOCAL_CONDITIONS_MATCHED, LEGACY_FORMAT_UNSUPPORTED, MODERN_RECORD_CANDIDATE, IDENTITY_UNAVAILABLE,
         UPPER_JSON_FORMAT_MISMATCH_LOWER_VM_PENDING, LOWER_VM_PENDING, INPUT_CHANGED, INSPECTION_ERROR
     }
@@ -157,7 +157,8 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
                     "旧格式本地记录存在，但独立本机身份不可用；网络/硬件狗尚未核验",dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","IDENTITY_UNAVAILABLE");
             String current=LicenseRecoverReadOnlyMachineIdentity.defaultDotNetId(identity);
             if(current==null)return result(true,LocalStatus.IDENTITY_UNAVAILABLE,"本机身份规范不属于本次审核范围",dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","IDENTITY_UNAVAILABLE");
-            if(!plain.substring(6,22).equals(current))return result(true,LocalStatus.LEGACY_MACHINE_MISMATCH,
+            boolean machineMatches=plain.substring(6,22).equals(current);
+            if(legacy&&!machineMatches)return result(true,LocalStatus.LEGACY_MACHINE_MISMATCH,
                     "当前本地记录的机器字段与本次扫描进程取得的标识不匹配；这不是站点运行身份或缓存的观测，其他注册组件、组合来源、硬件狗及联网仍可能接受",
                     dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","MACHINE_MISMATCH");
             LocalDate end;
@@ -169,8 +170,11 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
                     dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","LOCAL_DATE_REJECTED");
             if(format==LicenseRecoverReadOnlyDotNetCatalog.LocalFormat.RECOVERED_FIXED_FIELDS&&!fixedRecordFields(plain))
                 return result(true,LocalStatus.LEGACY_FORMAT_UNSUPPORTED,
-                        "机器和期限字段匹配，但后续固定记录的日期/整数字段无法按恢复规则转换；未调用原生写回或判断整个入口",
+                        "期限条件通过，但固定记录的附加日期或整数字段无法按审核规则转换；整体入口仍待核",
                         dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","FIXED_FIELD_CONVERSION_UNSUPPORTED");
+            if(!machineMatches)return result(true,LocalStatus.FIXED_FIELDS_MATCH_EXCEPT_MACHINE,
+                    "本地期限通过且固定位置字段可按已审核规则转换；扫描机器标识未匹配，当前网站模式及整体入口仍待核",
+                    dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","FIXED_FIELDS_MATCH_EXCEPT_MACHINE");
             return result(true,LocalStatus.LEGACY_LOCAL_CONDITIONS_MATCHED,
                     "小写本地机器与日期条件匹配；后续 RegInfo 构造和网站模式条件仍需完整证明，不能据此提升为授权检查通过",
                     dispatch,"JSON_PROTOCOL_NOT_ESTABLISHED","MACHINE_AND_DATE_MATCHED_WEBSITE_PENDING");
@@ -211,6 +215,7 @@ public final class LicenseRecoverReadOnlyDotNetExtendedVerifier {
         switch(status) {
             case NO_LOCAL_RECORD:return LicenseRecoverLicenseState.LocalCondition.NO_RECORD;
             case LEGACY_MACHINE_MISMATCH:return LicenseRecoverLicenseState.LocalCondition.MACHINE_MISMATCH;
+            case FIXED_FIELDS_MATCH_EXCEPT_MACHINE:return LicenseRecoverLicenseState.LocalCondition.SATISFIED_EXCEPT_MACHINE;
             case LEGACY_EXPIRED:return LicenseRecoverLicenseState.LocalCondition.EXPIRED;
             case LEGACY_LOCAL_CONDITIONS_MATCHED:return LicenseRecoverLicenseState.LocalCondition.SATISFIED;
             case LEGACY_FORMAT_UNSUPPORTED:return LicenseRecoverLicenseState.LocalCondition.MALFORMED;
