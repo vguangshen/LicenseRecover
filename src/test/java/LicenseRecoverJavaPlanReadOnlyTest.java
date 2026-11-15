@@ -80,6 +80,7 @@ public final class LicenseRecoverJavaPlanReadOnlyTest {
             check(refresh.contains("LicenseRecoverModernGUIJavaPlan.inspectReadOnly(selected)")
                     && !refresh.contains("LicenseRecoverModernGUIJavaPlan.inspect("), "passive modern preview cannot invoke recovery probe");
             resourceBoundaries(temp.resolve("boundaries"));
+            ptSeriesDiagnostics(temp.resolve("pt-series"));
             check(!Files.exists(sentinel), "resource-boundary discovery must not execute target code");
             System.out.println("PASS: read-only Java planning skips target execution; config/class/JAR bounds, early-token revocation and fallbacks verified; legacy probe positive control passed");
         } finally {
@@ -165,6 +166,28 @@ public final class LicenseRecoverJavaPlanReadOnlyTest {
                 new int[]{CLASS_LIMIT + 1}, new String[]{"Virbox"});
         check(!LicenseRecoverModernGUIJavaPlan.isVirboxPackedJar(packed.toFile()),
                 "packed-class discovery cannot retain an over-limit early marker");
+    }
+
+    private static void ptSeriesDiagnostics(Path root) throws Exception {
+        Path data = root.resolve("data");
+        Files.createDirectories(data);
+        Path config = data.resolve("config.xml");
+        Files.write(config, ("<ROOT><SoftVersionID>PT0405</SoftVersionID>"
+                + "<System id='PT0402'/><System id=\"PT0403\"/></ROOT>")
+                .getBytes(StandardCharsets.UTF_8));
+        String missing = LicenseRecoverModernGUIJavaPlan.ptSeriesBlockedReason(config.toFile(), "PT0405");
+        check(missing != null && missing.contains("PT0402") && missing.contains("PT0403")
+                && missing.contains("不包含当前版本"), "PT modules must not be mistaken for PT0405 authorization mapping");
+        check(LicenseRecoverModernGUIJavaPlan.ptSeriesBlockedReason(config.toFile(), "DS50101") == null,
+                "PT-series diagnostics must not alter unrelated Java families");
+        Files.write(config, ("<System id='PT0406'/><System id='PT0407'/>").getBytes(StandardCharsets.UTF_8));
+        String future = LicenseRecoverModernGUIJavaPlan.ptSeriesBlockedReason(config.toFile(), "PT0406");
+        check(future != null && future.contains("包含当前版本") && future.contains("只读待核"),
+                "future PT versions must be diagnosed without hard-coded product mappings");
+        paddedFile(config, "<System id='PT0406'/>", CONFIG_LIMIT + 1L);
+        String overLimit = LicenseRecoverModernGUIJavaPlan.ptSeriesBlockedReason(config.toFile(), "PT0406");
+        check(overLimit != null && overLimit.contains("无法完整读取") && !overLimit.contains("包含当前版本"),
+                "oversized PT configs must not retain partial module evidence");
     }
 
     private static boolean classContains(Path file) throws Exception {
