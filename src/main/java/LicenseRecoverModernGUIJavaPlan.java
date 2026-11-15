@@ -25,6 +25,8 @@ import java.util.regex.Pattern;
 public final class LicenseRecoverModernGUIJavaPlan {
     private static final int MAX_CLASS_BYTES = 16 * 1024 * 1024;
     private static final Pattern XML_ELEMENT_TEMPLATE = Pattern.compile("a");
+    private static final Pattern PT_MODULE_ID = Pattern.compile(
+            "(?i)<System\\b[^>]*\\bid\\s*=\\s*['\"](PT\\d{4,6})['\"]");
 
     public final boolean detected;
     public final File appRoot;
@@ -120,9 +122,10 @@ public final class LicenseRecoverModernGUIJavaPlan {
             else if (upper.startsWith("YX0305")) generation = "YX0305 / classes-config";
             else generation = "通用 / classes-config";
         } else if (dataConfig.isFile()) {
-            generation = "DS2406".equals(upper)
-                    ? "DS24 / data-config"
-                    : (upper.matches("DS28\\d{2}") ? "DS28 / data-config" : "YT/兼容根配置 / data-config");
+            if ("DS2406".equals(upper)) generation = "DS24 / data-config";
+            else if (upper.matches("PT\\d{4,6}")) generation = "PT系列 / data-config";
+            else if (upper.matches("DS28\\d{2}")) generation = "DS28 / data-config";
+            else generation = "YT/兼容根配置 / data-config";
         } else if (relative(root, lib).toLowerCase(Locale.ROOT)
                 .contains("web-inf" + File.separator + "web-inf")) {
             generation = "经典 Java / nested WEB-INF";
@@ -208,7 +211,9 @@ public final class LicenseRecoverModernGUIJavaPlan {
             readiness = "目标软件目录未找到 SoftVersionID";
         } else if (requiresDirectoryMapping && directoryMapping == null) {
             ready = false;
-            readiness = "目标软件自带注册分派类，但未解析出注册ID映射";
+            String ptEvidence = ptSeriesBlockedReason(dataConfig, soft);
+            readiness = ptEvidence == null
+                    ? "目标软件自带注册分派类，但未解析出注册ID映射" : ptEvidence;
         } else if (!directoryIdentity) {
             ready = false;
             readiness = "注册ID仅能由旧兼容规则推测，缺少目标目录二进制/配置证据";
@@ -294,6 +299,40 @@ public final class LicenseRecoverModernGUIJavaPlan {
         out.append("[java-plan] native request=")
                 .append(nativeRequestReady ? "READY" : "BLOCKED").append('\n');
         return out.toString();
+    }
+
+    /**
+     * Read-only, version-agnostic PT-series diagnostics. A System id is only a
+     * module declaration; it never proves the RegisterMain product or a RegStr.
+     * Keep automatic recovery blocked unless the normal target-owned evidence
+     * independently confirms that mapping.
+     */
+    static String ptSeriesBlockedReason(File dataConfig, String softId) {
+        if (blank(softId) || !softId.trim().toUpperCase(Locale.ROOT).matches("PT\\d{4,6}"))
+            return null;
+        String version = softId.trim().toUpperCase(Locale.ROOT);
+        String prefix = "PT系列 " + version + "：目标注册分派类未提供可验证的注册ID映射";
+        if (dataConfig == null || !dataConfig.isFile())
+            return prefix + "；未找到 data/config.xml 模块清单";
+        try {
+            Matcher match = PT_MODULE_ID.matcher(readConfigText(dataConfig));
+            java.util.LinkedHashSet<String> preview = new java.util.LinkedHashSet<String>();
+            boolean currentListed = false;
+            int moduleCount = 0;
+            while (match.find()) {
+                String module = match.group(1).toUpperCase(Locale.ROOT);
+                if (version.equals(module)) currentListed = true;
+                if (preview.size() < 8) preview.add(module);
+                moduleCount++;
+            }
+            if (moduleCount == 0) return prefix + "；配置中未列出 PT 系列模块";
+            return prefix + "；配置模块=" + preview
+                    + (moduleCount > preview.size() ? "（还有其他条目）" : "")
+                    + (currentListed ? "（包含当前版本）" : "（不包含当前版本）")
+                    + "。模块ID不是授权ID，已保持只读待核";
+        } catch (Exception ex) {
+            return prefix + "；配置无法完整读取，已保持只读待核";
+        }
     }
 
     private static String readSoftId(File root) {
