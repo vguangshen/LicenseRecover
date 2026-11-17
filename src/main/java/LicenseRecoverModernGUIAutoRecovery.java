@@ -396,12 +396,15 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         }
         if (blank(regStr))
             return Result.fail("[JAVA_MODE] 目标目录及目标 RegisterMain 均未证明可用 RegStr。", d);
-        // If the target plan proved a startup alias (for example YT00129 -> QT0420),
-        // do not replace it with or require the current SoftVersionID. Dynamic probes
-        // remain conservative and must contain the current version token.
+        // Preserve proven startup aliases (for example YT00129 -> QT0420).
+        // For PT modules, the target's own RegStr need not contain the overall
+        // SoftVersionID; for other Java generations retain the old version gate.
         if (!regStrFromPlan && !acceptsProbedJavaRegStr(regStr, version, ptFallback))
             return Result.fail("[JAVA_MODE] 动态 RegStr 未包含当前 SoftVersionID: " + version + "; RegStr=" + regStr, d);
-        if (regStrFromPlan && !blank(version) && !containsRegStrToken(regStr, version))
+        if (ptFallback)
+            log.accept("[java-mode] PT target-native RegStr=" + regStr
+                    + " (not compared to SoftVersionID=" + valueOrPending(version) + ")\n");
+        else if (regStrFromPlan && !blank(version) && !containsRegStrToken(regStr, version))
             log.accept("[java-mode] current SoftVersionID=" + version + " startup-mapped RegStr=" + regStr + "\n");
         else
             log.accept("[java-mode] current SoftVersionID=" + valueOrPending(version) + " RegStr=" + regStr + "\n");
