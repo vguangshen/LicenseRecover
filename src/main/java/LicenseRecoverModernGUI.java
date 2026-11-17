@@ -1004,11 +1004,15 @@ public final class LicenseRecoverModernGUI {
                         if (info.type == AppInfo.Type.JAVA) {
                             target = BatchTarget.javaTarget(child.getName(), info.appRoot, info.libDir);
                             LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspectReadOnly(info.appRoot);
+                            boolean ptExplicitCandidate =
+                                    LicenseRecoverModernGUIAutoRecovery.ptExplicitRecoveryCandidate(plan);
                             String verifyText = !plan.detected ? "待识别"
                                     : (plan.automaticRecoveryReady ? "未执行: RegisterMain 原生校验"
-                                    : "未执行: " + plan.recoveryReadiness);
+                                    : (ptExplicitCandidate ? "未执行: PT 备用注册ID，等待原生 ABI/RegStr 校验"
+                                    : "未执行: " + plan.recoveryReadiness));
                             String statusText = !plan.detected ? "待识别"
-                                    : (plan.automaticRecoveryReady ? "待处理" : "待确认");
+                                    : (plan.automaticRecoveryReady ? "待处理"
+                                    : (ptExplicitCandidate ? "待处理（PT待验证）" : "待确认"));
                             LicenseRecoverLicenseState licenseState =
                                     LicenseRecoverReadOnlyPatchScanner.scanApplication(info.appRoot,
                                             LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA, plan.softVersionId);
@@ -1343,7 +1347,8 @@ public final class LicenseRecoverModernGUI {
         if (target == null || target.type == BatchTarget.Type.NONE) return "未识别";
         if (target.type == BatchTarget.Type.JAVA) {
             LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(target.appRoot);
-            return plan.detected && (plan.automaticRecoveryReady || plan.nativeRequestReady) ? null
+            return plan.detected && (plan.automaticRecoveryReady || plan.nativeRequestReady
+                    || LicenseRecoverModernGUIAutoRecovery.ptExplicitRecoveryCandidate(plan)) ? null
                     : (plan.detected ? plan.recoveryReadiness : "Java 授权计划未识别");
         }
         LicenseRecoverModernGUIAutoRecovery.Detection d =
