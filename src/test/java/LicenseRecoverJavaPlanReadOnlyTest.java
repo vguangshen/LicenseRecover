@@ -99,6 +99,15 @@ public final class LicenseRecoverJavaPlanReadOnlyTest {
                     "explicit PT recovery must pass directory ID through the existing Java pipeline");
             check(LicenseRecoverModernGUIAutoRecovery.ptExplicitRecoveryCandidate(fallbackPlan),
                     "PT directory fallback must be eligible for native preflights without SoftVersionID cross-check");
+            check(LicenseRecoverModernGUIAutoRecovery.acceptsProbedJavaRegStr(
+                            "YT00102,PT0401", "PT0405", true),
+                    "PT native RegStr can contain module IDs without the app SoftVersionID");
+            check(!LicenseRecoverModernGUIAutoRecovery.acceptsProbedJavaRegStr(
+                            "YT00102,PT0401", "PT0405", false),
+                    "non-PT Java dynamic RegStr must retain its previous version-token check");
+            check(!LicenseRecoverModernGUIAutoRecovery.acceptsProbedJavaRegStr(
+                            "", "PT0405", true),
+                    "PT fallback must not invent RegStr when native inspection returns empty");
             check("XMT01".equals(LicenseRecoverModernGUIAutoRecovery.javaRecoveryProductId(readonly))
                     && !LicenseRecoverModernGUIAutoRecovery.ptExplicitRecoveryCandidate(readonly),
                     "existing Java products must retain verified IDs and never enter the PT fallback");
