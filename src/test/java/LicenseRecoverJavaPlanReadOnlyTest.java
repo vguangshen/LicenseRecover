@@ -76,6 +76,25 @@ public final class LicenseRecoverJavaPlanReadOnlyTest {
                     "PT series detection must stay read-only and never invent authorization");
             Files.delete(classesConfigPath);
             Files.write(dataConfigPath, configBefore);
+
+            // Fallback activates only when no target-owned registration ID is known.
+            // This fixture deliberately differs from SoftVersionID: no cross-check.
+            Path fallbackRoot = temp.resolve("PT0405");
+            Path fallbackLib = fallbackRoot.resolve("WEB-INF/lib");
+            Files.createDirectories(fallbackLib);
+            Files.copy(lib.resolve("ITMCReg.jar"), fallbackLib.resolve("ITMCReg.jar"));
+            Files.createDirectories(fallbackRoot.resolve("data"));
+            Files.write(fallbackRoot.resolve("data/config.xml"),
+                    "<ROOT><SoftVersionID>PT0406</SoftVersionID></ROOT>"
+                            .getBytes(StandardCharsets.UTF_8));
+            LicenseRecoverModernGUIJavaPlan fallbackPlan =
+                    LicenseRecoverModernGUIJavaPlan.inspectReadOnly(fallbackRoot.toFile());
+            check(fallbackPlan.detected && "PT0405".equals(fallbackPlan.directoryFallbackId),
+                    "unresolved PT registrations must expose directory-name fallback candidate");
+            check(fallbackPlan.runtimeProductId == null && !fallbackPlan.automaticRecoveryReady
+                    && fallbackPlan.recoveryReadiness.contains("备用目录候选注册ID=PT0405"),
+                    "directory fallback is an unverified candidate, not an automatic patch authorization");
+            check(!Files.exists(sentinel), "fallback inspection must not execute registration code");
             // Positive control: this exact fixture reaches the old native fallback.
             LicenseRecoverModernGUIJavaPlan compatibility = LicenseRecoverModernGUIJavaPlan.inspect(app.toFile());
             check(Files.exists(sentinel) && "XMT0106".equals(compatibility.regStr), "explicit recovery planning retains legacy probe compatibility");
@@ -199,6 +218,11 @@ public final class LicenseRecoverJavaPlanReadOnlyTest {
         check(missing != null && missing.contains("PT0402") && missing.contains("PT0403")
                 && missing.contains("不包含当前版本") && !missing.contains("还有其他条目"),
                 "PT diagnostic must ignore comments, CDATA, malformed quotes, and duplicate modules");
+        check("PT0405".equals(LicenseRecoverModernGUIJavaPlan.ptDirectoryIdFallback(
+                root.resolve("pt0405").toFile())), "PT folder fallback must be case-insensitive");
+        check(LicenseRecoverModernGUIJavaPlan.ptDirectoryIdFallback(
+                root.resolve("PT0405-backup").toFile()) == null,
+                "non-exact directory names must not become PT registration IDs");
         check(LicenseRecoverModernGUIJavaPlan.ptSeriesBlockedReason(config.toFile(), "DS50101") == null,
                 "PT-series diagnostics must not alter unrelated Java families");
         Files.write(config, ("<ROOT><System id='PT0406'/><System id='PT0407'/></ROOT>")
