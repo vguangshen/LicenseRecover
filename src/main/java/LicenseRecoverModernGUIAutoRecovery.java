@@ -384,7 +384,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                 }
                 String candidate = normalizeProductCsv(firstValue(probed.output, "TARGET_REGSTR="));
                 if (blank(candidate)) continue;
-                if (!blank(version) && !containsRegStrToken(candidate, version)) {
+                if (!acceptsProbedJavaRegStr(candidate, version, ptFallback)) {
                     log.accept("[java-stage] PROBE: RegStr missing current SoftVersionID at ctor="
                             + attempt.summary() + ": " + candidate + "\n");
                     continue;
@@ -399,7 +399,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         // If the target plan proved a startup alias (for example YT00129 -> QT0420),
         // do not replace it with or require the current SoftVersionID. Dynamic probes
         // remain conservative and must contain the current version token.
-        if (!regStrFromPlan && !blank(version) && !containsRegStrToken(regStr, version))
+        if (!regStrFromPlan && !acceptsProbedJavaRegStr(regStr, version, ptFallback))
             return Result.fail("[JAVA_MODE] 动态 RegStr 未包含当前 SoftVersionID: " + version + "; RegStr=" + regStr, d);
         if (regStrFromPlan && !blank(version) && !containsRegStrToken(regStr, version))
             log.accept("[java-mode] current SoftVersionID=" + version + " startup-mapped RegStr=" + regStr + "\n");
@@ -481,6 +481,15 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         restoreJavaRegistrationFiles(originals, log);
         if (lastFailure != null) throw lastFailure;
         throw new IOException("[JAVA_CHAIN] no runtime-derived registration constructor completed write-back + fresh verification");
+    }
+
+    /**
+     * PT deployments may authorize their selected module IDs independently of
+     * the application SoftVersionID. Reuse the target's actual RegStr without
+     * inventing a PT module token. Existing non-PT checks are unchanged.
+     */
+    static boolean acceptsProbedJavaRegStr(String regStr, String version, boolean ptRecovery) {
+        return !blank(regStr) && (ptRecovery || blank(version) || containsRegStrToken(regStr, version));
     }
 
     /**
