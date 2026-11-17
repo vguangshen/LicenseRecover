@@ -95,6 +95,21 @@ public final class LicenseRecoverJavaPlanReadOnlyTest {
                     && fallbackPlan.recoveryReadiness.contains("备用目录候选注册ID=PT0405"),
                     "directory fallback is an unverified candidate, not an automatic patch authorization");
             check(!Files.exists(sentinel), "fallback inspection must not execute registration code");
+            check("PT0405".equals(LicenseRecoverModernGUIAutoRecovery.javaRecoveryProductId(fallbackPlan)),
+                    "explicit PT recovery must pass directory ID through the existing Java pipeline");
+            check(LicenseRecoverModernGUIAutoRecovery.ptExplicitRecoveryCandidate(fallbackPlan),
+                    "PT directory fallback must be eligible for native preflights without SoftVersionID cross-check");
+            check("XMT01".equals(LicenseRecoverModernGUIAutoRecovery.javaRecoveryProductId(readonly))
+                    && !LicenseRecoverModernGUIAutoRecovery.ptExplicitRecoveryCandidate(readonly),
+                    "existing Java products must retain verified IDs and never enter the PT fallback");
+            // A name alone cannot reach native registration or modify files:
+            // this fixture has no target-proven startup constructor chain.
+            LicenseRecoverModernGUIAutoRecovery.Result unproven =
+                    LicenseRecoverModernGUIAutoRecovery.recover(fallbackRoot.toFile(), true, true, true, null);
+            check(!unproven.success && unproven.message.contains("JAVA_RUNTIME_ABI"),
+                    "PT fallback requires the target's actual Java startup ABI before proceeding");
+            check(!Files.exists(fallbackRoot.resolve("config.xml")) && !Files.exists(sentinel),
+                    "rejected PT native preflight did not write or execute a registration class");
             // Positive control: this exact fixture reaches the old native fallback.
             LicenseRecoverModernGUIJavaPlan compatibility = LicenseRecoverModernGUIJavaPlan.inspect(app.toFile());
             check(Files.exists(sentinel) && "XMT0106".equals(compatibility.regStr), "explicit recovery planning retains legacy probe compatibility");
