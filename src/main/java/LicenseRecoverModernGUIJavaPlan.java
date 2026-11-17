@@ -41,6 +41,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
     public final String authorizationFamily;
     /** Concrete id used by application startup RegisterMain.checkReInfo(). */
     public final String runtimeProductId;
+    /** Unverified PT product-ID candidate from the application directory; never authorizes write-back. */
+    public final String directoryFallbackId;
     /** Backward-compatible alias for direct-rebuild ProName. */
     public final String productName;
     public final String regStr;
@@ -57,7 +59,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
 
     private LicenseRecoverModernGUIJavaPlan(boolean detected, File appRoot, File libDir, File regJar,
                                             String softVersionId, String generation, String authorizationFamily,
-                                            String runtimeProductId, String regStr, String configTargets,
+                                            String runtimeProductId, String directoryFallbackId, String regStr, String configTargets,
                                             String verificationPlan, boolean rootConfigStyle,
                                             boolean packedRegistrationJar, boolean automaticRecoveryReady,
                                             boolean nativeRequestReady, String recoveryReadiness) {
@@ -69,6 +71,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
         this.generation = generation;
         this.authorizationFamily = authorizationFamily;
         this.runtimeProductId = runtimeProductId;
+        this.directoryFallbackId = directoryFallbackId;
         this.productName = runtimeProductId;
         this.regStr = regStr;
         this.configTargets = configTargets;
@@ -165,6 +168,10 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 : (!blank(configDrivenRuntime) ? configDrivenRuntime
                 : (!blank(binaryRuntime) ? binaryRuntime
                 : (!blank(startupRuntime) ? startupRuntime : confirmedClassesRuntime))));
+        // Directory naming is a fallback for unresolved PT identities, not license proof.
+        // It deliberately does not require or override SoftVersionID.
+        String directoryFallback = directoryMapping == null && blank(runtimeProduct)
+                ? ptDirectoryIdFallback(root) : null;
         File jar = findRegJar(lib);
         boolean packed = jar != null && isVirboxPackedJar(jar);
         String qt401PrimaryRegStr = confirmedQt401PrimaryRegStr(root, soft, family, runtimeProduct);
@@ -249,6 +256,10 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 readiness = "目标软件目录未声明 RegStr，且无法使用目标注册组件只读获取";
             }
         }
+        if (!ready && directoryFallback != null) {
+            readiness += "；备用目录候选注册ID=" + directoryFallback
+                    + "（仅根据软件目录名推定，未经过注册组件验证，不执行自动写入）";
+        }
         String libConfig = relative(root, new File(lib, "config.xml"));
         boolean projectClasspathBase = usesProjectClasspathRegistrationBase(root);
         String targets;
@@ -265,7 +276,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
         }
 
         return new LicenseRecoverModernGUIJavaPlan(true, root, lib, jar,
-                soft, generation, family, runtimeProduct, products, targets, verify, rootConfig, packed,
+                soft, generation, family, runtimeProduct, directoryFallback, products,
+                targets, verify, rootConfig, packed,
                 ready, requestReady, readiness);
     }
 
@@ -295,6 +307,10 @@ public final class LicenseRecoverModernGUIJavaPlan {
         out.append("[java-plan] SoftVersionID=").append(value(softVersionId))
                 .append(" AuthorizationFamily=").append(value(authorizationFamily))
                 .append(" RuntimeProductID/ProName=").append(value(runtimeProductId)).append('\n');
+        if (directoryFallbackId != null) {
+            out.append("[java-plan] PT directory fallback candidate=")
+                    .append(directoryFallbackId).append(" (unverified, read-only)\n");
+        }
         out.append("[java-plan] RegStr=").append(value(regStr)).append('\n');
         out.append("[java-plan] config targets=").append(configTargets).append('\n');
         out.append("[java-plan] registration jar=").append(registrationJarSummary()).append('\n');
@@ -313,6 +329,19 @@ public final class LicenseRecoverModernGUIJavaPlan {
      * Keep automatic recovery blocked unless the normal target-owned evidence
      * independently confirms that mapping.
      */
+    /**
+     * Last-resort PT ID candidate when no registration ID was decoded.
+     * A directory can be renamed, so this is never a verified mapping.
+     * Intentionally does not compare the directory name with SoftVersionID.
+     */
+    static String ptDirectoryIdFallback(File appRoot) {
+        if (appRoot == null) return null;
+        String directory = appRoot.getName();
+        if (blank(directory)) return null;
+        String normalized = directory.trim().toUpperCase(Locale.ROOT);
+        return normalized.matches("PT\\d{4,6}") ? normalized : null;
+    }
+
     static String ptSeriesBlockedReason(File config, String softId) {
         if (blank(softId) || !softId.trim().toUpperCase(Locale.ROOT).matches("PT\\d{4,6}"))
             return null;
@@ -985,7 +1014,7 @@ static String confirmedDs501FamilyRuntime(File root, String softId,
 
     private static LicenseRecoverModernGUIJavaPlan unknown() {
         return new LicenseRecoverModernGUIJavaPlan(false, null, null, null,
-                null, "—", null, null, null, "—", "—", false, false, false, false, "未识别");
+                null, "—", null, null, null, null, "—", "—", false, false, false, false, "未识别");
     }
 
     private static String readConfigText(File file) throws IOException {
