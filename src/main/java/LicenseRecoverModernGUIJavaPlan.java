@@ -26,7 +26,10 @@ public final class LicenseRecoverModernGUIJavaPlan {
     private static final int MAX_CLASS_BYTES = 16 * 1024 * 1024;
     private static final Pattern XML_ELEMENT_TEMPLATE = Pattern.compile("a");
     private static final Pattern PT_MODULE_ID = Pattern.compile(
-            "(?i)<System\\b[^>]*\\bid\\s*=\\s*['\"](PT\\d{4,6})['\"]");
+            "(?i)<System\\b[^>]*\\bid\\s*=\\s*(['\"])(PT\\d{4,6})\\1");
+    // Comments and CDATA are documentation, not active System declarations.
+    private static final Pattern XML_NON_MODULE_TEXT = Pattern.compile(
+            "(?s)<!--.*?-->|<!\\[CDATA\\[.*?\\]\\]>");
 
     public final boolean detected;
     public final File appRoot;
@@ -113,9 +116,11 @@ public final class LicenseRecoverModernGUIJavaPlan {
         String confirmedClassesFamily = confirmedClassesAuthorizationFamily(root, soft);
         String generation;
         if (newStyle) {
-            generation = "QT30xxx / data-config";
+            generation = upper.matches("PT\\d{4,6}")
+                    ? "PT系列 / data-config" : "QT30xxx / data-config";
         } else if (classesConfig.isFile()) {
-            if ("QT401".equals(confirmedClassesFamily)) generation = "QT401 / classes-config";
+            if (upper.matches("PT\\d{4,6}")) generation = "PT系列 / classes-config";
+            else if ("QT401".equals(confirmedClassesFamily)) generation = "QT401 / classes-config";
             else if ("QT100101".equals(confirmedClassesFamily)) generation = "QT1001系列 / classes-config";
             else if (upper.startsWith("XMT01")) generation = "XMT / classes-config";
             else if (upper.startsWith("DS501")) generation = "DS501 / classes-config";
@@ -211,7 +216,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
             readiness = "目标软件目录未找到 SoftVersionID";
         } else if (requiresDirectoryMapping && directoryMapping == null) {
             ready = false;
-            String ptEvidence = ptSeriesBlockedReason(dataConfig, soft);
+            String ptEvidence = ptSeriesBlockedReason(
+                    dataConfig.isFile() ? dataConfig : classesConfig, soft);
             readiness = ptEvidence == null
                     ? "目标软件自带注册分派类，但未解析出注册ID映射" : ptEvidence;
         } else if (!directoryIdentity) {
@@ -307,28 +313,29 @@ public final class LicenseRecoverModernGUIJavaPlan {
      * Keep automatic recovery blocked unless the normal target-owned evidence
      * independently confirms that mapping.
      */
-    static String ptSeriesBlockedReason(File dataConfig, String softId) {
+    static String ptSeriesBlockedReason(File config, String softId) {
         if (blank(softId) || !softId.trim().toUpperCase(Locale.ROOT).matches("PT\\d{4,6}"))
             return null;
         String version = softId.trim().toUpperCase(Locale.ROOT);
         String prefix = "PT系列 " + version + "：目标注册分派类未提供可验证的注册ID映射";
-        if (dataConfig == null || !dataConfig.isFile())
-            return prefix + "；未找到 data/config.xml 模块清单";
+        if (config == null || !config.isFile())
+            return prefix + "；未找到可用的配置模块清单";
         try {
-            Matcher match = PT_MODULE_ID.matcher(readConfigText(dataConfig));
-            java.util.LinkedHashSet<String> preview = new java.util.LinkedHashSet<String>();
-            boolean currentListed = false;
-            int moduleCount = 0;
+            String xml = readConfigText(config);
+            Matcher match = PT_MODULE_ID.matcher(XML_NON_MODULE_TEXT.matcher(xml).replaceAll(""));
+            LinkedHashSet<String> modules = new LinkedHashSet<String>();
             while (match.find()) {
-                String module = match.group(1).toUpperCase(Locale.ROOT);
-                if (version.equals(module)) currentListed = true;
-                if (preview.size() < 8) preview.add(module);
-                moduleCount++;
+                modules.add(match.group(2).toUpperCase(Locale.ROOT));
             }
-            if (moduleCount == 0) return prefix + "；配置中未列出 PT 系列模块";
+            if (modules.isEmpty()) return prefix + "；配置中未列出 PT 系列模块";
+            LinkedHashSet<String> preview = new LinkedHashSet<String>();
+            for (String module : modules) {
+                if (preview.size() >= 8) break;
+                preview.add(module);
+            }
             return prefix + "；配置模块=" + preview
-                    + (moduleCount > preview.size() ? "（还有其他条目）" : "")
-                    + (currentListed ? "（包含当前版本）" : "（不包含当前版本）")
+                    + (modules.size() > preview.size() ? "（还有其他条目）" : "")
+                    + (modules.contains(version) ? "（包含当前版本）" : "（不包含当前版本）")
                     + "。模块ID不是授权ID，已保持只读待核";
         } catch (Exception ex) {
             return prefix + "；配置无法完整读取，已保持只读待核";
