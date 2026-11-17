@@ -3,7 +3,7 @@ name: Publish LicenseRecover v1.2.75 from verified artifact
 on:
   push:
     branches:
-      - release/publish-v1.2.75-20261114
+      - release/publish-v1.2.75-20261117
     paths:
       - .github/workflows/publish-v1.2.75.yml
 
@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = "vguangshen/LicenseRecover"
-          test "$GITHUB_REF" = "refs/heads/release/publish-v1.2.75-20261114"
+          test "$GITHUB_REF" = "refs/heads/release/publish-v1.2.75-20261117"
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test "$(tr -d '\r\n[:space:]' < VERSION.txt)" = "1.2.75"
           test -s release-notes/v1.2.75.md
