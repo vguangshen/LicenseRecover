@@ -41,7 +41,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
     public final String authorizationFamily;
     /** Concrete id used by application startup RegisterMain.checkReInfo(). */
     public final String runtimeProductId;
-    /** Unverified PT product-ID candidate from the application directory; never authorizes write-back. */
+    /** PT directory-name backup candidate; explicit recovery still requires native ABI and RegStr checks. */
     public final String directoryFallbackId;
     /** Backward-compatible alias for direct-rebuild ProName. */
     public final String productName;
@@ -258,7 +258,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
         }
         if (!ready && directoryFallback != null) {
             readiness += "；备用目录候选注册ID=" + directoryFallback
-                    + "（仅根据软件目录名推定，未经过注册组件验证，不执行自动写入）";
+                    + "（目录名备用，显式恢复仍需通过原生构造器和 RegStr 检查）";
         }
         String libConfig = relative(root, new File(lib, "config.xml"));
         boolean projectClasspathBase = usesProjectClasspathRegistrationBase(root);
@@ -309,7 +309,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 .append(" RuntimeProductID/ProName=").append(value(runtimeProductId)).append('\n');
         if (directoryFallbackId != null) {
             out.append("[java-plan] PT directory fallback candidate=")
-                    .append(directoryFallbackId).append(" (unverified, read-only)\n");
+                    .append(directoryFallbackId).append(" (candidate; native preflight required)\n");
         }
         out.append("[java-plan] RegStr=").append(value(regStr)).append('\n');
         out.append("[java-plan] config targets=").append(configTargets).append('\n');
