@@ -1,6 +1,6 @@
 ## Unreleased - 2026-11-25
 
-- Restore the original Java Way 3 behavior from before PR #71. The QT100 one-click repair is independent from Way 3.
+- Restore legacy Java Way 3 target resolution and normal patch behavior from before PR #71, while retaining the essential --dry-run no-write guard. The QT100 one-click repair is independent from Way 3.
 - For other QT1001xx applications, use target-owned matching YAML/XML IDs, enumerated module entries and three relevant startup class references to confirm their concrete runtime identity. Preserve native runtime, RegStr and write-back verification gates.
 - Share the Java one-click eligibility check across single recovery and batch preflight; test QT100111 positive and missing/mismatched evidence with synthetic files only.
 

@@ -722,7 +722,8 @@ public class LicenseRecover {
     static int removeNetMode(String[] args, boolean doPatch) {
         String appArg = null;
         for (int i = 0; i < args.length; i++) {
-            if ("--remove-net".equals(args[i]) || "--scan-net".equals(args[i])) continue;
+            // Preserve the legacy Way 3 target resolver, but never treat preview as a writable operation.
+            if ("--remove-net".equals(args[i]) || "--scan-net".equals(args[i]) || "--dry-run".equals(args[i])) continue;
             if ("-p".equals(args[i]) || "--seq".equals(args[i]) || "--product".equals(args[i])) {
                 if (i + 1 < args.length) i++;   // 跳过选项及其值
                 continue;
@@ -747,6 +748,11 @@ public class LicenseRecover {
         System.out.println("======================================================");
         System.out.println("应用根目录 : " + appRoot);
         System.out.println();
+        if (hasArg(args, "--dry-run")) {
+            boolean found = NetRemover.scan(appRoot, s -> System.out.println(s));
+            System.out.println("DRY-RUN: 仅只读扫描，未写入授权文件。");
+            return found ? 0 : 1;
+        }
         if (doPatch) {
             boolean ok = NetRemover.removeNetValidation(appRoot, s -> System.out.println(s));
             System.out.println();
