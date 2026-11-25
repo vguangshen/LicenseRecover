@@ -316,9 +316,9 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (plan.detected) log.accept(plan.logSummary());
         if (!plan.detected)
             return Result.fail("[JAVA_PLAN] 自动恢复已阻止：未识别 Java 注册结构。未修改任何文件。", d);
-        // Explicit PT recovery can use the installation directory as the product
-        // only when the original static resolution found no registration ID.
-        // The directory never establishes RegStr or authorizes a write by itself.
+        // Explicit PT recovery prefers target-owned product/RegStr values. The
+        // installation directory supplies the product when unresolved and, only
+        // after RegStr reads fail, the requested last-resort RegStr value.
         boolean ptFallback = ptExplicitRecoveryCandidate(plan);
         if (!javaOneClickEligible(plan))
             return Result.fail("[JAVA_PLAN] 自动恢复已阻止：" + plan.recoveryReadiness + "。未修改任何文件。", d);
@@ -336,7 +336,8 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (ptFallback) {
             log.accept("[java-chain] PT 显式恢复候选: "
                     + (blank(plan.runtimeProductId) ? "目录名备用注册ID=" : "目标配置注册ID=")
-                    + product + "；将继续检查目标构造器和 RegStr，不与 SoftVersionID 交叉校验。\n");
+                    + product + "；优先读取目标 RegStr，读不到时使用 PT 目录名保底；"
+                    + "不与 SoftVersionID 交叉校验。\n");
         }
         log.accept("[java-chain] target-native isolated helper; product=" + product
                 + " version=" + valueOrPending(version) + " runtime=" + runtimeProfile.evidence + "\n");
@@ -372,6 +373,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
 
         String regStr = normalizeProductCsv(plan.regStr);
         boolean regStrFromPlan = !blank(regStr);
+        String regStrSource = regStrFromPlan ? "target-plan" : null;
         if (blank(regStr)) {
             for (JavaRegistrationRuntimeProfile.Attempt attempt : attempts) {
                 log.accept("[java-stage] PROBE: start ctor=" + attempt.summary() + "\n");
@@ -383,15 +385,27 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                     continue;
                 }
                 String candidate = normalizeProductCsv(firstValue(probed.output, "TARGET_REGSTR="));
-                if (blank(candidate)) continue;
+                if (blank(candidate)) {
+                    log.accept("[java-stage] PROBE: no RegStr at ctor=" + attempt.summary() + "\n");
+                    continue;
+                }
                 if (!acceptsProbedJavaRegStr(candidate, version, ptFallback)) {
                     log.accept("[java-stage] PROBE: RegStr missing current SoftVersionID at ctor="
                             + attempt.summary() + ": " + candidate + "\n");
                     continue;
                 }
                 regStr = candidate;
+                regStrSource = "target-native";
                 log.accept("[java-stage] PROBE: OK RegStr=" + regStr + "\n");
                 break;
+            }
+        }
+        if (blank(regStr)) {
+            regStr = ptDirectoryRegStrFallback(plan);
+            if (!blank(regStr)) {
+                regStrSource = "pt-directory-fallback";
+                log.accept("[java-stage] REGSTR_FALLBACK: 目标配置和注册组件未读出 RegStr；"
+                        + "使用 PT 目录名=" + regStr + "，继续原生恢复流程。\n");
             }
         }
         if (blank(regStr))
@@ -402,7 +416,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (!regStrFromPlan && !acceptsProbedJavaRegStr(regStr, version, ptFallback))
             return Result.fail("[JAVA_MODE] 动态 RegStr 未包含当前 SoftVersionID: " + version + "; RegStr=" + regStr, d);
         if (ptFallback)
-            log.accept("[java-mode] PT target-native RegStr=" + regStr
+            log.accept("[java-mode] PT RegStr=" + regStr + " source=" + regStrSource
                     + " (not compared to SoftVersionID=" + valueOrPending(version) + ")\n");
         else if (regStrFromPlan && !blank(version) && !containsRegStrToken(regStr, version))
             log.accept("[java-mode] current SoftVersionID=" + version + " startup-mapped RegStr=" + regStr + "\n");
@@ -514,8 +528,19 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     }
 
     /**
+     * Explicit PT recovery's last resort after configuration and native RegStr
+     * reads have failed. Keep this out of passive planning: it is a requested
+     * compatibility value, not evidence of an existing registration record.
+     */
+    static String ptDirectoryRegStrFallback(LicenseRecoverModernGUIJavaPlan plan) {
+        if (!ptExplicitRecoveryCandidate(plan)) return null;
+        return LicenseRecoverModernGUIJavaPlan.ptDirectoryIdFallback(plan.appRoot);
+    }
+
+    /**
      * Allow an explicitly requested PT action to reach the existing Java ABI
-     * and native RegStr preflights. Those checks must pass before any writes.
+     * and native RegStr reads. An empty/unreadable RegStr can then use the PT
+     * directory fallback; the ABI and fresh write-back verification still apply.
      * Normal/backup IDs are intentionally not compared to SoftVersionID.
      */
     static boolean ptExplicitRecoveryCandidate(LicenseRecoverModernGUIJavaPlan plan) {

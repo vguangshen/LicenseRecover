@@ -184,14 +184,16 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
             generation.setText(plan.generation);
             family.setText(value(plan.authorizationFamily));
             runtime.setText(plan.runtimeProductDisplay());
-            regStr.setText(value(plan.regStr)); regStr.setCaretPosition(0);
+            regStr.setText(plan.regStr == null ? plan.regStrSummary() : plan.regStr); regStr.setCaretPosition(0);
             targets.setText(plan.configTargets); targets.setCaretPosition(0);
             jar.setText(plan.registrationJarSummary());
             verify.setText(plan.automaticRecoveryReady
                     ? "待执行: " + plan.verificationPlan
                     : (plan.nativeRequestReady
                     ? "可执行: 目标原生申请号生成（只读，不写入）"
-                    : "禁止自动写入: " + plan.recoveryReadiness));
+                    : (LicenseRecoverModernGUIAutoRecovery.ptExplicitRecoveryCandidate(plan)
+                    ? "待执行: PT 恢复，原生写回后校验"
+                    : "禁止自动写入: " + plan.recoveryReadiness)));
         } else if (detection.isDetected()) {
             generation.setText(detection.kind.toString());
             family.setText(value(detection.productName));
