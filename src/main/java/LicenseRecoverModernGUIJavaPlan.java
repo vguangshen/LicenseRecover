@@ -281,6 +281,24 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 ready, requestReady, readiness);
     }
 
+    /** Display-only fallback for any detected Java application. Never used for execution. */
+    public String directoryDiagnosticId() {
+        if (!detected || !blank(runtimeProductId) || appRoot == null) return null;
+        String name = appRoot.getName();
+        if (blank(name)) return null;
+        for (int i = 0; i < name.length(); i++) {
+            if (Character.isISOControl(name.charAt(i))) return null;
+        }
+        return name;
+    }
+
+    /** Keep target-owned registration identities distinct from directory labels. */
+    public String runtimeProductDisplay() {
+        if (!blank(runtimeProductId)) return runtimeProductId;
+        String candidate = directoryDiagnosticId();
+        return candidate == null ? "—" : candidate + "（目录名候选，未验证）";
+    }
+
     public String regStrSummary() {
         if (blank(regStr)) return automaticRecoveryReady ? "目标组件动态读取" : "未静态声明";
         String[] parts = regStr.split(",");
@@ -310,6 +328,10 @@ public final class LicenseRecoverModernGUIJavaPlan {
         if (directoryFallbackId != null) {
             out.append("[java-plan] PT directory fallback candidate=")
                     .append(directoryFallbackId).append(" (candidate; native preflight required)\n");
+        }
+        if (directoryDiagnosticId() != null) {
+            out.append("[java-plan] directory diagnostic ID=")
+                    .append(directoryDiagnosticId()).append(" (display only; unverified)\n");
         }
         out.append("[java-plan] RegStr=").append(value(regStr)).append('\n');
         out.append("[java-plan] config targets=").append(configTargets).append('\n');

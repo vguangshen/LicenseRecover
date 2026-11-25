@@ -95,6 +95,31 @@ public final class LicenseRecoverJavaPlanReadOnlyTest {
                     && fallbackPlan.recoveryReadiness.contains("备用目录候选注册ID=PT0405"),
                     "directory fallback is an unverified candidate, not an automatic patch authorization");
             check(!Files.exists(sentinel), "fallback inspection must not execute registration code");
+            check("PT0405".equals(fallbackPlan.directoryDiagnosticId())
+                    && fallbackPlan.runtimeProductDisplay().contains("未验证"),
+                    "PT directory label must be visibly unverified");
+            check(readonly.directoryDiagnosticId() == null
+                    && "XMT01".equals(readonly.runtimeProductDisplay()),
+                    "verified runtime identity always wins over directory display");
+            Path genericRoot = temp.resolve("Custom-Java-App");
+            Path genericLib = genericRoot.resolve("WEB-INF/lib");
+            Files.createDirectories(genericLib);
+            Files.copy(lib.resolve("ITMCReg.jar"), genericLib.resolve("ITMCReg.jar"));
+            Files.createDirectories(genericRoot.resolve("data"));
+            Files.write(genericRoot.resolve("data/config.xml"),
+                    "<ROOT><SoftVersionID>UNKNOWN01</SoftVersionID></ROOT>"
+                            .getBytes(StandardCharsets.UTF_8));
+            LicenseRecoverModernGUIJavaPlan generic =
+                    LicenseRecoverModernGUIJavaPlan.inspectReadOnly(genericRoot.toFile());
+            check(generic.detected && "Custom-Java-App".equals(generic.directoryDiagnosticId())
+                    && generic.runtimeProductDisplay().contains("未验证"),
+                    "non-PT application receives its exact root directory name for display");
+            check(generic.runtimeProductId == null && generic.directoryFallbackId == null
+                    && !generic.automaticRecoveryReady
+                    && LicenseRecoverModernGUIAutoRecovery.javaRecoveryProductId(generic) == null,
+                    "diagnostic fallback must never supply an execution ID or authorize recovery");
+            check(generic.logSummary().contains("directory diagnostic ID=Custom-Java-App")
+                    && !Files.exists(sentinel), "diagnostic logging remains read-only");
             check("PT0405".equals(LicenseRecoverModernGUIAutoRecovery.javaRecoveryProductId(fallbackPlan)),
                     "explicit PT recovery must pass directory ID through the existing Java pipeline");
             check(LicenseRecoverModernGUIAutoRecovery.ptExplicitRecoveryCandidate(fallbackPlan),
@@ -132,12 +157,14 @@ public final class LicenseRecoverJavaPlanReadOnlyTest {
             String batch = gui.substring(start, end);
             check(batch.contains("LicenseRecoverModernGUIJavaPlan.inspectReadOnly(info.appRoot)")
                     && !batch.contains("LicenseRecoverModernGUIJavaPlan.inspect("), "GUI batch must use read-only plan entrypoint");
+            check(batch.contains("plan.runtimeProductDisplay()"), "batch shows the unverified directory fallback");
             String preview = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIUiPatchLauncher.java")), StandardCharsets.UTF_8);
             int previewStart = preview.indexOf("private static void refreshPlan(");
             int previewEnd = preview.indexOf("private static String value(", previewStart);
             String refresh = preview.substring(previewStart, previewEnd);
             check(refresh.contains("LicenseRecoverModernGUIJavaPlan.inspectReadOnly(selected)")
                     && !refresh.contains("LicenseRecoverModernGUIJavaPlan.inspect("), "passive modern preview cannot invoke recovery probe");
+            check(refresh.contains("plan.runtimeProductDisplay()"), "single-app preview shows the same fallback");
             resourceBoundaries(temp.resolve("boundaries"));
             ptSeriesDiagnostics(temp.resolve("pt-series"));
             check(!Files.exists(sentinel), "resource-boundary discovery must not execute target code");
