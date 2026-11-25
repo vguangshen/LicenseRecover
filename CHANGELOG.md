@@ -1,3 +1,9 @@
+## 1.2.76 - 2026-11-25
+
+- Display the application root directory name as an unverified diagnostic fallback for any detected Java application without a confirmed runtime product ID. Single and batch previews use the same formatter; executable registration identities and authorization checks are unchanged.
+- Prevent incomplete or changed read-only artifact observations from being promoted to an accepted state by subsequent predicates.
+- Add synthetic regression coverage for fallback display, internal-ID precedence, read-only behavior and incomplete artifact evidence.
+
 ## 1.2.75 - 2026-11-17
 
 - Extend the existing Java registration recovery pipeline to PT-series applications. Prefer the target-derived product ID; when missing, use a PT[0-9]{4,6} application directory name only as an explicit-recovery fallback, without cross-checking SoftVersionID.
