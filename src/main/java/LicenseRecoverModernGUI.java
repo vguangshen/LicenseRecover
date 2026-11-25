@@ -1347,8 +1347,7 @@ public final class LicenseRecoverModernGUI {
         if (target == null || target.type == BatchTarget.Type.NONE) return "未识别";
         if (target.type == BatchTarget.Type.JAVA) {
             LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspect(target.appRoot);
-            return plan.detected && (plan.automaticRecoveryReady || plan.nativeRequestReady
-                    || LicenseRecoverModernGUIAutoRecovery.ptExplicitRecoveryCandidate(plan)) ? null
+            return LicenseRecoverModernGUIAutoRecovery.javaOneClickEligible(plan) ? null
                     : (plan.detected ? plan.recoveryReadiness : "Java 授权计划未识别");
         }
         LicenseRecoverModernGUIAutoRecovery.Detection d =

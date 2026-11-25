@@ -124,7 +124,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
         } else if (classesConfig.isFile()) {
             if (upper.matches("PT\\d{4,6}")) generation = "PT系列 / classes-config";
             else if ("QT401".equals(confirmedClassesFamily)) generation = "QT401 / classes-config";
-            else if ("QT100101".equals(confirmedClassesFamily)) generation = "QT1001系列 / classes-config";
+            else if (confirmedClassesFamily != null
+                    && confirmedClassesFamily.matches("(?i)QT100\\d{3}")) generation = "QT1001系列 / classes-config";
             else if (upper.startsWith("XMT01")) generation = "XMT / classes-config";
             else if (upper.startsWith("DS501")) generation = "DS501 / classes-config";
             else if (upper.startsWith("YX0305")) generation = "YX0305 / classes-config";
@@ -161,7 +162,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
         String startupRuntime = blank(binaryRuntime) && blank(configDrivenRuntime)
                 ? confirmedStartupRuntimeProduct(root, lib, soft, family) : null;
         String confirmedClassesRuntime = ("QT401".equalsIgnoreCase(confirmedClassesFamily)
-                || "QT100101".equalsIgnoreCase(confirmedClassesFamily))
+                || (confirmedClassesFamily != null
+                    && confirmedClassesFamily.matches("(?i)QT100\\d{3}")))
                 ? confirmedClassesFamily : null;
         String runtimeProduct = directoryMapping != null ? directoryMapping.productMain
                 : (directDataIdentity ? soft.trim()
@@ -427,6 +429,14 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 + File.separator + "config.xml");
         String concrete = readElement(config, "SoftVersionID");
         if ("QT100101".equals(id) && "QT100101".equalsIgnoreCase(concrete)) return "QT100101";
+        // Other QT100 installations can share the same classes-config template.
+        // Require independent agreement among YAML, XML, enumerated modules and
+        // the actual startup registration bytecode: the folder name is not proof.
+        if (id.matches("QT100\\d{3}") && !blank(concrete)
+                && id.equalsIgnoreCase(concrete.trim())
+                && hasEnumeratedClassesFamily(config, "QT100", id)
+                && id.equalsIgnoreCase(confirmedConfigDrivenPrimaryRegStr(root, id, id, id)))
+            return id;
         if (!blank(concrete) && id.equalsIgnoreCase(concrete.trim())) {
             if (id.startsWith("DS501") && hasEnumeratedClassesFamily(config, "DS501", id)) return "DS501";
             if (id.startsWith("YX0305") && hasEnumeratedClassesFamily(config, "YX0305", id)) return "YX0305";

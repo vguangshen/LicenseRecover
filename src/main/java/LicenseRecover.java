@@ -717,61 +717,45 @@ public class LicenseRecover {
         return "YT001";
     }
 
-    // ================= 方式三: 按实际 Java 安装结构定位目标 =================
-
-    /** A known Java structure supplies the patch target root, not a guessed registration ID. */
-    static File resolveJavaPatchRoot(File selected) {
-        AppInfo info = AppDetector.detect(selected);
-        return info.type == AppInfo.Type.JAVA && info.appRoot != null && info.libDir != null
-                ? info.appRoot.getAbsoluteFile() : null;
-    }
+    // ================= 方式三: 移除联网授权代码 (暴力) =================
 
     static int removeNetMode(String[] args, boolean doPatch) {
         String appArg = null;
         for (int i = 0; i < args.length; i++) {
-            if ("--remove-net".equals(args[i]) || "--scan-net".equals(args[i])
-                    || "--dry-run".equals(args[i])) continue;
+            if ("--remove-net".equals(args[i]) || "--scan-net".equals(args[i])) continue;
             if ("-p".equals(args[i]) || "--seq".equals(args[i]) || "--product".equals(args[i])) {
-                if (i + 1 < args.length) i++;
+                if (i + 1 < args.length) i++;   // 跳过选项及其值
                 continue;
             }
             if (appArg == null) appArg = args[i];
         }
-        if (appArg == null) {
-            System.err.println("[错误] 方式三必须提供明确的 Java 应用目录。");
-            return 1;
+        if (appArg == null) appArg = new File(".").getAbsolutePath();
+        File root = new File(appArg);
+        String appRoot;
+        if (new File(root, "WEB-INF").isDirectory()) {
+            appRoot = root.getAbsolutePath();
+        } else {
+            String lib = locateLibDir(root.getAbsolutePath());
+            if (lib == null) {
+                System.err.println("未找到 WEB-INF 目录: " + appArg);
+                return 1;
+            }
+            appRoot = new File(lib).getParentFile().getParentFile().getAbsolutePath();
         }
-        AppInfo target = AppDetector.detect(new File(appArg));
-        File resolved = resolveJavaPatchRoot(new File(appArg));
-        if (resolved == null) {
-            System.err.println("[错误] 未发现受支持的 Java WEB-INF/lib/ITMCReg*.jar 结构：" + appArg);
-            return 1;
-        }
-        String appRoot = resolved.getAbsolutePath();
-        boolean dryRun = hasArg(args, "--dry-run");
         System.out.println("======================================================");
-        System.out.println(doPatch && !dryRun ? " Java 方式三：目标文件预检与执行"
-                : " Java 方式三：只读扫描 / 预览");
+        System.out.println(doPatch ? " 移除联网授权代码 (暴力方式)" : " 扫描联网授权验证文件");
         System.out.println("======================================================");
-        System.out.println("所选目录   : " + appArg);
         System.out.println("应用根目录 : " + appRoot);
-        System.out.println("运行代号   : " + (target.softVersionId == null
-                ? "未确认（目录仅用于定位）" : target.softVersionId));
         System.out.println();
-        if (dryRun || !doPatch) {
-            boolean found = NetRemover.scan(appRoot, s -> System.out.println(s));
-            if (dryRun) System.out.println("DRY-RUN: 仅执行只读扫描；未修改任何目标文件。");
-            return found ? 0 : 1;
+        if (doPatch) {
+            boolean ok = NetRemover.removeNetValidation(appRoot, s -> System.out.println(s));
+            System.out.println();
+            System.out.println(ok ? "RESULT: OK —— 联网授权代码已移除" : "RESULT: FAILED");
+            return ok ? 0 : 1;
+        } else {
+            NetRemover.scan(appRoot, s -> System.out.println(s));
         }
-        // The same backup gate applies to direct CLI and GUI dispatch.
-        if (!PatchSafety.prepare(target, s -> System.out.println(s))) {
-            System.err.println("RESULT: FAILED —— 无法完成安全备份预检。");
-            return 1;
-        }
-        boolean ok = NetRemover.removeNetValidation(appRoot, s -> System.out.println(s));
-        System.out.println();
-        System.out.println(ok ? "RESULT: OK —— 执行流程已完成" : "RESULT: FAILED");
-        return ok ? 0 : 1;
+        return 0;
     }
 
     static boolean hasProductOverride(String[] args) {

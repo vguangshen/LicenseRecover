@@ -79,8 +79,7 @@ public class NetRemover {
         if (lib == null || !lib.isDirectory()) return null;
         File exact = new File(lib, "ITMCReg.jar");
         if (exact.isFile()) return exact;
-        File[] fs = lib.listFiles((d, n) -> n.toLowerCase(java.util.Locale.ROOT).startsWith("itmcreg")
-                && n.toLowerCase(java.util.Locale.ROOT).endsWith(".jar") && new File(d, n).isFile());
+        File[] fs = lib.listFiles((d, n) -> n.toLowerCase().startsWith("itmcreg") && n.toLowerCase().endsWith(".jar"));
         if (fs != null && fs.length > 0) return fs[0];
         return null;
     }
@@ -152,9 +151,8 @@ public class NetRemover {
         log.accept("  定位: " + (jarFile != null ? jarFile.getAbsolutePath() : lib.getAbsolutePath()));
         boolean hasRu = ruFile.isFile();
         boolean hasJar = jarFile != null && jarFile.isFile();
-        byte[] registerMainClass = hasJar ? readJarEntry(jarFile, RM_ENTRY) : null;
         log.accept("  启动注册校验总入口  RegisterUtil.class : " + (hasRu ? "找到" : "未找到(可能打包在jar内,将只处理授权jar)"));
-        log.accept("  授权联网方法所在    " + (jarFile != null ? jarFile.getName() : "ITMCReg*.jar") + "\\RegisterMain.class : " + (registerMainClass != null ? "找到" : "未找到"));
+        log.accept("  授权联网方法所在    " + (jarFile != null ? jarFile.getName() : "ITMCReg*.jar") + "\\RegisterMain.class : " + (hasJar ? "找到" : "未找到"));
 
         if (hasRu) {
             byte[] b = readClass(ruFile);
@@ -162,11 +160,10 @@ public class NetRemover {
             log.accept("    RegisterUtil.class minor=" + minorVersion(b) + (packed ? "  <- Virbox BCE 保护(执行时将自动脱壳)" : " (已脱壳)"));
         }
         if (hasJar) {
-            byte[] b = registerMainClass;
+            byte[] b = readJarEntry(jarFile, RM_ENTRY);
             if (b != null) {
                 boolean packed = isPacked(b);
-                log.accept("    RegisterMain.class  minor=" + minorVersion(b) + (packed ? "  <- Virbox BCE 保护（未证明可修改）" : " (常规字节码)"));
-                if (packed) log.accept("    [提示] 该 class 受保护：目录和组件已定位，但必须通过独立的兼容性预检，不能因识别成功就假定 Patch 可执行。");
+                log.accept("    RegisterMain.class  minor=" + minorVersion(b) + (packed ? "  <- Virbox BCE 保护(执行时将自动脱壳)" : " (已脱壳)"));
                 StringBuilder sb = new StringBuilder();
                 for (String m : NET_MARKERS) if (hasMarker(b, m)) sb.append(m).append(" ");
                 if (sb.length() > 0) log.accept("    含联网授权标记: " + sb.toString().trim());
@@ -187,10 +184,6 @@ public class NetRemover {
             } else {
                 log.accept("    [警告] jar 内未找到 RegisterMain.class");
             }
-        }
-        if (hasJar && registerMainClass == null) {
-            log.accept("  [错误] 授权 JAR 中缺少 RegisterMain.class，拒绝后续写入。");
-            return false;
         }
         if (!hasRu && !hasJar) {
             log.accept("  [错误] 未找到任何授权验证文件，请确认选择的是应用根目录(含 WEB-INF)");
