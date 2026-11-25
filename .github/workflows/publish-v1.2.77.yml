@@ -1,0 +1,99 @@
+name: Publish LicenseRecover v1.2.77 from verified artifact
+
+on:
+  push:
+    branches:
+      - release/publish-v1.2.77-20261125
+    paths:
+      - .github/workflows/publish-v1.2.77.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish-verified:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: b5bb7a4c286e89b2a8f447276325cb7548892e26
+      VERIFIED_RUN: "45544429775"
+      RELEASE_TAG: v1.2.77
+    steps:
+      - name: Check out exact previously tested source
+        uses: actions/checkout@v5
+        with:
+          ref: b5bb7a4c286e89b2a8f447276325cb7548892e26
+          persist-credentials: false
+
+      - name: Require matching source, version and three successful checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "vguangshen/LicenseRecover"
+          test "$GITHUB_REF" = "refs/heads/release/publish-v1.2.77-20261125"
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          # Ensure verified PR source exactly matches the merged branch source tree.
+          merged_tree="$(gh api "repos/$GITHUB_REPOSITORY/git/commits/cd7508c8c132f813ae50b28ebe256bc4a2ae89d5" --jq '.tree.sha')"
+          test "$(git rev-parse HEAD^{tree})" = "$merged_tree"
+          test "$(tr -d '\r\n[:space:]' < VERSION.txt)" = "1.2.77"
+          test -s release-notes/v1.2.77.md
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$VERIFIED_RUN")"
+          jq -e --arg sha "$SOURCE_SHA" '
+            .status == "completed" and .conclusion == "success" and
+            .head_sha == $sha and .name == "Verify source"
+          ' <<<"$run_json"
+          all="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SOURCE_SHA&per_page=100")"
+          for name in "Verify source" "Uppercase ITMC.Regedit Windows integration v2" "Dual registration DLL Windows integration v3"; do
+            jq -e --arg sha "$SOURCE_SHA" --arg name "$name" '
+              any(.workflow_runs[]; .head_sha == $sha and .name == $name and
+                  .status == "completed" and .conclusion == "success")
+            ' <<<"$all"
+          done
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release already exists, refusing to overwrite it." >&2
+            exit 1
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Tag already exists without a release, refusing to reuse it." >&2
+            exit 1
+          fi
+
+      - name: Download and validate exact CI distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p verified
+          gh run download "$VERIFIED_RUN" --repo "$GITHUB_REPOSITORY" --name LicenseRecover-latest --dir verified
+          test -s verified/LicenseRecover-latest.zip
+          test -s verified/LicenseRecover-update.zip
+          test -s verified/SHA256SUMS.txt
+          (cd verified && sha256sum --check SHA256SUMS.txt)
+          unzip -tq verified/LicenseRecover-latest.zip
+          unzip -tq verified/LicenseRecover-update.zip
+          unzip -Z1 verified/LicenseRecover-latest.zip | grep -Eq '(^|/)LicenseRecoverGUI\.exe$'
+          unzip -Z1 verified/LicenseRecover-latest.zip | grep -Eq '(^|/)LicenseRecoverRuntime\.jar$'
+          unzip -Z1 verified/LicenseRecover-latest.zip | grep -Eq '(^|/)jre/bin/javaw\.exe$'
+          unzip -Z1 verified/LicenseRecover-update.zip | grep -Eq '(^|/)LicenseRecoverRuntime\.jar$'
+
+      - name: Publish immutable formal v1.2.77 release
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" \
+            verified/LicenseRecover-latest.zip \
+            verified/LicenseRecover-update.zip \
+            verified/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title "LicenseRecover v1.2.77" \
+            --notes-file release-notes/v1.2.77.md \
+            --latest
+          result="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
+          jq -e --arg sha "$SOURCE_SHA" '
+            .draft == false and .prerelease == false and
+            .target_commitish == $sha and
+            ([.assets[].name] | sort) ==
+            (["LicenseRecover-latest.zip","LicenseRecover-update.zip","SHA256SUMS.txt"] | sort)
+          ' <<<"$result"
