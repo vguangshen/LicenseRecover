@@ -467,9 +467,23 @@ public class NetRemover {
 
     static byte[] loadKeystream() {
         try (InputStream in = NetRemover.class.getResourceAsStream("/virbox_keystream.bin")) {
-            if (in == null) return null;
-            return readAll(in);
-        } catch (Exception e) { return null; }
+            if (in != null) return readAll(in);
+        } catch (Exception ignore) { /* Try user-supplied local keystream below. */ }
+        // Protected PT/other Java generations may need a locally supplied
+        // keystream. Never embed or publish the user's binary in the repository.
+        // Resolve relative to this running tool, not the target app directory.
+        try {
+            File location = new File(NetRemover.class.getProtectionDomain()
+                    .getCodeSource().getLocation().toURI());
+            File toolDirectory = location.isFile() ? location.getParentFile() : location;
+            if (toolDirectory == null) return null;
+            for (String name : new String[]{"virbox_keystream.bin", "virbox_keystream_exact_22937.bin"}) {
+                File candidate = new File(toolDirectory, name);
+                if (candidate.isFile() && candidate.length() > 0 && candidate.length() <= 1024L * 1024L)
+                    return Files.readAllBytes(candidate.toPath());
+            }
+        } catch (Exception ignore) { /* Fail closed: no key available. */ }
+        return null;
     }
 
     static int u1(byte[] b, int[] p) { return b[p[0]++] & 0xFF; }

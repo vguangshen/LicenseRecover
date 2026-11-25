@@ -60,6 +60,90 @@ public final class LicenseRecoverJavaPlanReadOnlyTest {
             check(readonly.detected && "XMT01".equals(readonly.runtimeProductId), "static plan still recognizes product identity");
             check(!Files.exists(sentinel), "read-only plan must not initialize target class or call constructor/getRegInfo");
             check(readonly.regStr == null, "no target probe result is fabricated in read-only plan");
+            // A future PT product may put its config in WEB-INF/classes, not data/.
+            Path dataConfigPath = app.resolve("data/config.xml");
+            Path classesConfigPath = app.resolve("WEB-INF/classes/config.xml");
+            Files.delete(dataConfigPath);
+            Files.createDirectories(classesConfigPath.getParent());
+            Files.write(classesConfigPath,
+                    "<ROOT><SoftVersionID>PT0406</SoftVersionID><System id='PT0405'/></ROOT>"
+                            .getBytes(StandardCharsets.UTF_8));
+            LicenseRecoverModernGUIJavaPlan ptLayout =
+                    LicenseRecoverModernGUIJavaPlan.inspectReadOnly(app.toFile());
+            check(ptLayout.detected && "PT系列 / classes-config".equals(ptLayout.generation),
+                    "future PT series must be recognized in classes-config layout");
+            check(!ptLayout.automaticRecoveryReady && !Files.exists(sentinel),
+                    "PT series detection must stay read-only and never invent authorization");
+            Files.delete(classesConfigPath);
+            Files.write(dataConfigPath, configBefore);
+
+            // Fallback activates only when no target-owned registration ID is known.
+            // This fixture deliberately differs from SoftVersionID: no cross-check.
+            Path fallbackRoot = temp.resolve("PT0405");
+            Path fallbackLib = fallbackRoot.resolve("WEB-INF/lib");
+            Files.createDirectories(fallbackLib);
+            Files.copy(lib.resolve("ITMCReg.jar"), fallbackLib.resolve("ITMCReg.jar"));
+            Files.createDirectories(fallbackRoot.resolve("data"));
+            Files.write(fallbackRoot.resolve("data/config.xml"),
+                    "<ROOT><SoftVersionID>PT0406</SoftVersionID></ROOT>"
+                            .getBytes(StandardCharsets.UTF_8));
+            LicenseRecoverModernGUIJavaPlan fallbackPlan =
+                    LicenseRecoverModernGUIJavaPlan.inspectReadOnly(fallbackRoot.toFile());
+            check(fallbackPlan.detected && "PT0405".equals(fallbackPlan.directoryFallbackId),
+                    "unresolved PT registrations must expose directory-name fallback candidate");
+            check(fallbackPlan.runtimeProductId == null && !fallbackPlan.automaticRecoveryReady
+                    && fallbackPlan.recoveryReadiness.contains("备用目录候选注册ID=PT0405"),
+                    "directory fallback is an unverified candidate, not an automatic patch authorization");
+            check(!Files.exists(sentinel), "fallback inspection must not execute registration code");
+            check("PT0405".equals(fallbackPlan.directoryDiagnosticId())
+                    && fallbackPlan.runtimeProductDisplay().contains("未验证"),
+                    "PT directory label must be visibly unverified");
+            check(readonly.directoryDiagnosticId() == null
+                    && "XMT01".equals(readonly.runtimeProductDisplay()),
+                    "verified runtime identity always wins over directory display");
+            Path genericRoot = temp.resolve("Custom-Java-App");
+            Path genericLib = genericRoot.resolve("WEB-INF/lib");
+            Files.createDirectories(genericLib);
+            Files.copy(lib.resolve("ITMCReg.jar"), genericLib.resolve("ITMCReg.jar"));
+            Files.createDirectories(genericRoot.resolve("data"));
+            Files.write(genericRoot.resolve("data/config.xml"),
+                    "<ROOT><SoftVersionID>UNKNOWN01</SoftVersionID></ROOT>"
+                            .getBytes(StandardCharsets.UTF_8));
+            LicenseRecoverModernGUIJavaPlan generic =
+                    LicenseRecoverModernGUIJavaPlan.inspectReadOnly(genericRoot.toFile());
+            check(generic.detected && "Custom-Java-App".equals(generic.directoryDiagnosticId())
+                    && generic.runtimeProductDisplay().contains("未验证"),
+                    "non-PT application receives its exact root directory name for display");
+            check(generic.runtimeProductId == null && generic.directoryFallbackId == null
+                    && !generic.automaticRecoveryReady
+                    && LicenseRecoverModernGUIAutoRecovery.javaRecoveryProductId(generic) == null,
+                    "diagnostic fallback must never supply an execution ID or authorize recovery");
+            check(generic.logSummary().contains("directory diagnostic ID=Custom-Java-App")
+                    && !Files.exists(sentinel), "diagnostic logging remains read-only");
+            check("PT0405".equals(LicenseRecoverModernGUIAutoRecovery.javaRecoveryProductId(fallbackPlan)),
+                    "explicit PT recovery must pass directory ID through the existing Java pipeline");
+            check(LicenseRecoverModernGUIAutoRecovery.ptExplicitRecoveryCandidate(fallbackPlan),
+                    "PT directory fallback must be eligible for native preflights without SoftVersionID cross-check");
+            check(LicenseRecoverModernGUIAutoRecovery.acceptsProbedJavaRegStr(
+                            "YT00102,PT0401", "PT0405", true),
+                    "PT native RegStr can contain module IDs without the app SoftVersionID");
+            check(!LicenseRecoverModernGUIAutoRecovery.acceptsProbedJavaRegStr(
+                            "YT00102,PT0401", "PT0405", false),
+                    "non-PT Java dynamic RegStr must retain its previous version-token check");
+            check(!LicenseRecoverModernGUIAutoRecovery.acceptsProbedJavaRegStr(
+                            "", "PT0405", true),
+                    "PT fallback must not invent RegStr when native inspection returns empty");
+            check("XMT01".equals(LicenseRecoverModernGUIAutoRecovery.javaRecoveryProductId(readonly))
+                    && !LicenseRecoverModernGUIAutoRecovery.ptExplicitRecoveryCandidate(readonly),
+                    "existing Java products must retain verified IDs and never enter the PT fallback");
+            // A name alone cannot reach native registration or modify files:
+            // this fixture has no target-proven startup constructor chain.
+            LicenseRecoverModernGUIAutoRecovery.Result unproven =
+                    LicenseRecoverModernGUIAutoRecovery.recover(fallbackRoot.toFile(), true, true, true, null);
+            check(!unproven.success && unproven.message.contains("JAVA_RUNTIME_ABI"),
+                    "PT fallback requires the target's actual Java startup ABI before proceeding");
+            check(!Files.exists(fallbackRoot.resolve("config.xml")) && !Files.exists(sentinel),
+                    "rejected PT native preflight did not write or execute a registration class");
             // Positive control: this exact fixture reaches the old native fallback.
             LicenseRecoverModernGUIJavaPlan compatibility = LicenseRecoverModernGUIJavaPlan.inspect(app.toFile());
             check(Files.exists(sentinel) && "XMT0106".equals(compatibility.regStr), "explicit recovery planning retains legacy probe compatibility");
@@ -73,13 +157,17 @@ public final class LicenseRecoverJavaPlanReadOnlyTest {
             String batch = gui.substring(start, end);
             check(batch.contains("LicenseRecoverModernGUIJavaPlan.inspectReadOnly(info.appRoot)")
                     && !batch.contains("LicenseRecoverModernGUIJavaPlan.inspect("), "GUI batch must use read-only plan entrypoint");
+            check(batch.contains("plan.runtimeProductDisplay()"), "batch shows the unverified directory fallback");
             String preview = new String(Files.readAllBytes(Paths.get("src/main/java/LicenseRecoverModernGUIUiPatchLauncher.java")), StandardCharsets.UTF_8);
             int previewStart = preview.indexOf("private static void refreshPlan(");
             int previewEnd = preview.indexOf("private static String value(", previewStart);
             String refresh = preview.substring(previewStart, previewEnd);
             check(refresh.contains("LicenseRecoverModernGUIJavaPlan.inspectReadOnly(selected)")
                     && !refresh.contains("LicenseRecoverModernGUIJavaPlan.inspect("), "passive modern preview cannot invoke recovery probe");
+            check(refresh.contains("plan.runtimeProductDisplay()"), "single-app preview shows the same fallback");
+            qt100LayoutDiagnostics(temp.resolve("qt100-layout"));
             resourceBoundaries(temp.resolve("boundaries"));
+            ptSeriesDiagnostics(temp.resolve("pt-series"));
             check(!Files.exists(sentinel), "resource-boundary discovery must not execute target code");
             System.out.println("PASS: read-only Java planning skips target execution; config/class/JAR bounds, early-token revocation and fallbacks verified; legacy probe positive control passed");
         } finally {
@@ -165,6 +253,85 @@ public final class LicenseRecoverJavaPlanReadOnlyTest {
                 new int[]{CLASS_LIMIT + 1}, new String[]{"Virbox"});
         check(!LicenseRecoverModernGUIJavaPlan.isVirboxPackedJar(packed.toFile()),
                 "packed-class discovery cannot retain an over-limit early marker");
+    }
+
+    /** Metadata-only fixtures mirror the observed QT100101 folder layout, not its binaries. */
+    private static void qt100LayoutDiagnostics(Path root) throws Exception {
+        for (String id : new String[]{"QT100101", "QT100102", "QT100199"}) {
+            Path app = root.resolve(id);
+            Path lib = app.resolve("WEB-INF/lib");
+            Path classes = app.resolve("WEB-INF/classes");
+            Files.createDirectories(lib);
+            Files.createDirectories(classes);
+            Path marker = lib.resolve("ITMCReg.jar");
+            try (JarOutputStream ignored = new JarOutputStream(Files.newOutputStream(marker))) { }
+            Files.write(app.resolve("systemConfig.yml"),
+                    Arrays.asList("global.system.VersionID=" + id), StandardCharsets.UTF_8);
+            Path xml = classes.resolve("config.xml");
+            Files.write(xml, Arrays.asList("<ROOT><SystemSoft><SoftVersionID>" + id
+                    + "</SoftVersionID></SystemSoft></ROOT>"), StandardCharsets.UTF_8);
+            for (Path selected : new Path[]{app, lib, classes, app.resolve("WEB-INF")}) {
+                AppInfo info = AppDetector.detect(selected.toFile());
+                check(info.type == AppInfo.Type.JAVA && app.toFile().equals(info.appRoot)
+                        && lib.toFile().equals(info.libDir) && id.equals(info.softVersionId),
+                        "QT100 metadata layout resolves the root regardless of selected structural directory: " + id);
+            }
+            check(AppDetector.detectLocal(app.toFile()).type == AppInfo.Type.JAVA,
+                    "QT100 root is discoverable in batch mode");
+            Files.delete(app.resolve("systemConfig.yml"));
+            check(id.equals(AppDetector.readJavaSoftVersion(app.toFile())),
+                    "classes configuration remains a metadata fallback");
+            Files.delete(xml);
+            LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspectReadOnly(app.toFile());
+            check(plan.detected && id.equals(plan.directoryDiagnosticId())
+                    && plan.runtimeProductId == null && !plan.automaticRecoveryReady,
+                    "directory label alone is diagnostic, not verified execution identity");
+            Files.delete(marker);
+            Files.createDirectory(lib.resolve("ITMCReg-fake.jar"));
+            check(AppDetector.findItmcRegJar(lib.toFile()) == null
+                    && !AppDetector.detectLocal(app.toFile()).isDetected(),
+                    "a directory named like a JAR must not be mistaken for a component file");
+        }
+    }
+
+    private static void ptSeriesDiagnostics(Path root) throws Exception {
+        Path data = root.resolve("data");
+        Files.createDirectories(data);
+        Path config = data.resolve("config.xml");
+        Files.write(config, ("<ROOT><SoftVersionID>PT0405</SoftVersionID>"
+                + "<!-- <System id='PT0405'/> -->"
+                + "<![CDATA[<System id='PT0405'/>]]>"
+                + "<System id='PT0402'/><System id='PT0402'/>"
+                + "<system name='module' id = \"pt0403\"/>"
+                + "<System id='PT0404\"/></ROOT>")
+                .getBytes(StandardCharsets.UTF_8));
+        String missing = LicenseRecoverModernGUIJavaPlan.ptSeriesBlockedReason(config.toFile(), "PT0405");
+        check(missing != null && missing.contains("PT0402") && missing.contains("PT0403")
+                && missing.contains("不包含当前版本") && !missing.contains("还有其他条目"),
+                "PT diagnostic must ignore comments, CDATA, malformed quotes, and duplicate modules");
+        check("PT0405".equals(LicenseRecoverModernGUIJavaPlan.ptDirectoryIdFallback(
+                root.resolve("pt0405").toFile())), "PT folder fallback must be case-insensitive");
+        check(LicenseRecoverModernGUIJavaPlan.ptDirectoryIdFallback(
+                root.resolve("PT0405-backup").toFile()) == null,
+                "non-exact directory names must not become PT registration IDs");
+        check(LicenseRecoverModernGUIJavaPlan.ptSeriesBlockedReason(config.toFile(), "DS50101") == null,
+                "PT-series diagnostics must not alter unrelated Java families");
+        Files.write(config, ("<ROOT><System id='PT0406'/><System id='PT0407'/></ROOT>")
+                .getBytes(StandardCharsets.UTF_8));
+        String future = LicenseRecoverModernGUIJavaPlan.ptSeriesBlockedReason(config.toFile(), "PT0406");
+        check(future != null && future.contains("包含当前版本") && future.contains("只读待核"),
+                "future PT versions must be diagnosed without hard-coded product mappings");
+        StringBuilder many = new StringBuilder("<ROOT>");
+        for (int i = 400; i < 409; i++) many.append("<System id='PT0").append(i).append("'/>");
+        many.append("</ROOT>");
+        Files.write(config, many.toString().getBytes(StandardCharsets.UTF_8));
+        String overflow = LicenseRecoverModernGUIJavaPlan.ptSeriesBlockedReason(config.toFile(), "PT0408");
+        check(overflow != null && overflow.contains("还有其他条目") && overflow.contains("包含当前版本"),
+                "PT module preview is bounded but still checks the entire module inventory");
+        paddedFile(config, "<System id='PT0406'/>", CONFIG_LIMIT + 1L);
+        String overLimit = LicenseRecoverModernGUIJavaPlan.ptSeriesBlockedReason(config.toFile(), "PT0406");
+        check(overLimit != null && overLimit.contains("无法完整读取") && !overLimit.contains("包含当前版本"),
+                "oversized PT configs must not retain partial module evidence");
     }
 
     private static boolean classContains(Path file) throws Exception {

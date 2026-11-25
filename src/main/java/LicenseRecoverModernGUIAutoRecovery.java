@@ -316,10 +316,15 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (plan.detected) log.accept(plan.logSummary());
         if (!plan.detected)
             return Result.fail("[JAVA_PLAN] 自动恢复已阻止：未识别 Java 注册结构。未修改任何文件。", d);
-        if (!plan.automaticRecoveryReady && !plan.nativeRequestReady)
+        // Explicit PT recovery can use the installation directory as the product
+        // only when the original static resolution found no registration ID.
+        // The directory never establishes RegStr or authorizes a write by itself.
+        boolean ptFallback = ptExplicitRecoveryCandidate(plan);
+        if (!javaOneClickEligible(plan))
             return Result.fail("[JAVA_PLAN] 自动恢复已阻止：" + plan.recoveryReadiness + "。未修改任何文件。", d);
-        if (blank(plan.runtimeProductId))
-            return Result.fail("[JAVA_CHAIN] 目标目录未确认运行注册ID。", d);
+        String product = javaRecoveryProductId(plan);
+        if (blank(product))
+            return Result.fail("[JAVA_CHAIN] 目标目录未确认运行注册ID，且无可用的 PT 目录备用ID。", d);
 
         JavaRegistrationRuntimeProfile runtimeProfile = JavaRegistrationRuntimeProfile.inspect(d.appRoot, d.runtimeDir);
         log.accept(runtimeProfile.logSummary());
@@ -327,8 +332,12 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             return Result.fail("[JAVA_RUNTIME_ABI] " + runtimeProfile.failureReason + "。未修改任何文件。", d);
         List<JavaRegistrationRuntimeProfile.Attempt> attempts = runtimeProfile.attempts;
 
-        String product = plan.runtimeProductId.trim();
         String version = blank(plan.softVersionId) ? d.versionId : plan.softVersionId.trim();
+        if (ptFallback) {
+            log.accept("[java-chain] PT 显式恢复候选: "
+                    + (blank(plan.runtimeProductId) ? "目录名备用注册ID=" : "目标配置注册ID=")
+                    + product + "；将继续检查目标构造器和 RegStr，不与 SoftVersionID 交叉校验。\n");
+        }
         log.accept("[java-chain] target-native isolated helper; product=" + product
                 + " version=" + valueOrPending(version) + " runtime=" + runtimeProfile.evidence + "\n");
         log.accept("[java-chain] helper system classpath=tool-only; target WEB-INF/classes/lib are child-first isolated\n");
@@ -375,7 +384,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                 }
                 String candidate = normalizeProductCsv(firstValue(probed.output, "TARGET_REGSTR="));
                 if (blank(candidate)) continue;
-                if (!blank(version) && !containsRegStrToken(candidate, version)) {
+                if (!acceptsProbedJavaRegStr(candidate, version, ptFallback)) {
                     log.accept("[java-stage] PROBE: RegStr missing current SoftVersionID at ctor="
                             + attempt.summary() + ": " + candidate + "\n");
                     continue;
@@ -387,12 +396,15 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         }
         if (blank(regStr))
             return Result.fail("[JAVA_MODE] 目标目录及目标 RegisterMain 均未证明可用 RegStr。", d);
-        // If the target plan proved a startup alias (for example YT00129 -> QT0420),
-        // do not replace it with or require the current SoftVersionID. Dynamic probes
-        // remain conservative and must contain the current version token.
-        if (!regStrFromPlan && !blank(version) && !containsRegStrToken(regStr, version))
+        // Preserve proven startup aliases (for example YT00129 -> QT0420).
+        // For PT modules, the target's own RegStr need not contain the overall
+        // SoftVersionID; for other Java generations retain the old version gate.
+        if (!regStrFromPlan && !acceptsProbedJavaRegStr(regStr, version, ptFallback))
             return Result.fail("[JAVA_MODE] 动态 RegStr 未包含当前 SoftVersionID: " + version + "; RegStr=" + regStr, d);
-        if (regStrFromPlan && !blank(version) && !containsRegStrToken(regStr, version))
+        if (ptFallback)
+            log.accept("[java-mode] PT target-native RegStr=" + regStr
+                    + " (not compared to SoftVersionID=" + valueOrPending(version) + ")\n");
+        else if (regStrFromPlan && !blank(version) && !containsRegStrToken(regStr, version))
             log.accept("[java-mode] current SoftVersionID=" + version + " startup-mapped RegStr=" + regStr + "\n");
         else
             log.accept("[java-mode] current SoftVersionID=" + valueOrPending(version) + " RegStr=" + regStr + "\n");
@@ -418,7 +430,9 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         }
 
         LinkedHashMap<File, byte[]> originals = snapshotJavaRegistrationFiles(d);
-        if (backup) backupJavaRegistrationFiles(originals, log);
+        // A PT candidate is weaker than a runtime-proven registration mapping:
+        // always keep recoverable prepatch copies even if optional backup is off.
+        if (backup || ptFallback) backupJavaRegistrationFiles(originals, log);
         IOException lastFailure = null;
         for (int i = 0; i < attempts.size(); i++) {
             JavaRegistrationRuntimeProfile.Attempt writeAttempt = attempts.get(i);
@@ -470,6 +484,49 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         restoreJavaRegistrationFiles(originals, log);
         if (lastFailure != null) throw lastFailure;
         throw new IOException("[JAVA_CHAIN] no runtime-derived registration constructor completed write-back + fresh verification");
+    }
+
+    /**
+     * PT deployments may authorize their selected module IDs independently of
+     * the application SoftVersionID. Reuse the target's actual RegStr without
+     * inventing a PT module token. Existing non-PT checks are unchanged.
+     */
+    static boolean acceptsProbedJavaRegStr(String regStr, String version, boolean ptRecovery) {
+        return !blank(regStr) && (ptRecovery || blank(version) || containsRegStrToken(regStr, version));
+    }
+
+    /**
+     * Java-only ID selection. Normal target-owned registration identity always
+     * wins; the PT directory name is consulted only when it is unavailable.
+     * This does not claim that the directory proves a valid authorization.
+     */
+    /** Shared non-writing eligibility rule for single and batch one-click entrypoints. */
+    static boolean javaOneClickEligible(LicenseRecoverModernGUIJavaPlan plan) {
+        return plan != null && plan.detected
+                && (plan.automaticRecoveryReady || plan.nativeRequestReady
+                    || ptExplicitRecoveryCandidate(plan));
+    }
+
+    static String javaRecoveryProductId(LicenseRecoverModernGUIJavaPlan plan) {
+        if (plan == null || !plan.detected) return null;
+        if (!blank(plan.runtimeProductId)) return plan.runtimeProductId.trim();
+        return blank(plan.directoryFallbackId) ? null : plan.directoryFallbackId.trim();
+    }
+
+    /**
+     * Allow an explicitly requested PT action to reach the existing Java ABI
+     * and native RegStr preflights. Those checks must pass before any writes.
+     * Normal/backup IDs are intentionally not compared to SoftVersionID.
+     */
+    static boolean ptExplicitRecoveryCandidate(LicenseRecoverModernGUIJavaPlan plan) {
+        if (plan == null || !plan.detected || plan.appRoot == null
+                || plan.regJar == null || !plan.regJar.isFile()) return false;
+        String id = javaRecoveryProductId(plan);
+        if (blank(id) || !id.matches("(?i)PT\\d{4,6}")) return false;
+        File data = new File(plan.appRoot, "data" + File.separator + "config.xml");
+        File classes = new File(plan.appRoot, "WEB-INF" + File.separator + "classes"
+                + File.separator + "config.xml");
+        return data.isFile() || classes.isFile();
     }
 
     static String buildJavaRecoveryClasspath(File toolDir, File runtimeDir) {

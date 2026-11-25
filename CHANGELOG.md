@@ -1,3 +1,27 @@
+## 1.2.77 - 2026-11-25
+
+- Restore legacy Java Way 3 target resolution and normal patch behavior from before PR #71, while retaining the essential --dry-run no-write guard. The QT100 one-click repair is independent from Way 3.
+- For other QT1001xx applications, use target-owned matching YAML/XML IDs, enumerated module entries and three relevant startup class references to confirm their concrete runtime identity. Preserve native runtime, RegStr and write-back verification gates.
+- Share the Java one-click eligibility check across single recovery and batch preflight; test QT100111 positive and missing/mismatched evidence with synthetic files only.
+
+## 1.2.76 - 2026-11-25
+
+- Normalize Java CLI scan/Patch target directories using the common detector (including QT100 standard and nested selections); do not infer executable registration IDs from folder names.
+- Fix a critical --remove-net --dry-run preview bug: preview now performs a read-only scan and cannot invoke the write path. Require prepatch backups on direct CLI execution.
+- Reject a malformed registration JAR without RegisterMain.class, and clearly label protected bytecode as not yet proven patch-compatible. Add synthetic QT100 routing/no-write regressions.
+
+- Display the application root directory name as an unverified diagnostic fallback for any detected Java application without a confirmed runtime product ID. Single and batch previews use the same formatter; executable registration identities and authorization checks are unchanged.
+- Prevent incomplete or changed read-only artifact observations from being promoted to an accepted state by subsequent predicates.
+- Add synthetic regression coverage for fallback display, internal-ID precedence, read-only behavior and incomplete artifact evidence.
+
+## 1.2.75 - 2026-11-17
+
+- Extend the existing Java registration recovery pipeline to PT-series applications. Prefer the target-derived product ID; when missing, use a PT[0-9]{4,6} application directory name only as an explicit-recovery fallback, without cross-checking SoftVersionID.
+- Reuse target-owned RegisterMain startup ABI and native RegStr preflights. Accept PT module entitlement lists even when they omit the overall SoftVersionID; do not relax the existing non-PT Java RegStr rule or fabricate a missing RegStr.
+- Force prepatch backups for PT fallback, retain fresh-JVM post-write verification and rollback, and keep passive/batch scanning read-only.
+- Allow an optional local Virbox keystream next to the executable/JAR without adding third-party binary data in this change. Cover PT fallback, missing ABI and non-PT behavior with regression tests.
+- CI compilation and Windows integration suites passed; actual PT0405 authorization write-back and service startup require user-server testing.
+
 ## 1.2.74 - 2026-11-08
 
 - Use one green status, `VERIFIED_USABLE` (授权可用), for audited entry acceptance, verified native activation, confirmed Patch and passing audited local checks. Historical positive labels map to this status. Show an audited absence of a local record in white. A machine mismatch can accompany a green result only when all other applicable local checks pass. The underlying evidence records the mismatch and the scope of each finding.

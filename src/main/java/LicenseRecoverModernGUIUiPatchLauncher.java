@@ -183,7 +183,7 @@ public final class LicenseRecoverModernGUIUiPatchLauncher {
             LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspectReadOnly(selected);
             generation.setText(plan.generation);
             family.setText(value(plan.authorizationFamily));
-            runtime.setText(value(plan.runtimeProductId));
+            runtime.setText(plan.runtimeProductDisplay());
             regStr.setText(value(plan.regStr)); regStr.setCaretPosition(0);
             targets.setText(plan.configTargets); targets.setCaretPosition(0);
             jar.setText(plan.registrationJarSummary());

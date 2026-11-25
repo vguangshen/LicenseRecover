@@ -43,6 +43,17 @@ public final class LicenseRecoverReadOnlyInspectionTest {
             check(LicenseRecoverReadOnlyInspection.inspect(app.toFile(),lib.toFile(),
                     LicenseRecoverReadOnlyPatchScanner.Runtime.JAVA,"TEST01",unknown).state.visualStatus()
                     ==LicenseRecoverLicenseState.VisualStatus.UNVERIFIED,"missing evidence gray");
+            LicenseRecoverLicenseState positive=LicenseRecoverLicenseState.authorizationAcceptance(
+                    "synthetic independently audited acceptance");
+            check(!LicenseRecoverReadOnlyInspection.canEvaluateAcceptance(false,positive),
+                    "missing or changed artifacts cannot be promoted by a later positive predicate");
+            check(!LicenseRecoverReadOnlyInspection.canEvaluateAcceptance(false,unknown),
+                    "incomplete observations skip later acceptance checks");
+            check(!LicenseRecoverReadOnlyInspection.canEvaluateAcceptance(true,
+                    LicenseRecoverLicenseState.scanError("synthetic artifact error")),
+                    "scan errors cannot be overridden");
+            check(LicenseRecoverReadOnlyInspection.canEvaluateAcceptance(true,unknown),
+                    "complete stable observations permit independent checks");
             Files.delete(lib);
             Files.write(lib,new byte[]{1});
             check(LicenseRecoverReadOnlyInspection.inspect(app.toFile(),lib.toFile(),

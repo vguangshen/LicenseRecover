@@ -25,6 +25,11 @@ import java.util.regex.Pattern;
 public final class LicenseRecoverModernGUIJavaPlan {
     private static final int MAX_CLASS_BYTES = 16 * 1024 * 1024;
     private static final Pattern XML_ELEMENT_TEMPLATE = Pattern.compile("a");
+    private static final Pattern PT_MODULE_ID = Pattern.compile(
+            "(?i)<System\\b[^>]*\\bid\\s*=\\s*(['\"])(PT\\d{4,6})\\1");
+    // Comments and CDATA are documentation, not active System declarations.
+    private static final Pattern XML_NON_MODULE_TEXT = Pattern.compile(
+            "(?s)<!--.*?-->|<!\\[CDATA\\[.*?\\]\\]>");
 
     public final boolean detected;
     public final File appRoot;
@@ -36,6 +41,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
     public final String authorizationFamily;
     /** Concrete id used by application startup RegisterMain.checkReInfo(). */
     public final String runtimeProductId;
+    /** PT directory-name backup candidate; explicit recovery still requires native ABI and RegStr checks. */
+    public final String directoryFallbackId;
     /** Backward-compatible alias for direct-rebuild ProName. */
     public final String productName;
     public final String regStr;
@@ -52,7 +59,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
 
     private LicenseRecoverModernGUIJavaPlan(boolean detected, File appRoot, File libDir, File regJar,
                                             String softVersionId, String generation, String authorizationFamily,
-                                            String runtimeProductId, String regStr, String configTargets,
+                                            String runtimeProductId, String directoryFallbackId, String regStr, String configTargets,
                                             String verificationPlan, boolean rootConfigStyle,
                                             boolean packedRegistrationJar, boolean automaticRecoveryReady,
                                             boolean nativeRequestReady, String recoveryReadiness) {
@@ -64,6 +71,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
         this.generation = generation;
         this.authorizationFamily = authorizationFamily;
         this.runtimeProductId = runtimeProductId;
+        this.directoryFallbackId = directoryFallbackId;
         this.productName = runtimeProductId;
         this.regStr = regStr;
         this.configTargets = configTargets;
@@ -111,18 +119,22 @@ public final class LicenseRecoverModernGUIJavaPlan {
         String confirmedClassesFamily = confirmedClassesAuthorizationFamily(root, soft);
         String generation;
         if (newStyle) {
-            generation = "QT30xxx / data-config";
+            generation = upper.matches("PT\\d{4,6}")
+                    ? "PT系列 / data-config" : "QT30xxx / data-config";
         } else if (classesConfig.isFile()) {
-            if ("QT401".equals(confirmedClassesFamily)) generation = "QT401 / classes-config";
-            else if ("QT100101".equals(confirmedClassesFamily)) generation = "QT1001系列 / classes-config";
+            if (upper.matches("PT\\d{4,6}")) generation = "PT系列 / classes-config";
+            else if ("QT401".equals(confirmedClassesFamily)) generation = "QT401 / classes-config";
+            else if (confirmedClassesFamily != null
+                    && confirmedClassesFamily.matches("(?i)QT100\\d{3}")) generation = "QT1001系列 / classes-config";
             else if (upper.startsWith("XMT01")) generation = "XMT / classes-config";
             else if (upper.startsWith("DS501")) generation = "DS501 / classes-config";
             else if (upper.startsWith("YX0305")) generation = "YX0305 / classes-config";
             else generation = "通用 / classes-config";
         } else if (dataConfig.isFile()) {
-            generation = "DS2406".equals(upper)
-                    ? "DS24 / data-config"
-                    : (upper.matches("DS28\\d{2}") ? "DS28 / data-config" : "YT/兼容根配置 / data-config");
+            if ("DS2406".equals(upper)) generation = "DS24 / data-config";
+            else if (upper.matches("PT\\d{4,6}")) generation = "PT系列 / data-config";
+            else if (upper.matches("DS28\\d{2}")) generation = "DS28 / data-config";
+            else generation = "YT/兼容根配置 / data-config";
         } else if (relative(root, lib).toLowerCase(Locale.ROOT)
                 .contains("web-inf" + File.separator + "web-inf")) {
             generation = "经典 Java / nested WEB-INF";
@@ -150,13 +162,18 @@ public final class LicenseRecoverModernGUIJavaPlan {
         String startupRuntime = blank(binaryRuntime) && blank(configDrivenRuntime)
                 ? confirmedStartupRuntimeProduct(root, lib, soft, family) : null;
         String confirmedClassesRuntime = ("QT401".equalsIgnoreCase(confirmedClassesFamily)
-                || "QT100101".equalsIgnoreCase(confirmedClassesFamily))
+                || (confirmedClassesFamily != null
+                    && confirmedClassesFamily.matches("(?i)QT100\\d{3}")))
                 ? confirmedClassesFamily : null;
         String runtimeProduct = directoryMapping != null ? directoryMapping.productMain
                 : (directDataIdentity ? soft.trim()
                 : (!blank(configDrivenRuntime) ? configDrivenRuntime
                 : (!blank(binaryRuntime) ? binaryRuntime
                 : (!blank(startupRuntime) ? startupRuntime : confirmedClassesRuntime))));
+        // Directory naming is a fallback for unresolved PT identities, not license proof.
+        // It deliberately does not require or override SoftVersionID.
+        String directoryFallback = directoryMapping == null && blank(runtimeProduct)
+                ? ptDirectoryIdFallback(root) : null;
         File jar = findRegJar(lib);
         boolean packed = jar != null && isVirboxPackedJar(jar);
         String qt401PrimaryRegStr = confirmedQt401PrimaryRegStr(root, soft, family, runtimeProduct);
@@ -208,7 +225,10 @@ public final class LicenseRecoverModernGUIJavaPlan {
             readiness = "目标软件目录未找到 SoftVersionID";
         } else if (requiresDirectoryMapping && directoryMapping == null) {
             ready = false;
-            readiness = "目标软件自带注册分派类，但未解析出注册ID映射";
+            String ptEvidence = ptSeriesBlockedReason(
+                    dataConfig.isFile() ? dataConfig : classesConfig, soft);
+            readiness = ptEvidence == null
+                    ? "目标软件自带注册分派类，但未解析出注册ID映射" : ptEvidence;
         } else if (!directoryIdentity) {
             ready = false;
             readiness = "注册ID仅能由旧兼容规则推测，缺少目标目录二进制/配置证据";
@@ -238,6 +258,10 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 readiness = "目标软件目录未声明 RegStr，且无法使用目标注册组件只读获取";
             }
         }
+        if (!ready && directoryFallback != null) {
+            readiness += "；备用目录候选注册ID=" + directoryFallback
+                    + "（目录名备用，显式恢复仍需通过原生构造器和 RegStr 检查）";
+        }
         String libConfig = relative(root, new File(lib, "config.xml"));
         boolean projectClasspathBase = usesProjectClasspathRegistrationBase(root);
         String targets;
@@ -254,8 +278,27 @@ public final class LicenseRecoverModernGUIJavaPlan {
         }
 
         return new LicenseRecoverModernGUIJavaPlan(true, root, lib, jar,
-                soft, generation, family, runtimeProduct, products, targets, verify, rootConfig, packed,
+                soft, generation, family, runtimeProduct, directoryFallback, products,
+                targets, verify, rootConfig, packed,
                 ready, requestReady, readiness);
+    }
+
+    /** Display-only fallback for any detected Java application. Never used for execution. */
+    public String directoryDiagnosticId() {
+        if (!detected || !blank(runtimeProductId) || appRoot == null) return null;
+        String name = appRoot.getName();
+        if (blank(name)) return null;
+        for (int i = 0; i < name.length(); i++) {
+            if (Character.isISOControl(name.charAt(i))) return null;
+        }
+        return name;
+    }
+
+    /** Keep target-owned registration identities distinct from directory labels. */
+    public String runtimeProductDisplay() {
+        if (!blank(runtimeProductId)) return runtimeProductId;
+        String candidate = directoryDiagnosticId();
+        return candidate == null ? "—" : candidate + "（目录名候选，未验证）";
     }
 
     public String regStrSummary() {
@@ -284,6 +327,14 @@ public final class LicenseRecoverModernGUIJavaPlan {
         out.append("[java-plan] SoftVersionID=").append(value(softVersionId))
                 .append(" AuthorizationFamily=").append(value(authorizationFamily))
                 .append(" RuntimeProductID/ProName=").append(value(runtimeProductId)).append('\n');
+        if (directoryFallbackId != null) {
+            out.append("[java-plan] PT directory fallback candidate=")
+                    .append(directoryFallbackId).append(" (candidate; native preflight required)\n");
+        }
+        if (directoryDiagnosticId() != null) {
+            out.append("[java-plan] directory diagnostic ID=")
+                    .append(directoryDiagnosticId()).append(" (display only; unverified)\n");
+        }
         out.append("[java-plan] RegStr=").append(value(regStr)).append('\n');
         out.append("[java-plan] config targets=").append(configTargets).append('\n');
         out.append("[java-plan] registration jar=").append(registrationJarSummary()).append('\n');
@@ -294,6 +345,54 @@ public final class LicenseRecoverModernGUIJavaPlan {
         out.append("[java-plan] native request=")
                 .append(nativeRequestReady ? "READY" : "BLOCKED").append('\n');
         return out.toString();
+    }
+
+    /**
+     * Read-only, version-agnostic PT-series diagnostics. A System id is only a
+     * module declaration; it never proves the RegisterMain product or a RegStr.
+     * Keep automatic recovery blocked unless the normal target-owned evidence
+     * independently confirms that mapping.
+     */
+    /**
+     * Last-resort PT ID candidate when no registration ID was decoded.
+     * A directory can be renamed, so this is never a verified mapping.
+     * Intentionally does not compare the directory name with SoftVersionID.
+     */
+    static String ptDirectoryIdFallback(File appRoot) {
+        if (appRoot == null) return null;
+        String directory = appRoot.getName();
+        if (blank(directory)) return null;
+        String normalized = directory.trim().toUpperCase(Locale.ROOT);
+        return normalized.matches("PT\\d{4,6}") ? normalized : null;
+    }
+
+    static String ptSeriesBlockedReason(File config, String softId) {
+        if (blank(softId) || !softId.trim().toUpperCase(Locale.ROOT).matches("PT\\d{4,6}"))
+            return null;
+        String version = softId.trim().toUpperCase(Locale.ROOT);
+        String prefix = "PT系列 " + version + "：目标注册分派类未提供可验证的注册ID映射";
+        if (config == null || !config.isFile())
+            return prefix + "；未找到可用的配置模块清单";
+        try {
+            String xml = readConfigText(config);
+            Matcher match = PT_MODULE_ID.matcher(XML_NON_MODULE_TEXT.matcher(xml).replaceAll(""));
+            LinkedHashSet<String> modules = new LinkedHashSet<String>();
+            while (match.find()) {
+                modules.add(match.group(2).toUpperCase(Locale.ROOT));
+            }
+            if (modules.isEmpty()) return prefix + "；配置中未列出 PT 系列模块";
+            LinkedHashSet<String> preview = new LinkedHashSet<String>();
+            for (String module : modules) {
+                if (preview.size() >= 8) break;
+                preview.add(module);
+            }
+            return prefix + "；配置模块=" + preview
+                    + (modules.size() > preview.size() ? "（还有其他条目）" : "")
+                    + (modules.contains(version) ? "（包含当前版本）" : "（不包含当前版本）")
+                    + "。模块ID不是授权ID，已保持只读待核";
+        } catch (Exception ex) {
+            return prefix + "；配置无法完整读取，已保持只读待核";
+        }
     }
 
     private static String readSoftId(File root) {
@@ -330,6 +429,14 @@ public final class LicenseRecoverModernGUIJavaPlan {
                 + File.separator + "config.xml");
         String concrete = readElement(config, "SoftVersionID");
         if ("QT100101".equals(id) && "QT100101".equalsIgnoreCase(concrete)) return "QT100101";
+        // Other QT100 installations can share the same classes-config template.
+        // Require independent agreement among YAML, XML, enumerated modules and
+        // the actual startup registration bytecode: the folder name is not proof.
+        if (id.matches("QT100\\d{3}") && !blank(concrete)
+                && id.equalsIgnoreCase(concrete.trim())
+                && hasEnumeratedClassesFamily(config, "QT100", id)
+                && id.equalsIgnoreCase(confirmedConfigDrivenPrimaryRegStr(root, id, id, id)))
+            return id;
         if (!blank(concrete) && id.equalsIgnoreCase(concrete.trim())) {
             if (id.startsWith("DS501") && hasEnumeratedClassesFamily(config, "DS501", id)) return "DS501";
             if (id.startsWith("YX0305") && hasEnumeratedClassesFamily(config, "YX0305", id)) return "YX0305";
@@ -939,7 +1046,7 @@ static String confirmedDs501FamilyRuntime(File root, String softId,
 
     private static LicenseRecoverModernGUIJavaPlan unknown() {
         return new LicenseRecoverModernGUIJavaPlan(false, null, null, null,
-                null, "—", null, null, null, "—", "—", false, false, false, false, "未识别");
+                null, "—", null, null, null, null, "—", "—", false, false, false, false, "未识别");
     }
 
     private static String readConfigText(File file) throws IOException {

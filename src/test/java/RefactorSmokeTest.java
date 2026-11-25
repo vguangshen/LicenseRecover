@@ -899,6 +899,67 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                         && qt100101Plan.recoveryReadiness.contains("RegisterMain.getRegInfo"),
                 "QT100101 keeps RegStr unset until the target registration component returns it before write");
 
+
+        // QT100 sibling template: only genuine agreement between target-owned
+        // configuration and startup code promotes the concrete ID for one-click.
+        Path qt100111Root = base.resolve("java-QT100111");
+        Path qt100111Lib = qt100111Root.resolve("WEB-INF/lib");
+        Path qt100111Classes = qt100111Root.resolve("WEB-INF/classes");
+        Files.createDirectories(qt100111Lib);
+        Files.createDirectories(qt100111Classes);
+        Files.write(qt100111Lib.resolve("ITMCReg.jar"), new byte[]{1});
+        Files.write(qt100111Root.resolve("systemConfig.yml"),
+                Arrays.asList("global.system.VersionID=QT100111"), StandardCharsets.UTF_8);
+        Path qt100111Config = qt100111Classes.resolve("config.xml");
+        Files.write(qt100111Config, Arrays.asList(
+                "<ROOT><reg><regType>3</regType></reg><SystemSoft><SoftVersionID>QT100111</SoftVersionID></SystemSoft>",
+                "<System id=\"QT100111\"/><System id=\"QT100112\"/></ROOT>"), StandardCharsets.UTF_8);
+        Path qt100111SystemInfo = qt100111Classes.resolve("com/itmc/register/utils/SystemInfo.class");
+        Path qt100111Constant = qt100111Classes.resolve("com/itmc/register/utils/RegisterContant.class");
+        Path qt100111Listener = qt100111Classes.resolve("com/itmc/register/service/RegisterListener.class");
+        Files.createDirectories(qt100111SystemInfo.getParent());
+        Files.createDirectories(qt100111Listener.getParent());
+        Files.write(qt100111SystemInfo, Arrays.asList("config.xml SystemSoft registerId"),
+                StandardCharsets.UTF_8);
+        Files.write(qt100111Constant, Arrays.asList(
+                "global.system.VersionID versionID java/util/Properties getProperty"), StandardCharsets.UTF_8);
+        Files.write(qt100111Listener, Arrays.asList(
+                "com/itmc/register/utils/SystemInfo registerId itmc/regedit/RegisterMain",
+                "getRegStr com/itmc/register/utils/RegisterContant versionID contains"), StandardCharsets.UTF_8);
+        LicenseRecoverModernGUIJavaPlan qt100111Plan =
+                LicenseRecoverModernGUIJavaPlan.inspectReadOnly(qt100111Root.toFile());
+        check(qt100111Plan.detected && qt100111Plan.generation.contains("QT1001系列")
+                        && "QT100111".equals(qt100111Plan.authorizationFamily)
+                        && "QT100111".equals(qt100111Plan.runtimeProductId)
+                        && "QT100111".equals(qt100111Plan.regStr)
+                        && LicenseRecoverModernGUIAutoRecovery.javaOneClickEligible(qt100111Plan),
+                "QT100111 matching YAML/XML/module enumeration/startup calls enable one-click preflight");
+        Files.delete(qt100111Listener);
+        LicenseRecoverModernGUIJavaPlan qt100111NoBinary =
+                LicenseRecoverModernGUIJavaPlan.inspectReadOnly(qt100111Root.toFile());
+        check(!LicenseRecoverModernGUIAutoRecovery.javaOneClickEligible(qt100111NoBinary)
+                        && qt100111NoBinary.runtimeProductId == null,
+                "QT100111 missing registration call chain must remain blocked");
+        Files.write(qt100111Listener, Arrays.asList(
+                "com/itmc/register/utils/SystemInfo registerId itmc/regedit/RegisterMain",
+                "getRegStr com/itmc/register/utils/RegisterContant versionID contains"), StandardCharsets.UTF_8);
+        Files.write(qt100111Config, Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>QT100110</SoftVersionID></SystemSoft>",
+                "<System id=\"QT100111\"/><System id=\"QT100112\"/></ROOT>"), StandardCharsets.UTF_8);
+        LicenseRecoverModernGUIJavaPlan qt100111Mismatch =
+                LicenseRecoverModernGUIJavaPlan.inspectReadOnly(qt100111Root.toFile());
+        check(!LicenseRecoverModernGUIAutoRecovery.javaOneClickEligible(qt100111Mismatch)
+                        && qt100111Mismatch.runtimeProductId == null,
+                "QT100111 mismatched XML/YAML must not promote a directory ID into authorization");
+        Files.write(qt100111Config, Arrays.asList(
+                "<ROOT><SystemSoft><SoftVersionID>QT100111</SoftVersionID></SystemSoft>",
+                "<System id=\"QT100111\"/><System id=\"QT100112\"/></ROOT>"), StandardCharsets.UTF_8);
+        Files.write(qt100111Root.resolve("systemConfig.yml"),
+                Arrays.asList("global.system.VersionID=QT100112"), StandardCharsets.UTF_8);
+        check(!LicenseRecoverModernGUIAutoRecovery.javaOneClickEligible(
+                        LicenseRecoverModernGUIJavaPlan.inspectReadOnly(qt100111Root.toFile())),
+                "QT100111 mismatched YAML must remain blocked");
+
         check(!ExistingLocalRegStrProbe.isSafeLocalConfig(qt100101Classes.resolve("config.xml").toFile()),
                 "regType=3 is never eligible for local RegStr probing");
         Path localProbeCfg = base.resolve("existing-local-config.xml");
