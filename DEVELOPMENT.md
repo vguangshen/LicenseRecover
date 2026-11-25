@@ -46,6 +46,12 @@ A successful run:
 
 Generated files stay under `build/` and are ignored by Git.
 
+## PT RegStr selection
+
+Explicit PT recovery selects `RegStr` in this order: an existing value from the target plan, a non-empty value read from the target registration component, then the application root directory name when it matches `PT[0-9]{4,6}`. The directory fallback is a single token, for example `PT0405`; it does not combine the XML `<System id>` inventory. A missing root `config.xml` or an empty native RegStr can therefore continue through this fallback.
+
+Keep the selected value and its source visible in the recovery log: target plan, target-native read, or PT directory fallback. Continue through the target's constructor/path, backup, write-back, fresh-JVM verification and rollback. A fallback value is a recovery input; success is reported after verification. Synthetic coverage of this selection order and write-back lifecycle does not establish successful recovery or business startup for every real PT installation.
+
 ## Versioning
 
 `VERSION.txt` is the stable version source of truth and contains a semantic version without the `v` prefix, for example:
