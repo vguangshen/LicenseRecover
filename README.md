@@ -96,6 +96,13 @@ v1.2.5 根据实际 DS50109 / YX030506 样本，把 classes-config 平台拆成 
 
 v1.2.3 修复了批量扫描在第一个 Java 项目处因 GUI classpath 耦合而提前终止的问题，并为每个子目录增加异常隔离；单个异常项目只会显示“检测异常”，不会阻断后续应用。根据 DS2802 实际样本，DS28xx 代际会使用 `ProName=DS28`，在未提供显式 `regInfo` 时把当前 `SoftVersionID`（例如 `DS2802`）作为有效 `RegStr` 产品项。
 
+#### PT 系列 RegStr 兜底（v1.2.78）
+
+PT 一键恢复先使用目标计划已有的 `RegStr`，没有时再读取目标原生注册组件；仍未取得非空值时，使用符合 `PT[0-9]{4,6}` 的应用根目录名作为单项 `RegStr` 兜底。例如目录 `PT0405` 对应 `RegStr=PT0405`，根 `config.xml` 不存在也会按此规则继续恢复。兜底只取当前目录代号，不汇总配置中的全部 `<System id>` 模块。
+
+日志记录最终 `RegStr` 及其来源：目标计划、原生读取或 PT 目录兜底。写回继续使用目标的注册构造器和路径，并保留备份、新 JVM 复核及失败回滚；只有复核通过才报告恢复成功。目录兜底是显式兼容规则，实际 PT 安装的恢复和业务启动结果仍需分别验证。
+
+
 ### .NET 应用
 
 **DS01xx（v1.2.59 RC4 兼容测试版）**：不再只按 DS0101 固定 DLL 哈希识别；从当前网站读取 SoftVersionID、原厂 ITMC.Web.dll 中的 itmcIEC 产品系列和本地注册 DLL 证据。对于 DS0101、DS0107 等同族候选，执行写入前必须通过只读 .NET 方法签名检查，然后复用同一套 NewRegistry/DoRegistry、原始本地授权检查、网站 CheckReInfo/CheckReg、备份与回滚。不能通过接口或最终校验时不会报告成功。**只有 DS0101 的原始 DLL 已在私有 Windows 测试与用户现场验证；真实 DS0107 尚未验证，需先备份并在测试站点使用。**
@@ -117,7 +124,7 @@ v1.2.3 修复了批量扫描在第一个 Java 项目处因 GUI classpath 耦合�
 
 - 根据 QT40101 实际 `systemConfig.yml`、`WEB-INF/classes/config.xml`、`config1.xml` 与业务代码证据，将其识别为 `SoftVersionID=QT40101`、授权族/运行校验ID=`QT401`。
 - QT40101 的配置没有静态 `regInfo`；应用启动后通过 `RegisterMain("QT401").getRegInfo().getRegStr()` 读取授权项，因此本工具不会再显示或写入旧的 44 项通用 fallback。
-- Java `classes-config` 在授权族或 RegStr 未确认时标记为“待确认”，一键恢复和批量推荐操作都会在写文件前自动阻止/跳过。
+- Java `classes-config` 在授权族或 RegStr 未确认时通常标记为“待确认”并阻止自动写回；PT 系列显式一键恢复允许按上面的目录保底规则进入原生执行链，但必须通过写后校验才能报告成功。
 - 同样保留 .NET Modern 的产品号安全门：产品号未确认时不会执行自动写回。
 - 方式三是独立高级操作，不依赖本地授权重建所需的 RegStr，因此不受上述推荐操作资格判断影响。
 

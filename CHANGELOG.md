@@ -1,3 +1,10 @@
+## 1.2.78 - 2026-11-25
+
+- Repair PT0402–PT0405 Java one-click and batch execution when the application's RegisterMain.getRegInfo().getRegStr() is empty or fails: prefer target-plan RegStr, then native RegStr, then the exact PT directory name as a single-token last resort.
+- Preserve the proven three-argument target RegisterMain constructor/path, verified prewrite backups, native doRegistry, fresh-JVM checkReInfo/RegStr verification and rollback. Never report a successful Patch from static discovery alone.
+- Add synthetic end-to-end PT0402/PT0403/PT0404/PT0405 write-back and fresh verification cases, plus existing-scope precedence, failed-native-read fallback, rollback and preview-only tests. Real installations still require verification.
+- Preserve the v1.2.77 behavior of Java Way 3 rather than importing the unrelated removal-of-Way-3 branch.
+
 ## 1.2.77 - 2026-11-25
 
 - Restore legacy Java Way 3 target resolution and normal patch behavior from before PR #71, while retaining the essential --dry-run no-write guard. The QT100 one-click repair is independent from Way 3.

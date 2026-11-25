@@ -1008,7 +1008,7 @@ public final class LicenseRecoverModernGUI {
                                     LicenseRecoverModernGUIAutoRecovery.ptExplicitRecoveryCandidate(plan);
                             String verifyText = !plan.detected ? "待识别"
                                     : (plan.automaticRecoveryReady ? "未执行: RegisterMain 原生校验"
-                                    : (ptExplicitCandidate ? "未执行: PT 备用注册ID，等待原生 ABI/RegStr 校验"
+                                    : (ptExplicitCandidate ? "未执行: PT 恢复，原生写回后校验"
                                     : "未执行: " + plan.recoveryReadiness));
                             String statusText = !plan.detected ? "待识别"
                                     : (plan.automaticRecoveryReady ? "待处理"

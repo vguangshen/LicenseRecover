@@ -41,7 +41,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
     public final String authorizationFamily;
     /** Concrete id used by application startup RegisterMain.checkReInfo(). */
     public final String runtimeProductId;
-    /** PT directory-name backup candidate; explicit recovery still requires native ABI and RegStr checks. */
+    /** PT directory-name product candidate; explicit recovery retains native ABI and write-back verification. */
     public final String directoryFallbackId;
     /** Backward-compatible alias for direct-rebuild ProName. */
     public final String productName;
@@ -260,7 +260,7 @@ public final class LicenseRecoverModernGUIJavaPlan {
         }
         if (!ready && directoryFallback != null) {
             readiness += "；备用目录候选注册ID=" + directoryFallback
-                    + "（目录名备用，显式恢复仍需通过原生构造器和 RegStr 检查）";
+                    + "（显式恢复优先读取 RegStr，读不到以 PT 目录名保底；仍校验原生构造器及写回结果）";
         }
         String libConfig = relative(root, new File(lib, "config.xml"));
         boolean projectClasspathBase = usesProjectClasspathRegistrationBase(root);
@@ -302,7 +302,11 @@ public final class LicenseRecoverModernGUIJavaPlan {
     }
 
     public String regStrSummary() {
-        if (blank(regStr)) return automaticRecoveryReady ? "目标组件动态读取" : "未静态声明";
+        if (blank(regStr)) {
+            String fallback = LicenseRecoverModernGUIAutoRecovery.ptDirectoryRegStrFallback(this);
+            if (fallback != null) return "优先读取；读不到使用目录名 " + fallback;
+            return automaticRecoveryReady ? "目标组件动态读取" : "未静态声明";
+        }
         String[] parts = regStr.split(",");
         if (parts.length <= 4) return regStr;
         StringBuilder out = new StringBuilder();
@@ -340,7 +344,9 @@ public final class LicenseRecoverModernGUIJavaPlan {
         out.append("[java-plan] registration jar=").append(registrationJarSummary()).append('\n');
         out.append("[java-plan] verify=").append(verificationPlan).append('\n');
         out.append("[java-plan] automatic recovery=")
-                .append(automaticRecoveryReady ? "READY" : "BLOCKED")
+                .append(automaticRecoveryReady ? "READY"
+                        : (LicenseRecoverModernGUIAutoRecovery.ptExplicitRecoveryCandidate(this)
+                            ? "PT_FALLBACK" : "BLOCKED"))
                 .append(" (").append(recoveryReadiness).append(")\n");
         out.append("[java-plan] native request=")
                 .append(nativeRequestReady ? "READY" : "BLOCKED").append('\n');
@@ -350,8 +356,8 @@ public final class LicenseRecoverModernGUIJavaPlan {
     /**
      * Read-only, version-agnostic PT-series diagnostics. A System id is only a
      * module declaration; it never proves the RegisterMain product or a RegStr.
-     * Keep automatic recovery blocked unless the normal target-owned evidence
-     * independently confirms that mapping.
+     * Keep static identity evidence separate from the explicit PT recovery
+     * action's directory fallback.
      */
     /**
      * Last-resort PT ID candidate when no registration ID was decoded.
