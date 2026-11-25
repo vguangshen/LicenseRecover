@@ -90,8 +90,9 @@ public final class AppDetector {
         File exact = new File(lib, "ITMCReg.jar");
         if (exact.isFile()) return exact;
         File[] files = lib.listFiles((dir, name) -> {
-            String lower = name.toLowerCase();
-            return lower.startsWith("itmcreg") && lower.endsWith(".jar");
+            String lower = name.toLowerCase(java.util.Locale.ROOT);
+            return lower.startsWith("itmcreg") && lower.endsWith(".jar")
+                    && new File(dir, name).isFile();
         });
         return files != null && files.length > 0 ? files[0] : null;
     }

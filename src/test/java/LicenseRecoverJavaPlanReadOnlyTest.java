@@ -165,6 +165,7 @@ public final class LicenseRecoverJavaPlanReadOnlyTest {
             check(refresh.contains("LicenseRecoverModernGUIJavaPlan.inspectReadOnly(selected)")
                     && !refresh.contains("LicenseRecoverModernGUIJavaPlan.inspect("), "passive modern preview cannot invoke recovery probe");
             check(refresh.contains("plan.runtimeProductDisplay()"), "single-app preview shows the same fallback");
+            qt100LayoutDiagnostics(temp.resolve("qt100-layout"));
             resourceBoundaries(temp.resolve("boundaries"));
             ptSeriesDiagnostics(temp.resolve("pt-series"));
             check(!Files.exists(sentinel), "resource-boundary discovery must not execute target code");
@@ -252,6 +253,45 @@ public final class LicenseRecoverJavaPlanReadOnlyTest {
                 new int[]{CLASS_LIMIT + 1}, new String[]{"Virbox"});
         check(!LicenseRecoverModernGUIJavaPlan.isVirboxPackedJar(packed.toFile()),
                 "packed-class discovery cannot retain an over-limit early marker");
+    }
+
+    /** Metadata-only fixtures mirror the observed QT100101 folder layout, not its binaries. */
+    private static void qt100LayoutDiagnostics(Path root) throws Exception {
+        for (String id : new String[]{"QT100101", "QT100102", "QT100199"}) {
+            Path app = root.resolve(id);
+            Path lib = app.resolve("WEB-INF/lib");
+            Path classes = app.resolve("WEB-INF/classes");
+            Files.createDirectories(lib);
+            Files.createDirectories(classes);
+            Path marker = lib.resolve("ITMCReg.jar");
+            try (JarOutputStream ignored = new JarOutputStream(Files.newOutputStream(marker))) { }
+            Files.write(app.resolve("systemConfig.yml"),
+                    Arrays.asList("global.system.VersionID=" + id), StandardCharsets.UTF_8);
+            Path xml = classes.resolve("config.xml");
+            Files.write(xml, Arrays.asList("<ROOT><SystemSoft><SoftVersionID>" + id
+                    + "</SoftVersionID></SystemSoft></ROOT>"), StandardCharsets.UTF_8);
+            for (Path selected : new Path[]{app, lib, classes, app.resolve("WEB-INF")}) {
+                AppInfo info = AppDetector.detect(selected.toFile());
+                check(info.type == AppInfo.Type.JAVA && app.toFile().equals(info.appRoot)
+                        && lib.toFile().equals(info.libDir) && id.equals(info.softVersionId),
+                        "QT100 metadata layout resolves the root regardless of selected structural directory: " + id);
+            }
+            check(AppDetector.detectLocal(app.toFile()).type == AppInfo.Type.JAVA,
+                    "QT100 root is discoverable in batch mode");
+            Files.delete(app.resolve("systemConfig.yml"));
+            check(id.equals(AppDetector.readJavaSoftVersion(app.toFile())),
+                    "classes configuration remains a metadata fallback");
+            Files.delete(xml);
+            LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspectReadOnly(app.toFile());
+            check(plan.detected && id.equals(plan.directoryDiagnosticId())
+                    && plan.runtimeProductId == null && !plan.automaticRecoveryReady,
+                    "directory label alone is diagnostic, not verified execution identity");
+            Files.delete(marker);
+            Files.createDirectory(lib.resolve("ITMCReg-fake.jar"));
+            check(AppDetector.findItmcRegJar(lib.toFile()) == null
+                    && !AppDetector.detectLocal(app.toFile()).isDetected(),
+                    "a directory named like a JAR must not be mistaken for a component file");
+        }
     }
 
     private static void ptSeriesDiagnostics(Path root) throws Exception {
