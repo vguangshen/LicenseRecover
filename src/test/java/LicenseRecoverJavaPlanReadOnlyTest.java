@@ -77,7 +77,8 @@ public final class LicenseRecoverJavaPlanReadOnlyTest {
             Files.delete(classesConfigPath);
             Files.write(dataConfigPath, configBefore);
 
-            // Fallback activates only when no target-owned registration ID is known.
+            // Product-ID fallback activates only when no target-owned registration ID is known.
+            // RegStr directory fallback is a separate explicit-recovery decision.
             // This fixture deliberately differs from SoftVersionID: no cross-check.
             Path fallbackRoot = temp.resolve("PT0405");
             Path fallbackLib = fallbackRoot.resolve("WEB-INF/lib");
@@ -93,7 +94,7 @@ public final class LicenseRecoverJavaPlanReadOnlyTest {
                     "unresolved PT registrations must expose directory-name fallback candidate");
             check(fallbackPlan.runtimeProductId == null && !fallbackPlan.automaticRecoveryReady
                     && fallbackPlan.recoveryReadiness.contains("备用目录候选注册ID=PT0405"),
-                    "directory fallback is an unverified candidate, not an automatic patch authorization");
+                    "read-only planning must not present a directory candidate as existing authorization");
             check(!Files.exists(sentinel), "fallback inspection must not execute registration code");
             check("PT0405".equals(fallbackPlan.directoryDiagnosticId())
                     && fallbackPlan.runtimeProductDisplay().contains("未验证"),
@@ -124,6 +125,11 @@ public final class LicenseRecoverJavaPlanReadOnlyTest {
                     "explicit PT recovery must pass directory ID through the existing Java pipeline");
             check(LicenseRecoverModernGUIAutoRecovery.ptExplicitRecoveryCandidate(fallbackPlan),
                     "PT directory fallback must be eligible for native preflights without SoftVersionID cross-check");
+            check("PT0405".equals(LicenseRecoverModernGUIAutoRecovery.ptDirectoryRegStrFallback(fallbackPlan)),
+                    "explicit PT recovery can use the directory as RegStr when no existing value is available");
+            check(fallbackPlan.regStr == null && !fallbackPlan.automaticRecoveryReady
+                            && !Files.exists(sentinel),
+                    "computing the explicit PT fallback must not mutate the read-only plan or execute target code");
             check(LicenseRecoverModernGUIAutoRecovery.acceptsProbedJavaRegStr(
                             "YT00102,PT0401", "PT0405", true),
                     "PT native RegStr can contain module IDs without the app SoftVersionID");
@@ -132,10 +138,15 @@ public final class LicenseRecoverJavaPlanReadOnlyTest {
                     "non-PT Java dynamic RegStr must retain its previous version-token check");
             check(!LicenseRecoverModernGUIAutoRecovery.acceptsProbedJavaRegStr(
                             "", "PT0405", true),
-                    "PT fallback must not invent RegStr when native inspection returns empty");
+                    "an empty native result is not proven RegStr; explicit PT directory fallback is separate");
             check("XMT01".equals(LicenseRecoverModernGUIAutoRecovery.javaRecoveryProductId(readonly))
                     && !LicenseRecoverModernGUIAutoRecovery.ptExplicitRecoveryCandidate(readonly),
                     "existing Java products must retain verified IDs and never enter the PT fallback");
+            check(LicenseRecoverModernGUIAutoRecovery.ptDirectoryRegStrFallback(readonly) == null
+                            && LicenseRecoverModernGUIAutoRecovery.ptDirectoryRegStrFallback(generic) == null
+                            && LicenseRecoverModernGUIAutoRecovery.ptDirectoryRegStrFallback(null) == null,
+                    "directory RegStr fallback must not affect non-PT or missing plans");
+            ptRegStrFallbackScope(temp.resolve("pt-regstr-scope"), lib.resolve("ITMCReg.jar"), sentinel);
             // A name alone cannot reach native registration or modify files:
             // this fixture has no target-proven startup constructor chain.
             LicenseRecoverModernGUIAutoRecovery.Result unproven =
@@ -176,6 +187,40 @@ public final class LicenseRecoverJavaPlanReadOnlyTest {
                 paths.sorted(Comparator.reverseOrder()).forEach(p -> { try { Files.delete(p); }
                     catch (IOException e) { throw new UncheckedIOException(e); } });
             }
+        }
+    }
+
+    private static void ptRegStrFallbackScope(Path root, Path registrationJar, Path sentinel) throws Exception {
+        // A confirmed product ID can differ from both the folder and the selected
+        // modules. The fallback is literally the folder; existing scope stays intact.
+        for (String directory : new String[]{"PT0407", "pt0408", "Renamed-PT-App"}) {
+            Path app = root.resolve(directory);
+            Path lib = app.resolve("WEB-INF/lib");
+            Path data = app.resolve("data");
+            Files.createDirectories(lib);
+            Files.createDirectories(data);
+            Files.copy(registrationJar, lib.resolve("ITMCReg.jar"));
+            byte[] config = ("<ROOT><SoftVersionID>PT0406</SoftVersionID>"
+                    + "<regInfo>PT0401,PT0402</regInfo></ROOT>").getBytes(StandardCharsets.UTF_8);
+            Files.write(data.resolve("config.xml"), config);
+            LicenseRecoverModernGUIJavaPlan plan = LicenseRecoverModernGUIJavaPlan.inspectReadOnly(app.toFile());
+            check(plan.detected && "PT0406".equals(plan.runtimeProductId)
+                            && plan.directoryFallbackId == null,
+                    "target-owned product identity has priority over the product-ID directory fallback");
+            check("PT0401,PT0402".equals(plan.regStr),
+                    "read-only planning preserves existing configured module scope");
+            String fallback = LicenseRecoverModernGUIAutoRecovery.ptDirectoryRegStrFallback(plan);
+            if ("Renamed-PT-App".equals(directory)) {
+                check(fallback == null,
+                        "a PT runtime product must not masquerade as a valid PT directory RegStr fallback");
+            } else {
+                check(directory.toUpperCase(java.util.Locale.ROOT).equals(fallback),
+                        "RegStr fallback uses the actual directory even when a different runtime product is confirmed");
+            }
+            check("PT0401,PT0402".equals(plan.regStr) && !Files.exists(sentinel)
+                            && !Files.exists(app.resolve("config.xml"))
+                            && Arrays.equals(config, Files.readAllBytes(data.resolve("config.xml"))),
+                    "fallback selection leaves existing RegStr, target classes and files unchanged");
         }
     }
 

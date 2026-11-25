@@ -226,6 +226,14 @@ Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $t
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyInspectionTest')
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyPeMetadataTest')
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverJavaPlanReadOnlyTest')
+
+# Exercise PT RegStr precedence/fallback through the actual helper subprocesses,
+# using a temporary runtime made from this build's production classes. The target
+# registration API is synthetic; this is not a real PT installation acceptance.
+$ptRecoveryTest = Join-Path $testSourceDir 'LicenseRecoverPtRecoveryTest.java'
+Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $ptRecoveryTest)
+Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverPtRecoveryTest', $verifyDir, $repoRoot)
+
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverBatchEvidenceTableTest')
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyMachineIdentityTest')
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverReadOnlyJavaVerifierTest')

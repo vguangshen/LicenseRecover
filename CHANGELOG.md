@@ -3,6 +3,8 @@
 - Remove Way 3 from the single-application, batch and legacy interfaces, and remove its BAT launchers. Legacy patch commands now stop without modifying target files.
 - Rebuild the compatibility JARs from the verified current classes, including their embedded runtime resources, so direct legacy JAR launches cannot restore the removed operation.
 - Keep one-click local recovery, offline-code generation, optional network blocking, read-only code evidence and cleanup of historical backups.
+- For explicit PT recovery, prefer an existing target-plan RegStr, then a target-native RegStr; if neither yields a non-empty value, use the PT application directory name as a single-token fallback, including when the root config.xml is absent. Record the selected value and source without enumerating all System modules.
+- Retain the target constructor/path, backups, fresh-JVM verification and rollback for PT directory fallback. Actual recovery and business startup on real PT installations remain separately verifiable outcomes.
 
 ## 1.2.77 - 2026-11-25
 
