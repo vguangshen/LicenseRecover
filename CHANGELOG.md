@@ -1,5 +1,9 @@
 ## 1.2.76 - 2026-11-25
 
+- Normalize Java CLI scan/Patch target directories using the common detector (including QT100 standard and nested selections); do not infer executable registration IDs from folder names.
+- Fix a critical --remove-net --dry-run preview bug: preview now performs a read-only scan and cannot invoke the write path. Require prepatch backups on direct CLI execution.
+- Reject a malformed registration JAR without RegisterMain.class, and clearly label protected bytecode as not yet proven patch-compatible. Add synthetic QT100 routing/no-write regressions.
+
 - Display the application root directory name as an unverified diagnostic fallback for any detected Java application without a confirmed runtime product ID. Single and batch previews use the same formatter; executable registration identities and authorization checks are unchanged.
 - Prevent incomplete or changed read-only artifact observations from being promoted to an accepted state by subsequent predicates.
 - Add synthetic regression coverage for fallback display, internal-ID precedence, read-only behavior and incomplete artifact evidence.
