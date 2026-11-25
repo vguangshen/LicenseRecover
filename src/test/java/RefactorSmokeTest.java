@@ -1005,10 +1005,6 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         AppInfo dotnetInfo = AppDetector.detect(dotnetRoot.toFile());
         check(dotnetInfo.type == AppInfo.Type.DOTNET, "detect .NET app");
         check("DS0101".equals(dotnetInfo.softVersionId), "read .NET SoftVersionID");
-        check(PatchSafety.prepare(dotnetInfo, System.out::print), ".NET prepatch backup succeeds");
-        check(Files.list(dotnetBin).anyMatch(p -> p.getFileName().toString().contains("prepatch")),
-                ".NET prepatch backup exists");
-
         Path modernRoot = base.resolve("modernUppercaseOnly");
         Path modernBin = modernRoot.resolve("bin");
         Files.createDirectories(modernBin);
@@ -1019,32 +1015,6 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
                 "detect modern .NET app with uppercase ITMC.Regedit.dll only");
         check(!Files.exists(modernBin.resolve("itmcRegedit.dll")),
                 "uppercase-only detector does not require legacy lowercase assembly");
-
-        check(PatchSafety.prepareDotNetPatch(modernBin.toFile(), System.out::print),
-                "uppercase-only .NET target can pass mandatory patch backup");
-        check(Files.list(modernBin).anyMatch(p -> p.getFileName().toString()
-                        .startsWith("ITMC.Regedit.dll.prepatch.")),
-                "uppercase registration assembly is backed up before an explicit patch");
-        check(Files.list(modernBin).anyMatch(p -> p.getFileName().toString()
-                        .startsWith("ITMC.Web.dll.prepatch.")),
-                ".NET Web assembly is also backed up when present");
-
-        Path dualRoot = base.resolve("dotnetDualRegistration");
-        Path dualBin = dualRoot.resolve("bin");
-        Files.createDirectories(dualBin);
-        Files.write(dualBin.resolve("ITMC.Web.dll"), new byte[]{11});
-        Files.write(dualBin.resolve("ITMC.Regedit.dll"), new byte[]{12});
-        Files.write(dualBin.resolve("itmcRegedit.dll"), new byte[]{13});
-        check(PatchSafety.prepareDotNetPatch(dualBin.toFile(), System.out::print),
-                "DS01xx-style dual-registration deployment backs up safely");
-        for (String dllName : Arrays.asList("ITMC.Web.dll", "ITMC.Regedit.dll", "itmcRegedit.dll")) {
-            final String name = dllName;
-            check(Files.list(dualBin).anyMatch(p -> p.getFileName().toString()
-                            .startsWith(name + ".prepatch.")),
-                    "dual-registration backup includes " + name);
-        }
-        check(!PatchSafety.prepareDotNetPatch(base.toFile(), null),
-                ".NET patch backup fails closed without either registration assembly");
 
         Path productFixture = base.resolve("YX0303-Web.dll");
         writeUtf16Fixture(productFixture, "YX0303", "YX030301", "YX030308", "YX030322");
@@ -1405,8 +1375,10 @@ check(ds501Plan.runtimeProductId == null && !ds501Plan.automaticRecoveryReady,
         List<String> dryPatch = Arrays.asList("java", "-cp", "x", "LicenseRecover",
                 "--remove-net", javaRoot.toString(), "--dry-run");
         List<String> normalized = ProcessRunner.normalizeCommand(dryPatch, System.out::print);
-        check(normalized.contains("--scan-net") && !normalized.contains("--remove-net"),
-                "Java way-3 dry-run becomes scan-only");
+        check(normalized.contains("--remove-net") && !normalized.contains("--scan-net"),
+                "retired operations are not silently converted into another action");
+        check(!ProcessRunner.preflightCommand(normalized, System.out::print).isSuccess(),
+                "retired Java write operations are rejected before launching a child");
 
         List<String> productAlias = Arrays.asList("java", "-jar", "/tmp/LicenseRecover.jar",
                 "--gencode", dotnetRoot.toString(), "--product", "YX030204");

@@ -20,6 +20,13 @@ public sealed class LicenseRecoverAspNetBridgeRunner : MarshalByRefObject, IRegi
 
     public int Run(string appRoot, string runtimeDir, string helper, string[] args)
     {
+        if (args != null && args.Length > 0
+            && (string.Equals(args[0], "patch", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(args[0], "--remove-net", StringComparison.OrdinalIgnoreCase)))
+        {
+            Console.Error.WriteLine("[REMOVED_OPERATION] Way 3 has been removed; no target files were changed.");
+            return 2;
+        }
         if (stopped)
             throw new InvalidOperationException("ASP.NET bridge has already been stopped.");
 

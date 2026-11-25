@@ -61,10 +61,6 @@ public final class LicenseRecoverModernGUI {
     private final JButton way1Button = new JButton("执行推荐的方式一");
     private final JButton genButton = new JButton("生成离线授权码");
     private final JButton copyButton = new JButton("复制授权码");
-    private final JButton scanButton = new JButton("扫描联网授权文件");
-    private final JButton patchButton = new JButton("移除联网授权并回写");
-    private final JCheckBox showAdvanced = new JCheckBox("显示高级 / 危险操作");
-    private JPanel advancedPanel;
 
     private final JTextField batchRootField = new JTextField();
     private static final int BATCH_COL_SELECTED = 0;
@@ -107,7 +103,6 @@ public final class LicenseRecoverModernGUI {
     };
     private final List<BatchTarget> batchTargets = new ArrayList<BatchTarget>();
     private final JRadioButton batchWay1 = new JRadioButton("一键恢复授权（推荐）", true);
-    private final JRadioButton batchWay3 = new JRadioButton("方式三：移除联网授权代码");
     private final JRadioButton batchCleanup = new JRadioButton("批量删除备份");
     private final JSpinner batchCleanupKeep = new JSpinner(new SpinnerNumberModel(3, 0, 50, 1));
     private final JCheckBox batchBackupCheck = new JCheckBox("写入前备份", true);
@@ -258,7 +253,7 @@ public final class LicenseRecoverModernGUI {
         JPanel panel = new JPanel(new BorderLayout(8, 0));
         JLabel title = new JLabel("ITMC LicenseRecover");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 18f));
-        JLabel subtitle = new JLabel("检测 → 推荐操作 → 高级操作");
+        JLabel subtitle = new JLabel("检测 → 授权恢复 → 原生验证");
         subtitle.setForeground(new Color(0x666666));
         JPanel text = new JPanel();
         text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
@@ -297,19 +292,6 @@ public final class LicenseRecoverModernGUI {
         panel.add(buildDetectionCard());
         panel.add(Box.createVerticalStrut(8));
         panel.add(buildRecommendedCard());
-        panel.add(Box.createVerticalStrut(8));
-
-        showAdvanced.addActionListener(e -> {
-            advancedPanel.setVisible(showAdvanced.isSelected());
-            frame.pack();
-            frame.setSize(Math.max(frame.getWidth(), 980), Math.max(frame.getHeight(), 760));
-        });
-        JPanel advancedToggle = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        advancedToggle.add(showAdvanced);
-        panel.add(advancedToggle);
-        advancedPanel = buildAdvancedPanel();
-        advancedPanel.setVisible(false);
-        panel.add(advancedPanel);
         panel.add(Box.createVerticalGlue());
 
         return new JScrollPane(panel);
@@ -387,22 +369,6 @@ public final class LicenseRecoverModernGUI {
         return card;
     }
 
-    private JPanel buildAdvancedPanel() {
-        JPanel card = new JPanel(new BorderLayout(6, 6));
-        card.setBorder(BorderFactory.createTitledBorder("高级 / 危险操作：方式三"));
-        JLabel warning = new JLabel("会修改授权字节码；执行前请停止应用服务。新界面会先建立并校验 prepatch 备份。" );
-        warning.setForeground(new Color(0xa15c00));
-        card.add(warning, BorderLayout.NORTH);
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        scanButton.addActionListener(e -> scanNet());
-        patchButton.addActionListener(e -> patchNet());
-        patchButton.setFont(patchButton.getFont().deriveFont(Font.BOLD));
-        buttons.add(scanButton);
-        buttons.add(patchButton);
-        card.add(buttons, BorderLayout.CENTER);
-        return card;
-    }
-
     private JComponent buildBatchPanel() {
         JPanel root = new JPanel(new BorderLayout(8, 8));
         root.setBorder(new EmptyBorder(8, 4, 8, 4));
@@ -425,14 +391,12 @@ public final class LicenseRecoverModernGUI {
 
         ButtonGroup group = new ButtonGroup();
         group.add(batchWay1);
-        group.add(batchWay3);
         group.add(batchCleanup);
         c.gridx = 0; c.gridy = 1; c.weightx = 0;
         top.add(new JLabel("操作:"), c);
         c.gridx = 1; c.gridwidth = 2; c.weightx = 1;
         JPanel methods = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         methods.add(batchWay1);
-        methods.add(batchWay3);
         methods.add(batchCleanup);
         top.add(methods, c);
         c.gridx = 3; c.gridwidth = 1; c.weightx = 0;
@@ -460,7 +424,6 @@ public final class LicenseRecoverModernGUI {
         top.add(batchOptions, c);
 
         batchWay1.addActionListener(e -> updateBatchOperationUi());
-        batchWay3.addActionListener(e -> updateBatchOperationUi());
         batchCleanup.addActionListener(e -> updateBatchOperationUi());
         updateBatchOperationUi();
         root.add(top, BorderLayout.NORTH);
@@ -746,49 +709,6 @@ public final class LicenseRecoverModernGUI {
             appendLog("[错误] 复制失败: " + ex.getMessage() + "\n");
             setStatus("复制失败", false);
         }
-    }
-
-    private void scanNet() {
-        AppInfo info = requireDetected();
-        if (info == null) return;
-        runAsync("方式三扫描", () -> runNetFor(info, false));
-    }
-
-    private void patchNet() {
-        AppInfo info = requireDetected();
-        if (info == null) return;
-        int answer = JOptionPane.showConfirmDialog(frame,
-                "方式三会改写授权文件。请确认应用服务已经停止。\n继续前会先建立并校验 prepatch 备份。",
-                "确认危险操作", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
-        if (answer != JOptionPane.OK_OPTION) return;
-        runAsync("方式三", () -> runNetFor(info, true));
-    }
-
-    private OperationResult runNetFor(AppInfo info, boolean patch) {
-        return runNetFor(info, patch, dryRunCheck.isSelected());
-    }
-
-    private OperationResult runNetFor(AppInfo info, boolean patch, boolean preview) {
-        File cli = cliJar();
-        if (!cli.isFile()) return OperationResult.failed("未找到 LicenseRecover.jar", 1);
-        if (patch && !preview && !PatchSafety.prepare(info, this::appendLog)) {
-            return OperationResult.failed("安全备份预检失败", 3);
-        }
-        List<String> cmd = new ArrayList<String>();
-        cmd.add(javaExe());
-        cmd.add("-Dfile.encoding=UTF-8");
-        if (info.type == AppInfo.Type.DOTNET) {
-            cmd.add("-jar");
-            cmd.add(cli.getAbsolutePath());
-        } else {
-            cmd.add("-cp");
-            cmd.add(cli.getAbsolutePath());
-            cmd.add("LicenseRecover");
-        }
-        cmd.add(patch ? "--remove-net" : "--scan-net");
-        cmd.add((info.type == AppInfo.Type.DOTNET ? info.binDir : info.appRoot).getAbsolutePath());
-        if (preview) cmd.add("--dry-run");
-        return ProcessRunner.run(cmd, this::appendLog, PROCESS_TIMEOUT_SECONDS);
     }
 
     private void scanBatch() {
@@ -1138,16 +1058,9 @@ public final class LicenseRecoverModernGUI {
             setStatus("请至少勾选一个要执行的应用", false);
             return;
         }
-        final boolean usePatch = batchWay3.isSelected();
         final boolean backup = batchBackupCheck.isSelected();
         final boolean blockNet = batchBlockNetCheck.isSelected();
         final boolean preview = batchDryRunCheck.isSelected();
-        if (usePatch && !preview) {
-            int answer = JOptionPane.showConfirmDialog(frame,
-                    "批量方式三会逐个修改授权文件，并为每个应用先建立 prepatch 备份。\n请确认相关应用服务已停止。",
-                    "确认批量危险操作", JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE);
-            if (answer != JOptionPane.OK_OPTION) return;
-        }
         batchRunButton.setEnabled(false);
         batchScanButton.setEnabled(false);
         batchCancelButton.setEnabled(true);
@@ -1169,35 +1082,30 @@ public final class LicenseRecoverModernGUI {
                         updateBatchProgress(done, "跳过 " + target.name);
                         continue;
                     }
-                    if (!usePatch) {
-                        final String blockReason = recommendedBatchBlockReason(target);
-                        if (blockReason != null) {
-                            SwingUtilities.invokeLater(() -> {
-                                batchModel.setValueAt("未执行: " + blockReason, currentRow, BATCH_COL_VERIFY);
-                                batchModel.setValueAt("跳过: 待确认", currentRow, BATCH_COL_STATUS);
-                            });
-                            appendLog("[batch] " + target.name + " 自动跳过：" + blockReason + "\n");
-                            done++;
-                            updateBatchProgress(done, "跳过 " + target.name);
-                            continue;
-                        }
+                    final String blockReason = recommendedBatchBlockReason(target);
+                    if (blockReason != null) {
+                        SwingUtilities.invokeLater(() -> {
+                            batchModel.setValueAt("未执行: " + blockReason, currentRow, BATCH_COL_VERIFY);
+                            batchModel.setValueAt("跳过: 待确认", currentRow, BATCH_COL_STATUS);
+                        });
+                        appendLog("[batch] " + target.name + " 自动跳过：" + blockReason + "\n");
+                        done++;
+                        updateBatchProgress(done, "跳过 " + target.name);
+                        continue;
                     }
                     SwingUtilities.invokeLater(() -> {
                         batchModel.setValueAt("处理中", currentRow, BATCH_COL_STATUS);
-                        batchModel.setValueAt(usePatch ? "方式三" : "执行中", currentRow, BATCH_COL_VERIFY);
+                        batchModel.setValueAt("执行中", currentRow, BATCH_COL_VERIFY);
                     });
-                    AppInfo info = AppDetector.detect(target.type == BatchTarget.Type.JAVA ? target.appRoot : target.binDir);
-                    appendLog("\n===== [" + target.name + "] " + (usePatch ? "方式三" : "一键恢复") + " =====\n");
-                    OperationResult result = usePatch
-                            ? runNetFor(info, true, preview)
-                            : runBatchRecommended(target, backup, blockNet, preview);
+                    appendLog("\n===== [" + target.name + "] 一键恢复 =====\n");
+                    OperationResult result = runBatchRecommended(target, backup, blockNet, preview);
                     if (isCancelled()) break;
                     final String textResult = result.isSuccess() ? (result.status == OperationResult.Status.PREVIEW ? "PREVIEW" : "OK")
                             : (result.status == OperationResult.Status.CANCELLED ? "取消" : "FAILED");
                     if (!result.isSuccess() && result.message != null && !result.message.trim().isEmpty()) {
                         appendLog("[batch] " + target.name + " " + textResult + ": " + result.message.trim() + "\n");
                     }
-                    final String verify = batchVerification(target, usePatch, preview, result);
+                    final String verify = batchVerification(target, preview, result);
                     SwingUtilities.invokeLater(() -> {
                         batchModel.setValueAt(verify, currentRow, BATCH_COL_VERIFY);
                         batchModel.setValueAt(textResult, currentRow, BATCH_COL_STATUS);
@@ -1387,8 +1295,7 @@ public final class LicenseRecoverModernGUI {
                 LicenseRecoverModernGUIAutoRecovery.legacyWritebackUnavailable(detection), 2);
     }
 
-    private String batchVerification(BatchTarget target, boolean usePatch, boolean preview, OperationResult result) {
-        if (usePatch) return preview ? "方式三预览/扫描" : (result.isSuccess() ? "方式三完成" : "方式三失败");
+    private String batchVerification(BatchTarget target, boolean preview, OperationResult result) {
         if (target.type == BatchTarget.Type.JAVA) {
             if (result.message != null && result.message.startsWith("[JAVA_REQUEST_ONLY]"))
                 return "申请号已生成 / 未写入";
@@ -1471,8 +1378,6 @@ public final class LicenseRecoverModernGUI {
         detectButton.setEnabled(!busy);
         way1Button.setEnabled(!busy);
         genButton.setEnabled(!busy);
-        scanButton.setEnabled(!busy);
-        patchButton.setEnabled(!busy);
     }
 
     private void setStatus(String text, boolean ok) {

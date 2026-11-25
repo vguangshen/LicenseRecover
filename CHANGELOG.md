@@ -1,3 +1,9 @@
+## Unreleased
+
+- Remove Way 3 from the single-application, batch and legacy interfaces, and remove its BAT launchers. Legacy patch commands now stop without modifying target files.
+- Rebuild the compatibility JARs from the verified current classes, including their embedded runtime resources, so direct legacy JAR launches cannot restore the removed operation.
+- Keep one-click local recovery, offline-code generation, optional network blocking, read-only code evidence and cleanup of historical backups.
+
 ## 1.2.77 - 2026-11-25
 
 - Restore legacy Java Way 3 target resolution and normal patch behavior from before PR #71, while retaining the essential --dry-run no-write guard. The QT100 one-click repair is independent from Way 3.

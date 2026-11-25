@@ -93,12 +93,6 @@ public final class ProcessRunner {
             }
         }
 
-        // Java 方式三旧 CLI 不消费 --dry-run。界面选择“只预览”时必须强制降级为扫描。
-        int removeIndex = result.indexOf("--remove-net");
-        if (javaClassMode && removeIndex >= 0 && result.contains("--dry-run")) {
-            result.set(removeIndex, "--scan-net");
-            log.accept("[预览] Java 方式三不执行写回；已自动转换为只扫描。\n");
-        }
         return result;
     }
 
@@ -107,9 +101,14 @@ public final class ProcessRunner {
      * CLI 内部备份即便失败也可能继续写，因此薄 GUI 在启动 CLI 前先建立可校验快照。
      */
     static OperationResult preflightCommand(List<String> command, Consumer<String> log) {
+        if (command.contains("SafeNetRemoverCLI")
+                || (command.contains("LicenseRecover") && command.contains("--remove-net"))) {
+            if (log != null) log.accept(SafeNetRemoverCLI.REMOVED_MESSAGE + "\n");
+            return OperationResult.failed(SafeNetRemoverCLI.REMOVED_MESSAGE, SafeNetRemoverCLI.EXIT_REMOVED);
+        }
         int mainIndex = command.indexOf("LicenseRecover");
         if (mainIndex < 0) return null;
-        if (command.contains("--gencode") || command.contains("--remove-net")
+        if (command.contains("--gencode")
                 || command.contains("--scan-net") || command.contains("--batch")
                 || command.contains("--dry-run") || command.contains("--no-backup")) {
             return null;
