@@ -238,6 +238,10 @@ $netRemoverScanTest = Join-Path $repoRoot 'src/test/java/NetRemoverReadOnlyScanT
 Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $netRemoverScanTest)
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'NetRemoverReadOnlyScanTest')
 
+$way3RemovalTest = Join-Path $testSourceDir 'LicenseRecoverWay3RemovalTest.java'
+Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $way3RemovalTest)
+Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverWay3RemovalTest')
+
 Write-Host 'Verifying LicenseRecover.NET helper command surface...'
 $nativeHelper = Join-Path $repoRoot 'LicenseRecover.NET/LicenseRecover.NET.exe'
 if (-not (Test-Path -LiteralPath $nativeHelper)) { throw 'Missing LicenseRecover.NET.exe.' }
@@ -263,6 +267,15 @@ Invoke-External -Command 'python3' -ArgumentList @(
     $modernNativeHelper
 )
 if (-not (Test-Path -LiteralPath $modernNativeHelper)) { throw 'Modern .NET helper adapter was not created.' }
+
+Write-Host 'Removing retired Way 3 writes from shipped .NET helpers...'
+$disabledNativeHelper = Join-Path $buildRoot 'LicenseRecover.NET.Disabled.exe'
+$disabledModernNativeHelper = Join-Path $buildRoot 'LicenseRecover.NET.Disabled.Modern.exe'
+$disableWay3Script = Join-Path $repoRoot 'scripts/disable-dotnet-way3.py'
+Invoke-External -Command 'python3' -ArgumentList @($disableWay3Script, $nativeHelper, $disabledNativeHelper)
+Invoke-External -Command 'python3' -ArgumentList @($disableWay3Script, $modernNativeHelper, $disabledModernNativeHelper)
+$nativeHelper = $disabledNativeHelper
+$modernNativeHelper = $disabledModernNativeHelper
 
 Write-Host 'Building lowercase itmcRegedit real ASP.NET host + bridge...'
 if (-not (Test-Path -LiteralPath $aspNetHostSource)) { throw 'Missing src/dotnet/LicenseRecover.AspNetHost.cs.' }
@@ -316,6 +329,14 @@ if (-not $aspBridgeSourceText.Contains('MethodInfo parseArgs') -or -not $aspBrid
 if (-not $aspBridgeSourceText.Contains('ValidateMapPaths(HttpContext.Current, appRoot)')) { throw 'ASP.NET bridge MapPath validation is missing.' }
 if (-not $aspBridgeSourceText.Contains('ProbeNativeRequestPath(assembly, args)')) { throw 'ASP.NET bridge native request-code probe is missing.' }
 if (-not $aspBridgeSourceText.Contains('helperDispatch=RunDirect/hosted-AppDomain')) { throw 'ASP.NET bridge hosted-AppDomain dispatch marker is missing.' }
+
+Write-Host 'Verifying native Way 3 refusal with Mono and the built host/bridge...'
+# The early Python-only workflow tests may run before Mono is installed. This
+# post-build invocation requires native execution, so a skip cannot pass CI.
+Invoke-External -Command 'python3' -ArgumentList @(
+    (Join-Path $repoRoot 'scripts/tests/test_disable_dotnet_way3.py'),
+    '--require-mono', '--host', $aspNetHostHelper, '--bridge', $aspNetBridgeHelper
+)
 
 Write-Host 'Verifying directory-only registration identity policy...'
 $coreSource = Get-Content -LiteralPath (Join-Path $mainSourceDir 'LicenseRecover.java') -Raw
@@ -494,7 +515,7 @@ if ($overlayEntries -notcontains 'LicenseRecoverModernGUIUpdateInstaller.class')
     throw 'Overlay is missing LicenseRecoverModernGUIUpdateInstaller.class.'
 }
 if ($overlayEntries -notcontains 'SafeNetRemoverCLI.class') {
-    throw 'Overlay is missing SafeNetRemoverCLI.class.'
+    throw 'Overlay is missing the refusal stub for retired SafeNetRemoverCLI invocations.'
 }
 if ($overlayEntries -notcontains 'ExistingLocalRegStrProbe.class') {
     throw 'Overlay is missing ExistingLocalRegStrProbe.class.'
@@ -551,9 +572,17 @@ if ($overlayEntries -notcontains 'JavaRegistrationRuntimeProfile.class') {
 }
 
 Write-Host 'Assembling application-only distribution...'
+# Direct compatibility-JAR launches must see the same current classes as the
+# overlay, including refusal stubs. Refresh embedded core/helper resources too.
+Invoke-External -Command 'python3' -ArgumentList @(
+    (Join-Path $repoRoot 'scripts/package-compatibility-jars.py'),
+    '--core-source', (Join-Path $repoRoot 'LicenseRecover.jar'),
+    '--gui-source', $guiRuntimeJar,
+    '--classes-dir', $verifyDir,
+    '--native-helper', $nativeHelper,
+    '--output-dir', $distDir
+)
 $distributionFiles = @(
-    'LicenseRecover.jar',
-    'LicenseRecoverGUI.jar',
     'README.md',
     'README.txt',
     'VERSION.txt',
@@ -562,9 +591,6 @@ $distributionFiles = @(
     'run_gui.bat',
     'run_gui_modern.bat',
     'run_gui_legacy.bat',
-    'run_removenet.bat',
-    'run_removenet_safe.bat',
-    'run_removenet_legacy.bat',
     'LicenseRecoverGUI.ico',
     'virbox_keystream.bin'
 )
@@ -576,6 +602,7 @@ Copy-Item -LiteralPath $overlayJar -Destination $distDir -Force
 Copy-Item -LiteralPath $runtimeJar -Destination $distDir -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LicenseRecover.NET') -Destination $distDir -Recurse -Force
 $distNativeDir = Join-Path $distDir 'LicenseRecover.NET'
+Copy-Item -LiteralPath $nativeHelper -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.exe') -Force
 Copy-Item -LiteralPath $modernNativeHelper -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.Modern.exe') -Force
 Copy-Item -LiteralPath $aspNetHostHelper -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.AspNetHost.exe') -Force
 Copy-Item -LiteralPath $legacyHelper -Destination (Join-Path $distNativeDir 'LicenseRecover.NET.Legacy.dll') -Force
@@ -605,9 +632,19 @@ if ((Get-FileHash -LiteralPath (Join-Path $distDir 'LicenseRecoverRuntime.jar') 
     throw 'Distribution runtime/overlay jars diverged.'
 }
 Assert-TextContains (Join-Path $distDir 'run_gui_legacy.bat') 'LicenseRecoverGUI.jar'
-Assert-TextContains (Join-Path $distDir 'run_removenet.bat') 'run_removenet_safe.bat'
-Assert-TextContains (Join-Path $distDir 'run_removenet_safe.bat') 'LicenseRecoverOverlay.jar'
-Assert-TextContains (Join-Path $distDir 'run_removenet_safe.bat') 'SafeNetRemoverCLI'
+foreach ($retiredLauncher in @('run_removenet.bat', 'run_removenet_safe.bat', 'run_removenet_legacy.bat')) {
+    if (Test-Path -LiteralPath (Join-Path $distDir $retiredLauncher)) {
+        throw "Distribution contains a retired Way 3 launcher: $retiredLauncher"
+    }
+}
+
+Write-Host 'Verifying removed operations against shipped compatibility JARs...'
+$distributionClasspath = (Join-Path $distDir 'LicenseRecoverRuntime.jar') + $classpathSeparator +
+    (Join-Path $distDir 'LicenseRecoverGUI.jar') + $classpathSeparator + $testDir
+Invoke-External -Command 'java' -ArgumentList @(
+    '-cp', $distributionClasspath, 'LicenseRecoverWay3RemovalTest',
+    (Join-Path $distDir 'LicenseRecover.jar'), (Join-Path $distDir 'LicenseRecoverGUI.jar')
+)
 
 Write-Host 'Creating slim self-update archive...'
 Compress-Archive -Path (Join-Path $distDir '*') -DestinationPath $updateArchive -CompressionLevel Optimal -Force

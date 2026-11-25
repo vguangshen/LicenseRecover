@@ -171,6 +171,14 @@ internal static class LicenseRecoverAspNetHost
     public static int Main(string[] args)
     {
         try { Console.OutputEncoding = Encoding.UTF8; } catch { }
+        // Retired writes must not stage a bridge or create a target AppDomain.
+        if (args != null && args.Length > 0
+            && (string.Equals(args[0], "patch", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(args[0], "--remove-net", StringComparison.OrdinalIgnoreCase)))
+        {
+            Console.Error.WriteLine("[REMOVED_OPERATION] Way 3 has been removed; no target files were changed.");
+            return 2;
+        }
         if (args == null || args.Length < 2)
         {
             Console.Error.WriteLine("[ASPNET_HOST] expected: <command> <target-bin> ...");

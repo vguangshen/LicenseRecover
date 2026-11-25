@@ -191,6 +191,10 @@ foreach ($dir in @($portableCheck, $updateCheck)) {
         '-cp', ($jarFirst + [IO.Path]::PathSeparator + $guiJar + [IO.Path]::PathSeparator + $smokeClasses),
         'LicenseRecoverDistributionReadOnlySmokeTest', $jarFirst, (Join-Path $buildRoot 'verify')
     )
+    Invoke-Checked $runtimeJava @(
+        '-cp', ($jarFirst + [IO.Path]::PathSeparator + $guiJar + [IO.Path]::PathSeparator + $smokeClasses),
+        'LicenseRecoverWay3RemovalTest', (Join-Path $dir 'LicenseRecover.jar'), $guiJar
+    )
     # Exercise behavior against each extracted archive as well as class linkage.
     # These tests create only synthetic fixtures in a separate temporary tree.
     foreach ($test in @('LicenseRecoverLicenseStateTest', 'LicenseRecoverReadOnlyInspectionTest', 'LicenseRecoverReadOnlyPeMetadataTest', 'LicenseRecoverJavaPlanReadOnlyTest', 'LicenseRecoverBatchEvidenceTableTest', 'LicenseRecoverReadOnlyMachineIdentityTest', 'LicenseRecoverReadOnlyJavaVerifierTest', 'LicenseRecoverReadOnlyDotNetVerifierTest', 'LicenseRecoverLocalObservationTest', 'LicenseRecoverReadOnlyJavaMachineIdentityTest', 'LicenseRecoverReadOnlyJavaLocalVerifierTest', 'LicenseRecoverReadOnlyJavaAlternateVerifierTest', 'LicenseRecoverReadOnlyDotNetExtendedVerifierTest', 'LicenseRecoverReadOnlyDotNetRegistrySourceTest', 'LicenseRecoverReadOnlyWmicCpuIdentityTest', 'LicenseRecoverReadOnlyJavaScannerTest', 'LicenseRecoverReadOnlyDotNetScannerTest', 'LicenseRecoverMetadataReadBudgetTest', 'LicenseRecoverReadOnlyPatchProfileTest', 'LicenseRecoverReadOnlyJavaCodeEvidenceTest', 'LicenseRecoverReadOnlyDotNetCodeEvidenceTest')) {

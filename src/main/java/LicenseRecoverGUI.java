@@ -3,10 +3,9 @@
  *
  * 兼容: Windows 7 / Windows Server 2008 / JRE 8 (Swing/AWT)
  * 功能: 选择应用根目录 -> 自动识别产品号 -> Java 写入本地授权；.NET 方式一
- *       防止软件自动联网校验（只改 config.xml），方式三移除联网授权代码。
+ *       防止软件自动联网校验（只改 config.xml）。
  * 方式一/二的生成与自校验复用应用自带类 (itmc.regedit.* / fastjson / dom4j)，
- * DS01xx 等旧版 .NET 应用的方式二使用内置旧协议适配器；
- * 方式三由内嵌 C# 助手处理小写 itmcRegedit.dll。
+ * DS01xx 等旧版 .NET 应用的方式二使用内置旧协议适配器。
  */
 import itmc.regedit.DesUtil;
 import itmc.regedit.GetRegisterCode;
@@ -154,10 +153,6 @@ public class LicenseRecoverGUI {
     static final Pattern GENERATED_CODE_PATTERN = Pattern.compile(
             "(?m)^\\s*离线授权码\\s*[:：]\\s*([0-9A-Fa-f]+)\\s*$");
 
-    // 方式三: 移除联网授权代码
-    static JButton scanNetBtn = new JButton("扫描识别联网授权文件");
-    static JButton patchNetBtn = new JButton("移除联网授权并回写");
-
     // 应用类型徽标
     static JLabel appTypeBadge = new JLabel("待检测");
     static String currentAppType = "";   // "JAVA" / "DOTNET" / ""
@@ -166,9 +161,7 @@ public class LicenseRecoverGUI {
     static JTextField batchRootField = new JTextField(30);
     static JButton batchScanBtn = new JButton("扫描子目录");
     static JButton batchRunBtn = new JButton("批量执行");
-    static javax.swing.ButtonGroup batchMethodGroup = new javax.swing.ButtonGroup();
-    static JRadioButton batchMethodCfg = new JRadioButton("方式一：防止.NET联网校验 / Java写本地授权", true);
-    static JRadioButton batchMethodPatch = new JRadioButton("方式三：移除联网授权代码");
+    static JLabel batchMethodLabel = new JLabel("Java 写入本地授权 / .NET 阻止联网校验");
     static JTable batchTable = new JTable();
     static javax.swing.table.DefaultTableModel batchModel =
             new javax.swing.table.DefaultTableModel(new String[]{"应用", "类型", "状态", "路径"}, 0) {
@@ -267,8 +260,8 @@ public class LicenseRecoverGUI {
     static void applyStaticFonts() {
         Font scaled = new Font(uiFontName != null ? uiFontName : "Dialog", Font.PLAIN, Math.round(13 * UI_SCALE));
         JComponent[] comps = {
-            runBtn, detectBtn, genBtn, copyBtn, scanNetBtn, patchNetBtn,
-            batchScanBtn, batchRunBtn, batchMethodCfg, batchMethodPatch,
+            runBtn, detectBtn, genBtn, copyBtn,
+            batchScanBtn, batchRunBtn, batchMethodLabel,
             productField, appRootField, seqField, codeField, backupCheck,
             blockNetCheck, dryRunCheck, blockNetGenCheck, appTypeBadge, statusLabel, batchRootField
         };
@@ -327,8 +320,6 @@ public class LicenseRecoverGUI {
         UIManager.put("RadioButton.icon", new OptionIcon(box, true));
         for (AbstractButton c : new AbstractButton[]{ backupCheck, blockNetCheck, dryRunCheck, blockNetGenCheck })
             if (c != null) c.setIcon(new OptionIcon(box, false));
-        for (AbstractButton c : new AbstractButton[]{ batchMethodCfg, batchMethodPatch })
-            if (c != null) c.setIcon(new OptionIcon(box, true));
     }
 
     static void buildUI() {
@@ -457,19 +448,6 @@ public class LicenseRecoverGUI {
         w2.add(gopt, g);
         panel.add(w2, c);
 
-        c.gridx = 0; c.gridy = 4; c.gridwidth = 4; c.weightx = 1;
-        JPanel w3 = new JPanel(new BorderLayout());
-        w3.setBorder(BorderFactory.createTitledBorder("方式三：移除联网授权代码（暴力，改写字节码）"));
-        JPanel w3b = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
-        scanNetBtn.addActionListener(LicenseRecoverGUI::scanNet);
-        patchNetBtn.addActionListener(LicenseRecoverGUI::removeNet);
-        patchNetBtn.setFont(patchNetBtn.getFont().deriveFont(Font.BOLD));
-        w3b.add(scanNetBtn);
-        w3b.add(patchNetBtn);
-        w3b.add(new JLabel("(执行前请停止应用服务; 自动备份后替换)"));
-        w3.add(w3b, BorderLayout.WEST);
-        panel.add(w3, c);
-
         return panel;
     }
 
@@ -491,10 +469,7 @@ public class LicenseRecoverGUI {
         c.gridx = 0; c.gridy = 1; c.weightx = 0;
         top.add(new JLabel("方式:"), c);
         c.gridx = 1; c.weightx = 1;
-        JPanel meth = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
-        batchMethodGroup.add(batchMethodCfg); batchMethodGroup.add(batchMethodPatch);
-        meth.add(batchMethodCfg); meth.add(batchMethodPatch);
-        top.add(meth, c);
+        top.add(batchMethodLabel, c);
         c.gridx = 2; c.weightx = 0;
         JPanel btns = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         batchScanBtn.addActionListener(LicenseRecoverGUI::batchScan);
@@ -932,8 +907,7 @@ public class LicenseRecoverGUI {
         java.util.List<String> full = new java.util.ArrayList<>();
         full.add(helper.getAbsolutePath());
         full.addAll(cmd);
-        String binDir = (cmd.size() > 1 && ("config".equals(cmd.get(0))
-                || "patch".equals(cmd.get(0)) || "scan".equals(cmd.get(0)))) ? cmd.get(1) : null;
+        String binDir = cmd.size() > 1 && "config".equals(cmd.get(0)) ? cmd.get(1) : null;
         boolean hadConfig = binDir != null && new File(binDir, "config.xml").isFile();
         boolean hadRegister = binDir != null && new File(binDir, "Register.xml").isFile();
         try {
@@ -959,93 +933,6 @@ public class LicenseRecoverGUI {
             appendLog("RESULT: FAILED\n");
             return null;
         }
-    }
-
-    /** 运行 .NET 助手并只返回成功状态，供扫描/补丁/配置路径使用。 */
-    static boolean runDotNet(java.util.List<String> cmd, String logTitle) {
-        return runDotNetCapture(cmd, logTitle) != null;
-    }
-
-    static void scanNet(ActionEvent e) {
-        String appRoot = appRootField.getText().trim();
-        String dotnetBin = locateDotNetBin(new File(appRoot));
-        if (dotnetBin != null) {
-            appendLog("=== 方式三：扫描联网授权验证文件（.NET 版）===\n");
-            java.util.List<String> cmd = new java.util.ArrayList<>();
-            cmd.add("scan");
-            cmd.add(dotnetBin);
-            runDotNet(cmd, "");
-            return;
-        }
-        String javaRoot = resolveAppRoot();
-        if (javaRoot == null) return;
-        appendLog("=== 方式三：扫描联网授权验证文件 ===\n");
-        appendLog("应用根目录: " + javaRoot + "\n\n");
-        try {
-            NetRemover.scan(javaRoot, LicenseRecoverGUI::appendLog);
-        } catch (Throwable t) {
-            appendLog("[错误] " + t + "\n");
-        }
-    }
-
-    static void removeNet(ActionEvent e) {
-        String appRoot = appRootField.getText().trim();
-        String dotnetBin = locateDotNetBin(new File(appRoot));
-        if (dotnetBin != null) {
-            appendLog("=== 方式三：移除联网授权代码（.NET 版）===\n");
-            appendLog("（执行前请先停止应用服务；工具只会备份并替换 itmcRegedit.dll）\n");
-            scanNetBtn.setEnabled(false);
-            patchNetBtn.setEnabled(false);
-            final String fBin = dotnetBin;
-            final String fProduct = productField.getText().trim();
-            new SwingWorker<Boolean, Void>() {
-                protected Boolean doInBackground() {
-                    java.util.List<String> cmd = new java.util.ArrayList<>();
-                    cmd.add("patch");
-                    cmd.add(fBin);
-                    if (!fProduct.isEmpty() && !fProduct.equals("YX0302")) { cmd.add("--product"); cmd.add(fProduct); }
-                    boolean ok = runDotNet(cmd, "");
-                    return ok;
-                }
-                protected void done() {
-                    scanNetBtn.setEnabled(true);
-                    patchNetBtn.setEnabled(true);
-                    boolean ok = false;
-                    try { ok = Boolean.TRUE.equals(get()); } catch (Exception ignore) { }
-                    statusLabel.setText(ok ? "状态: 完成 (OK)" : "状态: 失败");
-                    statusLabel.setForeground(ok ? new Color(0x1a7f37) : new Color(0xb51d1d));
-                }
-            }.execute();
-            return;
-        }
-        String javaRoot = resolveAppRoot();
-        if (javaRoot == null) return;
-        scanNetBtn.setEnabled(false);
-        patchNetBtn.setEnabled(false);
-        final String fAppRoot = javaRoot;
-        new SwingWorker<Boolean, Void>() {
-            protected Boolean doInBackground() {
-                appendLog("=== 方式三：移除联网授权代码 ===\n");
-                appendLog("应用根目录: " + fAppRoot + "\n\n");
-                boolean ok;
-                try {
-                    ok = NetRemover.removeNetValidation(fAppRoot, LicenseRecoverGUI::appendLog);
-                } catch (Throwable t) {
-                    appendLog("[错误] " + t + "\n");
-                    ok = false;
-                }
-                appendLog(ok ? "\nRESULT: OK —— 联网授权代码已移除\n" : "\nRESULT: FAILED\n");
-                return ok;
-            }
-            protected void done() {
-                scanNetBtn.setEnabled(true);
-                patchNetBtn.setEnabled(true);
-                boolean ok = false;
-                try { ok = Boolean.TRUE.equals(get()); } catch (Exception ignore) { }
-                statusLabel.setText(ok ? "状态: 完成 (OK)" : "状态: 失败");
-                statusLabel.setForeground(ok ? new Color(0x1a7f37) : new Color(0xb51d1d));
-            }
-        }.execute();
     }
 
     // ---- 批量应用 ----
@@ -1152,7 +1039,6 @@ public class LicenseRecoverGUI {
             appendLog("[错误] 请先点击「扫描子目录」识别应用。\n");
             return;
         }
-        String method = batchMethodPatch.isSelected() ? "patch" : "config";
         // 仅手动输入的产品号作为全批量覆盖；自动识别的不传（每个应用由 CLI 按自身识别）
         String productOverride = productAutoFilled ? "" : productField.getText().trim();
         batchRunBtn.setEnabled(false);
@@ -1173,18 +1059,8 @@ public class LicenseRecoverGUI {
                     int rc;
                     if ("DOTNET".equals(type)) {
                         String dotnetBin = (String) t[4];
-                        if ("config".equals(method)) {
-                            appendLog("方式一：防止软件自动联网校验（只修改授权配置文件，不修改 DLL）\n");
-                            rc = runDotNetBlockNet(dotnetBin, dryRunCheck.isSelected(), backupCheck.isSelected()) ? 0 : 1;
-                        } else {
-                            java.util.List<String> cmd = new java.util.ArrayList<>();
-                            cmd.add("patch");
-                            cmd.add(dotnetBin);
-                            if (!productOverride.isEmpty() && !productOverride.equals("YX0302")) {
-                                cmd.add("--product"); cmd.add(productOverride);
-                            }
-                            rc = runDotNet(cmd, "") ? 0 : 1;
-                        }
+                        appendLog("方式一：防止软件自动联网校验（只修改授权配置文件，不修改 DLL）\n");
+                        rc = runDotNetBlockNet(dotnetBin, dryRunCheck.isSelected(), backupCheck.isSelected()) ? 0 : 1;
                     } else {
                         // Java: 派生子进程（带该应用 lib classpath；打包 jar 由子进程自动脱壳）
                         String appRoot = (String) t[2];
@@ -1194,20 +1070,11 @@ public class LicenseRecoverGUI {
                         cmd.add(javaExe);
                         cmd.add("-Dfile.encoding=UTF-8");
                         cmd.add("-cp");
-                        if ("patch".equals(method)) {
-                            // 方式三用最小 classpath（本工具已内嵌 javassist），避免锁住 ITMCReg.jar 无法替换
-                            cmd.add(guiJarDir() + File.separator + "LicenseRecover.jar");
-                            cmd.add("LicenseRecover");
-                            cmd.add("--remove-net");
-                            cmd.add(appRoot);
-                            rc = runGuiProcess(cmd);
-                        } else {
-                            cmd.add(libDir + File.separator + "*" + File.pathSeparator + guiJarDir() + File.separator + "LicenseRecover.jar");
-                            cmd.add("LicenseRecover");
-                            cmd.add(appRoot);
-                            if (!productOverride.isEmpty() && !productOverride.equals("YX0302")) { cmd.add("-p"); cmd.add(productOverride); }
-                            rc = runGuiProcess(cmd);
-                        }
+                        cmd.add(libDir + File.separator + "*" + File.pathSeparator + guiJarDir() + File.separator + "LicenseRecover.jar");
+                        cmd.add("LicenseRecover");
+                        cmd.add(appRoot);
+                        if (!productOverride.isEmpty() && !productOverride.equals("YX0302")) { cmd.add("-p"); cmd.add(productOverride); }
+                        rc = runGuiProcess(cmd);
                     }
                     String status = rc == 0 ? "OK" : "FAILED";
                     if (rc == 0) ok++; else fail++;

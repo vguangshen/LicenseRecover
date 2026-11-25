@@ -2,7 +2,7 @@
 
 ITMC 云实训平台离线授权恢复工具，支持 Java 与 .NET 应用。项目面向原授权服务不可用后的本地恢复场景，保留 Java 8 / Windows 7 / Windows Server 2008 兼容边界。
 
-当前开发版本：**v1.2.77**（QT1001xx 同模板应用的一键恢复现在要求应用自身 YAML/XML、模块枚举和启动类证据一致；单独与批量共用预检；方式三恢复原有行为，仅保留只读预览安全修复）。
+当前发布基线：**v1.2.77**。当前未发布源码已移除“方式三：移除联网授权代码”，保留一键恢复、本地授权配置、离线授权码生成、只读扫描和备份整理。旧方式三命令会明确返回已移除，不执行写入。
 
 只读扫描把已审核入口通过、已验证激活、已确认 Patch 和已审核本地条件通过统一显示为绿色「授权可用」，批量扫描默认不勾选这类应用。机器标识未匹配但其余适用的本地条件均通过时，显示绿色「授权可用（机器标识未匹配）」。无本地授权记录时显示白色「无本地授权（其他方式待核）」，已验证原生无效也使用白色。证据不足为灰色，完整入口拒绝为琥珀色，扫描异常为红色。检测原因保留判定范围，原生授权、代码完整性和整体入口结果由对应的证据字段记录。详见 [Java 代码证据边界](docs/JAVA_PATCH_EVIDENCE_BOUNDARIES.md)。
 
@@ -69,7 +69,7 @@ CI 构建正式 portable ZIP 时会下载该固定 runtime、校验 SHA-256，�
 
 ## 批量备份整理
 
-v1.2.43 起，备份清理由单独的“备份整理”栏合并进“操作”单选项，与“一键恢复授权”和“方式三”并列为“批量删除备份”。保留份数仍在同一“选项”行配置，选择该操作后普通写入/联网/预览选项自动禁用；执行时无需先扫描应用，直接对父目录下 LicenseRecover 自身生成的 `prewrite` / `prepatch` / `preoneclick` 和已知旧版时间戳备份进行安全扫描与确认删除。
+“批量删除备份”与“一键恢复授权”并列于“操作”单选项中。保留份数在同一“选项”行配置，选择备份整理后普通写入/联网/预览选项自动禁用；执行时无需先扫描应用，直接对父目录下 LicenseRecover 自身生成的 `prewrite` / `prepatch` / `preoneclick` 和已知旧版时间戳备份进行安全扫描与确认删除。历史 `prepatch` 备份仍可整理。
 
 ## 当前界面与唯一启动入口
 
@@ -105,13 +105,13 @@ v1.2.3 修复了批量扫描在第一个 Java 项目处因 GUI classpath 耦合�
 
 支持包含 `ITMC.Web.dll` 与 `ITMC.Regedit.dll` / `itmcRegedit.dll` 等组件的 ASP.NET / .NET 应用。DS01xx、YX0301/YX0302/YX0303 等已验证家族会按检测结果自动选择兼容路径。v1.2.37 起，小写 `itmcRegedit.dll` 链不再依赖人工 `AppDomain + SimpleWorkerRequest` 模拟，而由 .NET Framework `ApplicationManager` 建立真实 ASP.NET `HostingEnvironment`，确保 `~/Register.xml` / `~/config.xml`、目标 `web.config`、目标 `bin` 和 `HttpRuntime` 使用同一个站点应用域。 v1.2.38 起，仅存在大写 `ITMC.Regedit.dll` 时也进入同一真实 Hosted AppDomain，但继续使用独立 `LicenseRecover.NET.Modern.exe` 适配大写 API；这样 `AppDomain.BaseDirectory` 保持网站根目录，避免大写组件误从 `bin` 读取 `config.xml` / `Register.xml`。 v1.2.39 起，.NET `RegStr` 将目标站点 `config.xml` 的当前 `SoftVersionID` 作为首个主模式，再合并有效本地授权和目标 `ITMC.Web.dll` 证明的同族兼容模式；GUI 一键恢复与 CLI `gencode` 共用同一解析器，避免本地授权写入成功但当前系统代号未进入 `RegStr`，最终出现“系统不支持任何模式”。 v1.2.40 起，双注册组件部署改为大写 `ITMC.Regedit.dll` 现代链优先，并在现代链成功后验证站点根 `config.xml` 中实际持久化的 `RegStr` 包含当前 `SoftVersionID`。 v1.2.6 根据 GM00401 实际样本新增 GM004 家族：config.xml 为 GM00401，且 ITMC.Web.dll 同时包含 GM00401 与 GM004 时确认 ProName=GM004，并提取 RegStr=GM00401；样本 Web.config 中遗留的 productName=YX0301 不参与授权产品识别。
 
-## 三种恢复方式
+## 授权恢复操作
 
+- **一键恢复授权（推荐）**：根据目标程序的注册流程生成并写回本地授权，再重新验证结果。
 - **方式一**：写入或调整本地授权相关配置。Java 写入前建立 `prewrite` 备份；生成的本地 `regName` 授权对象固定写入 `UserID=fwq`，外层 `WebSerUserID` 保持独立兼容字段。
 - **方式二**：根据申请号生成离线授权码，交由应用自身的本地注册页面提交。
-- **方式三**：修改授权校验相关字节码 / DLL。默认路径会先建立 `prepatch` 备份并校验后继续。
 
-方式三属于高风险操作，建议先扫描识别并确认目标文件；.NET 应用执行前应停止可能占用 DLL 的 IIS 应用池或相关进程。
+“同时阻止残留联网”选项继续用于一键恢复流程。代码证据列继续只读检查现有组件和历史修改，便于核对当前安装状态。
 
 ## v1.2.7 QT40101 与执行资格保护
 
@@ -119,14 +119,13 @@ v1.2.3 修复了批量扫描在第一个 Java 项目处因 GUI classpath 耦合�
 - QT40101 的配置没有静态 `regInfo`；应用启动后通过 `RegisterMain("QT401").getRegInfo().getRegStr()` 读取授权项，因此本工具不会再显示或写入旧的 44 项通用 fallback。
 - Java `classes-config` 在授权族或 RegStr 未确认时标记为“待确认”，一键恢复和批量推荐操作都会在写文件前自动阻止/跳过。
 - 同样保留 .NET Modern 的产品号安全门：产品号未确认时不会执行自动写回。
-- 方式三是独立高级操作，不依赖本地授权重建所需的 RegStr，因此不受上述推荐操作资格判断影响。
 
 ## 安全保护
 
 - 关键写入前强制备份；
 - 备份使用文件长度 + SHA-256 内容校验；
 - 备份失败时终止高风险写入；
-- Java 方式三支持只扫描 / dry-run；
+- 支持只读状态扫描和恢复操作预览；
 - 子进程统一超时与结果模型；
 - 自更新 ZIP 做 SHA-256 校验；
 - 更新器拒绝 ZIP 路径穿越；

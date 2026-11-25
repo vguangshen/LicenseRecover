@@ -13,7 +13,7 @@
  *
  * 用法:  java -cp "<应用根目录>\WEB-INF\lib\*;LicenseRecover.jar" LicenseRecover [应用根目录]
  * 可选:  -p <产品主编号>   强制指定产品主编号(默认自动识别, YT00123 系默认 QT1001)
- *        --dry-run         只预览，不修改文件（.NET 方式一/三均为预览）
+ *        --dry-run         只预览，不修改文件
  *
  * 方式二(生成离线授权码, 走应用"本地注册"界面):
  *  java -cp "...\WEB-INF\lib\*;LicenseRecover.jar" LicenseRecover --gencode [应用根目录] [--seq <申请号>]
@@ -24,11 +24,8 @@
  *  java -jar LicenseRecover.jar --block-net [应用根目录或 bin 目录]
  *  修改应用实际使用的授权配置，将服务地址指向本机不可用端口，不修改 DLL。
  *
- * 方式三(暴力: 直接移除联网授权代码, 用 Javassist 改写字节码):
- *  java -cp "...\WEB-INF\lib\*;LicenseRecover.jar" LicenseRecover --remove-net [应用根目录]   # 扫描+移除
- *  java -cp "...\WEB-INF\lib\*;LicenseRecover.jar" LicenseRecover --scan-net [应用根目录]     # 仅扫描识别
- *  注意: .NET 方式三只处理 bin\itmcRegedit.dll；目标类若是 Virbox BCE 保护(minor=32768)
- *  需先脱壳; 执行前请停止应用服务。
+ * 只读识别注册组件:
+ *  java -jar LicenseRecover.jar --scan-net [应用根目录]
  */
 import itmc.regedit.DesUtil;
 import itmc.regedit.GetRegisterCode;
@@ -145,6 +142,11 @@ public class LicenseRecover {
       + "YT00128,YT00127,YT00129,YT00139,YT00132,YT00141,BKSM4,YT00126,YT00154,YT001";
 
     public static void main(String[] args) throws Exception {
+        // Reject before logging, target discovery, helper extraction or any writes.
+        if (hasArg(args, "--remove-net")) {
+            System.exit(SafeNetRemoverCLI.reject());
+            return;
+        }
         initLog();
         // 批量模式：父目录下每个子目录（一个产品代号）逐个恢复
         if (hasArg(args, "--batch")) {
@@ -166,8 +168,8 @@ public class LicenseRecover {
             }
         }
         // Java 版需要应用 classpath 的路径（方式一/方式二）：若应用类不在当前 classpath，自动重跑
-        // （打包 jar 自动脱壳）；方式三（--remove-net/--scan-net）用最小 classpath，不在此列。
-        if (!hasArg(args, "--remove-net") && !hasArg(args, "--scan-net")) {
+        // （打包 jar 自动脱壳）；只读扫描使用工具 classpath。
+        if (!hasArg(args, "--scan-net")) {
             maybeReexecForAppClasspath(args, appArg0);
         }
         for (String a : args) {
@@ -177,10 +179,6 @@ public class LicenseRecover {
             }
         }
         for (String a : args) {
-            if ("--remove-net".equals(a)) {
-                System.exit(removeNetMode(args, true));
-                return;
-            }
             if ("--scan-net".equals(a)) {
                 System.exit(removeNetMode(args, false));
                 return;
@@ -717,13 +715,14 @@ public class LicenseRecover {
         return "YT001";
     }
 
-    // ================= 方式三: 移除联网授权代码 (暴力) =================
+    // ================= Read-only registration component inspection =================
 
     static int removeNetMode(String[] args, boolean doPatch) {
+        if (doPatch || hasArg(args, "--remove-net")) return SafeNetRemoverCLI.reject();
         String appArg = null;
         for (int i = 0; i < args.length; i++) {
-            // Preserve the legacy Way 3 target resolver, but never treat preview as a writable operation.
-            if ("--remove-net".equals(args[i]) || "--scan-net".equals(args[i]) || "--dry-run".equals(args[i])) continue;
+            // Retain the established directory resolver for read-only scans.
+            if ("--scan-net".equals(args[i]) || "--dry-run".equals(args[i])) continue;
             if ("-p".equals(args[i]) || "--seq".equals(args[i]) || "--product".equals(args[i])) {
                 if (i + 1 < args.length) i++;   // 跳过选项及其值
                 continue;
@@ -744,7 +743,7 @@ public class LicenseRecover {
             appRoot = new File(lib).getParentFile().getParentFile().getAbsolutePath();
         }
         System.out.println("======================================================");
-        System.out.println(doPatch ? " 移除联网授权代码 (暴力方式)" : " 扫描联网授权验证文件");
+        System.out.println(" 扫描联网授权验证文件（只读）");
         System.out.println("======================================================");
         System.out.println("应用根目录 : " + appRoot);
         System.out.println();
@@ -753,15 +752,7 @@ public class LicenseRecover {
             System.out.println("DRY-RUN: 仅只读扫描，未写入授权文件。");
             return found ? 0 : 1;
         }
-        if (doPatch) {
-            boolean ok = NetRemover.removeNetValidation(appRoot, s -> System.out.println(s));
-            System.out.println();
-            System.out.println(ok ? "RESULT: OK —— 联网授权代码已移除" : "RESULT: FAILED");
-            return ok ? 0 : 1;
-        } else {
-            NetRemover.scan(appRoot, s -> System.out.println(s));
-        }
-        return 0;
+        return NetRemover.scan(appRoot, System.out::println) ? 0 : 1;
     }
 
     static boolean hasProductOverride(String[] args) {
@@ -1238,10 +1229,13 @@ public class LicenseRecover {
 
     /** .NET 版主入口：根据参数拼助手命令并执行。 */
     static void dotNetMain(String[] args, String binDir) {
+        if (hasArg(args, "--remove-net")) {
+            System.exit(SafeNetRemoverCLI.reject());
+            return;
+        }
         String mode = "block-net";
         if (hasArg(args, "--block-net")) mode = "block-net";
         else if (hasArg(args, "--gencode")) mode = "gencode";
-        else if (hasArg(args, "--remove-net")) mode = "patch";
         else if (hasArg(args, "--scan-net")) mode = "scan";
 
         if ("block-net".equals(mode)) {
@@ -1414,25 +1408,25 @@ public class LicenseRecover {
 
     /** 批量对单个 Java 应用派生子进程（带该应用 WEB-INF/lib classpath），复用单应用流程。 */
     static int spawnJavaRecover(String appRoot, String libDir, String productOverride, boolean dryRun, String method) {
+        if ("patch".equals(method)) return SafeNetRemoverCLI.reject();
         String javaExe = System.getProperty("java.home") + File.separator + "bin" + File.separator + "java";
         java.util.List<String> cmd = new java.util.ArrayList<>();
         cmd.add(javaExe);
         cmd.add("-Dfile.encoding=UTF-8");
-        boolean patchMode = "patch".equals(method) || "scan".equals(method);
+        boolean scanMode = "scan".equals(method);
         cmd.add("-cp");
         String toolCp = toolRuntimeClasspath();
-        if (patchMode) {
-            // 方式三用最小 classpath（本工具已内嵌 javassist），不能带 lib/* 否则 ITMCReg.jar 被本进程占用无法替换
+        if (scanMode) {
+            // Read-only scans need only tool classes.
             cmd.add(toolCp);
         } else {
             // Tool classes first: an application lib must never shadow LicenseRecover/overlay classes.
             cmd.add(toolCp + File.pathSeparator + libDir + File.separator + "*");
         }
         cmd.add("LicenseRecover");
-        if ("patch".equals(method)) cmd.add("--remove-net");
-        else if ("scan".equals(method)) cmd.add("--scan-net");
+        if (scanMode) cmd.add("--scan-net");
         cmd.add(appRoot);
-        if (!patchMode) {
+        if (!scanMode) {
             if (productOverride != null) { cmd.add("-p"); cmd.add(productOverride); }
             if (dryRun) cmd.add("--dry-run");
         }
@@ -1441,9 +1435,11 @@ public class LicenseRecover {
 
     /** 批量主入口：对每个应用执行所选方式。 */
     static void batchMain(String[] args, String parentDir) {
-        String method = "config";
-        if (hasArg(args, "--remove-net")) method = "patch";
-        else if (hasArg(args, "--scan-net")) method = "scan";
+        if (hasArg(args, "--remove-net")) {
+            System.exit(SafeNetRemoverCLI.reject());
+            return;
+        }
+        String method = hasArg(args, "--scan-net") ? "scan" : "config";
         String productOverride = getArg(args, "-p");
         boolean dryRun = hasArg(args, "--dry-run");
         if (hasArg(args, "--gencode")) {
@@ -1457,7 +1453,7 @@ public class LicenseRecover {
         System.out.println("======================================================");
         System.out.println(" ITMC 批量授权恢复");
         System.out.println(" 父目录    : " + parentDir);
-        System.out.println(" 方式      : " + method + "   （方式一=.NET防止自动联网校验 / Java写本地授权；--remove-net=方式三 / --scan-net=仅扫描）");
+        System.out.println(" 方式      : " + method + "   （方式一=.NET防止自动联网校验 / Java写本地授权；--scan-net=仅扫描）");
         System.out.println(" 识别      : ITMC 应用 " + appCnt + " 个，非 ITMC 目录 " + noneCnt + " 个（将显示并跳过）");
         System.out.println("======================================================");
         if (apps.isEmpty()) {

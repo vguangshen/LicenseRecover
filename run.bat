@@ -40,10 +40,15 @@ if not defined JAVA (
   exit /b 1
 )
 
-rem 新版源码核心编译进 Overlay。命令行入口也必须优先加载它，避免 GUI 已使用
-rem 动态目录注册映射，而 run.bat 仍落回旧 LicenseRecover.jar 的固定 QT1001/QT04 规则。
-set "CORECP=%~dp0LicenseRecover.jar"
-if exist "%~dp0LicenseRecoverOverlay.jar" set "CORECP=%~dp0LicenseRecoverOverlay.jar;%CORECP%"
+rem 命令行入口必须使用当前源码运行层。安装不完整时停止，避免回退到旧恢复入口。
+set "RUNTIMEJAR=%~dp0LicenseRecoverRuntime.jar"
+if not exist "%RUNTIMEJAR%" set "RUNTIMEJAR=%~dp0LicenseRecoverOverlay.jar"
+if not exist "%RUNTIMEJAR%" (
+  echo   [错误] 缺少 LicenseRecoverRuntime.jar / LicenseRecoverOverlay.jar，请重新完整解压工具。
+  pause
+  exit /b 2
+)
+set "CORECP=%RUNTIMEJAR%;%~dp0LicenseRecoverGUI.jar;%~dp0LicenseRecover.jar"
 
 echo.
 echo   ============================================
@@ -57,7 +62,7 @@ if defined DOTNET (
 ) else (
   echo   应用类型: Java 版   应用根目录: %APP%
   echo.
-  "%JAVA%" -Dfile.encoding=UTF-8 -cp "%APP%\WEB-INF\lib\*;%CORECP%" LicenseRecover "%APP%"
+  "%JAVA%" -Dfile.encoding=UTF-8 -cp "%CORECP%;%APP%\WEB-INF\lib\*" LicenseRecover "%APP%"
 )
 echo.
 echo   请查看上方 RESULT 行。若为 OK，重启应用服务使配置生效。

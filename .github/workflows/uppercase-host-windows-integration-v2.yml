@@ -149,6 +149,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "host compile failed: $LASTEXITCODE" }
           python scripts\prepare-dotnet-modern-helper.py LicenseRecover.NET\LicenseRecover.NET.exe $tool\LicenseRecover.NET.Modern.exe
           if ($LASTEXITCODE -ne 0) { throw "modern helper generation failed: $LASTEXITCODE" }
+          # Exercise the same helpers as the release package, after the
+          # original-to-modern conversion has completed its exact hash checks.
+          python scripts\disable-dotnet-way3.py LicenseRecover.NET\LicenseRecover.NET.exe $tool\LicenseRecover.NET.exe
+          if ($LASTEXITCODE -ne 0) { throw "legacy helper Way 3 removal failed: $LASTEXITCODE" }
+          $disabledModern = Join-Path $tool 'LicenseRecover.NET.Disabled.Modern.exe'
+          python scripts\disable-dotnet-way3.py $tool\LicenseRecover.NET.Modern.exe $disabledModern
+          if ($LASTEXITCODE -ne 0) { throw "modern helper Way 3 removal failed: $LASTEXITCODE" }
+          Move-Item -LiteralPath $disabledModern -Destination (Join-Path $tool 'LicenseRecover.NET.Modern.exe') -Force
 
           "LR_EXPECTED_APP_ROOT=$app" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "APP_ROOT=$app" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append

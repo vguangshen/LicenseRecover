@@ -46,10 +46,10 @@ public final class NetRemoverReadOnlyScanTest {
             check(!report.contains("该 RegisterMain 已补丁"), "must not claim patch from missing strings");
             check(!report.contains("无需重复修补"), "must not infer successful prior patch");
             byte[] before = Files.readAllBytes(jar);
-            check(LicenseRecover.removeNetMode(new String[]{ "--remove-net", root.toString(), "--dry-run" }, true) == 0,
-                    "legacy Way 3 preview runs the scanner rather than invoking write mode");
+            check(LicenseRecover.removeNetMode(new String[]{ "--scan-net", root.toString(), "--dry-run" }, false) == 0,
+                    "read-only CLI preview retains component inspection");
             check(java.util.Arrays.equals(before, Files.readAllBytes(jar)),
-                    "legacy Way 3 preview must preserve the original JAR byte-for-byte");
+                    "read-only inspection must preserve the original JAR byte-for-byte");
         } finally {
             try (Stream<Path> paths = Files.walk(root)) {
                 paths.sorted(Comparator.reverseOrder()).forEach(path -> {
