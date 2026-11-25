@@ -153,6 +153,7 @@ public final class LicenseRecoverReadOnlyInspection {
     static Result inspect(File root, File dir, LicenseRecoverReadOnlyPatchScanner.Runtime runtime,
                           String version, LicenseRecoverLicenseState codeState) {
         List<Artifact> artifacts = new ArrayList<Artifact>();
+        boolean artifactsStable = false;
         LicenseRecoverLicenseState state = codeState;
         String codeComparisonEvidence=codeState.evidence,acceptanceEvidence="当前授权入口尚未获得独立证明";
         LicenseRecoverReadOnlyCodeEvidence codeEvidence=LicenseRecoverReadOnlyCodeEvidence.unassessed("当前组件尚无代码结构对照");
@@ -211,14 +212,16 @@ public final class LicenseRecoverReadOnlyInspection {
                 Artifact currentArtifact=readArtifact(root,paths.get(i),runtime);
                 if(!currentArtifact.sha256.equals(artifacts.get(i).sha256))throw new Changed();
             }
+            artifactsStable = true;
         } catch (Changed | NoSuchFileException e) {
             state=LicenseRecoverLicenseState.unverified("扫描期间文件缺失或变化；不能确认当前状态");
             reason=state.evidence;
+            codeComparisonEvidence=acceptanceEvidence=state.evidence;
         } catch (IOException | java.security.GeneralSecurityException | SecurityException e) {
             state=LicenseRecoverLicenseState.scanError("组件只读检查失败: "+e.getClass().getSimpleName());
             reason=state.evidence; // Never expose paths, configuration or exception messages.
         }
-        if(!state.isScanError()) {
+        if(canEvaluateAcceptance(artifactsStable,state)) {
             LicenseRecoverLicenseState observedCode=state;
             LicenseRecoverLicenseState accepted;
             if(runtime==LicenseRecoverReadOnlyPatchScanner.Runtime.DOTNET) {
@@ -268,6 +271,11 @@ public final class LicenseRecoverReadOnlyInspection {
         }
         if(state.isScanError())codeEvidence=LicenseRecoverReadOnlyCodeEvidence.unassessed("扫描失败，代码结构证据未确认");
         return new Result(root,version,runtime.name(),state,artifacts,reason,protocol,codeEvidence,codeComparisonEvidence,acceptanceEvidence,modeRelations);
+    }
+
+    /** An incomplete or changed artifact observation cannot establish an acceptance result. */
+    static boolean canEvaluateAcceptance(boolean artifactsStable, LicenseRecoverLicenseState state) {
+        return artifactsStable && state != null && !state.isScanError();
     }
 
     private static void stringArray(StringBuilder b,String name,List<String> values) {

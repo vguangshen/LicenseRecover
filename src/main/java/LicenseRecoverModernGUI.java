@@ -1034,7 +1034,7 @@ public final class LicenseRecoverModernGUI {
                             cells = new Object[]{child.getName(),
                                     plan.detected ? "Java / " + plan.generation : "Java",
                                     valueOrDash(plan.softVersionId), valueOrDash(plan.authorizationFamily),
-                                    valueOrDash(plan.runtimeProductId), plan.regStrSummary(), plan.configTargets,
+                                    plan.runtimeProductDisplay(), plan.regStrSummary(), plan.configTargets,
                                     licenseState.display(), verifyText, statusText, info.appRoot.getAbsolutePath(), inspection.codeEvidence.display()};
                             detectedCount = errorCount == 0 ? 1 : 0;
                         } else if (info.type == AppInfo.Type.DOTNET) {
