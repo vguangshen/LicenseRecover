@@ -320,7 +320,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         // only when the original static resolution found no registration ID.
         // The directory never establishes RegStr or authorizes a write by itself.
         boolean ptFallback = ptExplicitRecoveryCandidate(plan);
-        if (!plan.automaticRecoveryReady && !plan.nativeRequestReady && !ptFallback)
+        if (!javaOneClickEligible(plan))
             return Result.fail("[JAVA_PLAN] 自动恢复已阻止：" + plan.recoveryReadiness + "。未修改任何文件。", d);
         String product = javaRecoveryProductId(plan);
         if (blank(product))
@@ -500,6 +500,13 @@ public final class LicenseRecoverModernGUIAutoRecovery {
      * wins; the PT directory name is consulted only when it is unavailable.
      * This does not claim that the directory proves a valid authorization.
      */
+    /** Shared non-writing eligibility rule for single and batch one-click entrypoints. */
+    static boolean javaOneClickEligible(LicenseRecoverModernGUIJavaPlan plan) {
+        return plan != null && plan.detected
+                && (plan.automaticRecoveryReady || plan.nativeRequestReady
+                    || ptExplicitRecoveryCandidate(plan));
+    }
+
     static String javaRecoveryProductId(LicenseRecoverModernGUIJavaPlan plan) {
         if (plan == null || !plan.detected) return null;
         if (!blank(plan.runtimeProductId)) return plan.runtimeProductId.trim();
