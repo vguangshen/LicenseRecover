@@ -197,6 +197,11 @@ $runtimeClasspath = $verifyDir + $classpathSeparator + $testDir + $classpathSepa
 $runTestArgs = @('-cp', $runtimeClasspath, 'RefactorSmokeTest')
 Invoke-External -Command 'java' -ArgumentList $runTestArgs
 
+
+$regInfoIdentityRepairTest = Join-Path $testSourceDir 'DotNetNativeRegInfoIdentityRepairTest.java'
+Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $regInfoIdentityRepairTest)
+Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'DotNetNativeRegInfoIdentityRepairTest')
+
 $licenseStateTest = Join-Path $repoRoot 'src/test/java/LicenseRecoverLicenseStateTest.java'
 Invoke-External -Command 'javac' -ArgumentList @('-encoding', 'UTF-8', '-cp', $testClasspath, '-d', $testDir, $licenseStateTest)
 Invoke-External -Command 'java' -ArgumentList @('-cp', $runtimeClasspath, 'LicenseRecoverLicenseStateTest')
