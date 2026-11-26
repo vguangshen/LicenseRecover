@@ -17,6 +17,9 @@ namespace LicenseRecoverNet
             public string Command, RuntimeDir, Product, Version, Sequence, Code;
         }
 
+        // Local authorization identity; distinct from ProName and WebSerUserID.
+        private const string LocalAuthorizationUserId = "fwq";
+
         private static Options ParseArgs(string[] args)
         {
             if (args == null || args.Length < 2) return null;
@@ -89,7 +92,7 @@ namespace LicenseRecoverNet
             if (proName == null || userID == null)
                 throw new MissingMemberException("Target RegeditMain lacks ProName/UserID");
             proName.SetValue(instance, options.Product, null);
-            userID.SetValue(instance, "itmc", null);
+            userID.SetValue(instance, LocalAuthorizationUserId, null);
             return instance;
         }
 
@@ -172,6 +175,8 @@ namespace LicenseRecoverNet
                     + LocalStateFlag(info, "RegStr", "DS0101", true));
             Console.WriteLine("[LEGACY_LOCAL_STATE] proNameMatches="
                 + LocalStateFlag(info, "ProName", product, false));
+            Console.WriteLine("[LEGACY_LOCAL_STATE] userIdMatches="
+                + LocalStateFlag(info, "UserID", LocalAuthorizationUserId, false));
             Console.WriteLine("[LEGACY_LOCAL_STATE] expiry=" + LocalExpiryFlag(info));
         }
 
@@ -190,6 +195,7 @@ namespace LicenseRecoverNet
             if (!(bool)local.Invoke(native, args)) return false;
             object info = args[0];
             return LocalStateFlag(info, "ProName", product, false) == "match"
+                && LocalStateFlag(info, "UserID", LocalAuthorizationUserId, false) == "match"
                 && LocalStateFlag(info, "RegStr", version, true) == "match"
                 && LocalExpiryFlag(info) == "future-or-today";
         }
