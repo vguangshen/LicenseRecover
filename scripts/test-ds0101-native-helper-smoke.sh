@@ -14,7 +14,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 namespace ITMC.Regedit {
-  public sealed class RegeditInfo { public string ProName { get; set; } public string RegStr { get; set; } public DateTime EndDate { get; set; } }
+  public sealed class RegeditInfo { public string ProName { get; set; } public string UserID { get; set; } public string RegStr { get; set; } public DateTime EndDate { get; set; } }
   public sealed class RegeditMain {
     public string ProName { get; set; }
     public string UserID { get; set; }
@@ -36,13 +36,13 @@ namespace ITMC.Regedit {
       }
     }
     public string NewRegistry() {
-      if (ProName != "itmcIEC" || UserID != "itmc")
+      if (ProName != "itmcIEC" || UserID != "fwq")
         throw new InvalidOperationException("missing original Regester.aspx property setup");
       return "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF";
     }
     public bool DoRegistry(string seq, string code) {
       if (seq != NewRegistry() || code != "SYNTHETIC_TEST_CODE") return false;
-      File.WriteAllText(Environment.GetEnvironmentVariable("DS0101_MOCK_STATE"), "registered");
+      File.WriteAllText(Environment.GetEnvironmentVariable("DS0101_MOCK_STATE"), UserID);
       return true;
     }
     public bool CheckReInfo(ref RegeditInfo info) {
@@ -50,7 +50,7 @@ namespace ITMC.Regedit {
     }
     public bool CheckLocalReg(ref RegeditInfo info) {
       bool registered = File.Exists(Environment.GetEnvironmentVariable("DS0101_MOCK_STATE"));
-      if (registered) { info.ProName = "itmcIEC"; info.RegStr = "DS0101"; info.EndDate = new DateTime(2099,12,31); }
+      if (registered) { info.ProName = "itmcIEC"; info.UserID = File.ReadAllText(Environment.GetEnvironmentVariable("DS0101_MOCK_STATE")); info.RegStr = "DS0101"; info.EndDate = new DateTime(2099,12,31); }
       return registered;
     }
   }
@@ -136,6 +136,16 @@ test -e "$DS0101_MOCK_STATE"
 mono "$tmp/Driver.exe" "$tmp/LicenseRecover.NET.Legacy.dll" \
   legacy-local-probe "$tmp/site/bin" --product itmcIEC > "$tmp/local-after.log"
 grep -q "RESULT: LEGACY_NATIVE_LOCAL_CHECK_OK" "$tmp/local-after.log"
+grep -q "\[LEGACY_LOCAL_STATE\] userIdMatches=match" "$tmp/local-after.log"
+
+# A record with a legacy identity must not be reported as fully recovered.
+printf "itmc" > "$DS0101_MOCK_STATE"
+if mono "$tmp/Driver.exe" "$tmp/LicenseRecover.NET.Legacy.dll" \
+     legacy-verify "$tmp/site/bin" --product itmcIEC > "$tmp/wrong-userid.log" 2>&1; then
+  echo "FAIL: verification accepted UserID other than fwq" >&2
+  exit 1
+fi
+printf "fwq" > "$DS0101_MOCK_STATE"
 
 # A fresh process must verify BOTH CheckReInfo and Web.CheckReg.
 DS0101_MOCK_WEB_OK=no \

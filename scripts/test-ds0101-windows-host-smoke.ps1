@@ -29,7 +29,7 @@ using System.Security.Cryptography;
 using System.Text;
 
 namespace ITMC.Regedit {
-  public sealed class RegeditInfo { public string ProName { get; set; } public string RegStr { get; set; } public DateTime EndDate { get; set; } }
+  public sealed class RegeditInfo { public string ProName { get; set; } public string UserID { get; set; } public string RegStr { get; set; } public DateTime EndDate { get; set; } }
   public sealed class RegeditMain {
     public string ProName { get; set; }
     public string UserID { get; set; }
@@ -71,7 +71,7 @@ namespace ITMC.Regedit {
 
     public string NewRegistry() {
       EnsureHosted("NewRegistry");
-      if (ProName != "itmcIEC" || UserID != "itmc")
+      if (ProName != "itmcIEC" || UserID != "fwq")
         throw new InvalidOperationException("missing native page property setup");
       return "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF";
     }
@@ -80,7 +80,7 @@ namespace ITMC.Regedit {
       EnsureHosted("DoRegistry");
       if (sequence != NewRegistry() || authorizationCode != "SYNTHETIC_TEST_CODE")
         return false;
-      File.WriteAllText(Path.Combine(Root, "mock-authorized.marker"), "synthetic-only");
+      File.WriteAllText(Path.Combine(Root, "mock-authorized.marker"), UserID);
       return true;
     }
 
@@ -89,6 +89,7 @@ namespace ITMC.Regedit {
       bool registered = File.Exists(Path.Combine(Root, "mock-authorized.marker"));
       if (registered) {
         info.ProName = "itmcIEC";
+        info.UserID = File.ReadAllText(Path.Combine(Root, "mock-authorized.marker"));
         info.RegStr = Environment.GetEnvironmentVariable("DS0101_MOCK_VERSION") ?? "DS0101";
         info.EndDate = new DateTime(2099,12,31);
       }
@@ -184,6 +185,15 @@ $env:DS0101_MOCK_WEB_OK = 'yes'
 $verified = Invoke-HostTest @('legacy-verify',$bin,'--product','itmcIEC')
 if ($verified.ExitCode -ne 0) { throw "Fresh-host CheckReg failed: $($verified.Output)" }
 Assert-Contains $verified.Output 'RESULT: LEGACY_NATIVE_CHECKREG_OK'
+
+# A local record with the old identity must be rejected even if the site
+# reports other checks as passing.
+Set-Content -LiteralPath $marker -Value 'itmc' -NoNewline -Encoding ASCII
+$wrongUser = Invoke-HostTest @('legacy-verify',$bin,'--product','itmcIEC')
+if ($wrongUser.ExitCode -eq 0) {
+    throw 'Hosted verifier accepted wrong persisted UserID'
+}
+Set-Content -LiteralPath $marker -Value 'fwq' -NoNewline -Encoding ASCII
 
 # Same native methods must support another DS01xx version without changing
 # the DLL fingerprint or accepting a mismatched version token.

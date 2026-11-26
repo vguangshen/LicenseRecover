@@ -295,6 +295,10 @@ Invoke-External -Command $mcs.Source -ArgumentList @(
     ('-out:' + $legacyHelper), $legacyHelperSource
 )
 if (-not (Test-Path -LiteralPath $legacyHelper)) { throw 'DS0101 legacy helper build failed.' }
+Invoke-External -Command 'python3' -ArgumentList @(
+    (Join-Path $repoRoot 'scripts/check-dotnet-userid.py'),
+    $nativeHelper, $modernNativeHelper, $legacyHelper
+)
 $aspHostBytes = [IO.File]::ReadAllBytes($aspNetHostHelper)
 $aspHostAscii = [Text.Encoding]::ASCII.GetString($aspHostBytes)
 $aspHostUnicode = [Text.Encoding]::Unicode.GetString($aspHostBytes)
