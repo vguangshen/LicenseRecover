@@ -18,6 +18,8 @@ import java.util.regex.Pattern;
 /** One-click recovery coordinator used by the modern GUI overlay. */
 public final class LicenseRecoverModernGUIAutoRecovery {
     static final String USER_ID = "fwq";
+    private static final String AUDITED_UPPERCASE_YX_REGEDIT_SHA256 =
+            "222df2d024efb4b30510af9bf5f552646e4e2f75ea9b3795daa7a279d8a6f725";
     static final String BLOCK_ENDPOINT = "http://127.0.0.1:9/Service.asmx";
     private static final Random RNG = new Random();
     static final int MAX_METADATA_BINARY_BYTES = 64 * 1024 * 1024;
@@ -708,6 +710,10 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         if (targetRegedit == null)
             return Result.fail("[CHAIN] no target itmcRegedit.dll / ITMC.Regedit.dll registration assembly was found.", d);
         boolean lowercaseChain = "itmcRegedit.dll".equals(targetRegedit.getName());
+        // Limited to the exact user-supplied, statically audited uppercase assembly.
+        // No format assumption is carried over to unrelated .NET registration DLLs.
+        boolean nativeRegInfoIdentityRepair = !legacyDs01xx && !lowercaseChain
+                && fileSha256Equals(targetRegedit, AUDITED_UPPERCASE_YX_REGEDIT_SHA256);
         // Both lowercase and uppercase registration components must execute inside the
         // target web application's hosted AppDomain.  The two generations resolve
         // paths differently (lowercase uses HttpContext.MapPath, uppercase uses
@@ -776,7 +782,8 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             log.accept("[dotnet-stage] PRE_BLOCK: OK (" + helper.getName() + ")\n");
 
             if (!dryRun) {
-                if (backup || legacyDs01xx) backupDotNetRegistrationFiles(originals, log);
+                if (backup || legacyDs01xx || nativeRegInfoIdentityRepair)
+                    backupDotNetRegistrationFiles(originals, log);
                 blockPrimaryDotNetConfigs(d, log);
                 blockSidecars(d, false, false, log);
                 log.accept("[pre-block] authorization network isolation is active before gencode / DoRegistry / CheckReInfo.\n");
@@ -842,6 +849,19 @@ public final class LicenseRecoverModernGUIAutoRecovery {
             if (applied.exitCode != 0)
                 throw nativeFailure("DOREG", "target RegeditMain.DoRegistry() rejected the generated code", applied);
             log.accept("[dotnet-stage] DOREG: OK\n");
+            if (nativeRegInfoIdentityRepair) {
+                File siteConfig = new File(d.appRoot, "config.xml");
+                String before = readUtf8(siteConfig);
+                String after = normalizeNativeRegInfoUserId(before, registrationProduct, d.versionId);
+                if (!after.equals(before)) {
+                    Files.write(siteConfig.toPath(), after.getBytes(StandardCharsets.UTF_8));
+                    if (!after.equals(readUtf8(siteConfig)))
+                        throw new IOException("[REGINFO_USERID] persisted regName changed unexpectedly");
+                    log.accept("[dotnet-reginfo] native RegeditInfo.UserID restored to expected local identity; original other fields retained.\n");
+                } else {
+                    log.accept("[dotnet-reginfo] native RegeditInfo.UserID already matches.\n");
+                }
+            }
 
             List<String> verify = new ArrayList<String>();
             verify.add(helper.getAbsolutePath());
@@ -1254,6 +1274,69 @@ public final class LicenseRecoverModernGUIAutoRecovery {
     }
 
     private static String valueOrPending(String value) { return blank(value) ? "<auto>" : value; }
+
+
+    /**
+     * Narrow, post-native-write reconciliation for the hash-pinned uppercase
+     * registration DLL. DoRegistry generates a fresh RegeditInfo but leaves its
+     * UserID unset; the GUI-supplied RegeditMain.UserID writes WebSerUserID
+     * instead. Change ONLY an absent/empty native JSON UserID; do not override
+     * another nonempty identity, fabricate a registration, or alter other fields.
+     *
+     * Call ONLY after native DoRegistry returns success and the coordinator
+     * snapshots/backs up the original site files. The subsequent native
+     * CheckReInfo + website validation must still accept the result.
+     */
+    static String normalizeNativeRegInfoUserId(String xml, String product, String version)
+            throws Exception {
+        if (blank(xml) || blank(product) || blank(version))
+            throw new IOException("[REGINFO_USERID] site/product/version unavailable");
+        String encoded = firstElement(xml, "regName");
+        if (blank(encoded)) throw new IOException("[REGINFO_USERID] native regName unavailable");
+        String key = "*ITMC" + product + "OK*";
+        String clear = desDecryptHex(encoded.trim(), key);
+        if (clear.length() < 14 || clear.length() > MAX_METADATA_TEXT_CHARS
+                || !clear.substring(0, 6).matches("[0-9]{6}")
+                || !clear.substring(clear.length() - 6).matches("[0-9]{6}"))
+            throw new IOException("[REGINFO_USERID] native envelope shape not verified");
+        String json = clear.substring(6, clear.length() - 6);
+        if (!json.startsWith("{") || !json.endsWith("}")
+                || !product.equals(nativeRegInfoJsonString(json, "ProName"))
+                || !containsRegStrToken(nativeRegInfoJsonString(json, "RegStr"), version)
+                || blank(nativeRegInfoJsonString(json, "RegID")))
+            throw new IOException("[REGINFO_USERID] original native record is not the selected product/version");
+        Pattern pattern = Pattern.compile("\"UserID\"\\s*:\\s*(null|\"(?:\\\\.|[^\"\\\\])*\")");
+        Matcher match = pattern.matcher(json);
+        if (!match.find()) throw new IOException("[REGINFO_USERID] native record has no UserID field");
+        int start = match.start(1), end = match.end(1);
+        String oldValue = match.group(1);
+        if (match.find()) throw new IOException("[REGINFO_USERID] duplicate UserID field");
+        if ("\"" + USER_ID + "\"".equalsIgnoreCase(oldValue)) return xml;
+        if (!"null".equals(oldValue) && !"\"\"".equals(oldValue))
+            throw new IOException("[REGINFO_USERID] existing nonempty identity is different; refusing overwrite");
+        String fixedJson = json.substring(0, start) + "\"" + USER_ID + "\""
+                + json.substring(end);
+        String fixedClear = clear.substring(0, 6) + fixedJson
+                + clear.substring(clear.length() - 6);
+        String fixedEncoded = desEncryptHex(fixedClear, key);
+        if (!fixedClear.equals(desDecryptHex(fixedEncoded, key)))
+            throw new IOException("[REGINFO_USERID] local ciphertext round-trip failed");
+        String updated = putElement(xml, "regName", fixedEncoded);
+        validateXml(updated);
+        return updated;
+    }
+
+    private static String nativeRegInfoJsonString(String json, String field)
+            throws IOException {
+        Pattern p = Pattern.compile("\"" + Pattern.quote(field)
+                + "\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"");
+        Matcher m = p.matcher(json);
+        if (!m.find()) throw new IOException("[REGINFO_USERID] missing required native field");
+        String value = m.group(1);
+        if (m.find() || value.indexOf('\\') >= 0)
+            throw new IOException("[REGINFO_USERID] ambiguous native JSON field");
+        return value;
+    }
 
     private static void verifyPersisted(File cfg,String product,String machine) throws Exception {
         String xml=readUtf8(cfg), enc=firstElement(xml,"regName");
