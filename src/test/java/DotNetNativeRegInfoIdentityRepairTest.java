@@ -66,7 +66,7 @@ public final class DotNetNativeRegInfoIdentityRepairTest {
         fails(xml(json("null")), PRODUCT, "OTHER");
         fails(xml(json("null").replace("\"UserID\":null",
                 "\"UserID\":null,\"UserID\":null")), PRODUCT, VERSION);
-        fails(xml(json("null").replace("\"RegID\":\"TEST-MACHINE\"",
+        fails(xml(json("null").replace("\"RegID\":\"SYNTHETIC-MACHINE\"",
                 "\"RegID\":\"\"")), PRODUCT, VERSION);
         System.out.println("PASS: synthetic native .NET RegInfo UserID repair is bounded and lossless");
     }
