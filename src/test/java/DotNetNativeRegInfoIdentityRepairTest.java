@@ -1,7 +1,7 @@
 /** Offline, synthetic native .NET RegInfo identity repair regression. */
 public final class DotNetNativeRegInfoIdentityRepairTest {
     private static final String PRODUCT = "YX0302";
-    private static final String VERSION = "YX030204";
+    private static final String VERSION = "YX030107";
     private static final String PASSWORD = "*ITMC" + PRODUCT + "OK*";
     private static void check(boolean ok, String message) {
         if (!ok) throw new AssertionError(message);
@@ -15,10 +15,18 @@ public final class DotNetNativeRegInfoIdentityRepairTest {
         return "<root><reg><regName>" + token + "</regName><regType>1</regType></reg></root>";
     }
     private static String json(String user) {
-        return "{\"ProName\":\"" + PRODUCT + "\",\"RegStr\":\"" + VERSION
-                + "\",\"RegID\":\"TEST-MACHINE\",\"UserID\":" + user
-                + ",\"TotalTimes\":5,\"UserTimes\":1}";
+        // Mirrors the public schema (not private values) of the supplied
+        // YX030107 local record: 14 fields and multiple RegStr tokens.
+        return "{\"RegStr\":\"" + VERSION + ",YX030201,YX030202,YX030203,YX030204\""
+                + ",\"ClassNum\":-1,\"RegID\":\"SYNTHETIC-MACHINE\",\"UserID\":" + user
+                + ",\"ProName\":\"" + PRODUCT + "\""
+                + ",\"BeginDate\":\"/Date(1760000000000+0000)/\""
+                + ",\"beginDate\":0,\"endDate\":0"
+                + ",\"EndDate\":\"/Date(4102358400000+0000)/\""
+                + ",\"TotalTimes\":-1,\"UserTimes\":1,\"Net\":true"
+                + ",\"MaxCon\":-1,\"CountDay\":10}";
     }
+
     private static void fails(String xml, String product, String version) throws Exception {
         boolean rejected = false;
         try {
@@ -45,6 +53,14 @@ public final class DotNetNativeRegInfoIdentityRepairTest {
         String clear = (String) dec.invoke(null, m.group(1), PASSWORD);
         check(clear.equals("123456" + json("\"fwq\"") + "987654"),
                 "other fields or envelope were changed");
+        String empty = xml(json("\"\""));
+        String populated = LicenseRecoverModernGUIAutoRecovery.normalizeNativeRegInfoUserId(
+                empty, PRODUCT, VERSION);
+        check(!empty.equals(populated), "empty-string UserID should be populated");
+        String already = xml(json("\"fwq\""));
+        check(already.equals(LicenseRecoverModernGUIAutoRecovery.normalizeNativeRegInfoUserId(
+                already, PRODUCT, VERSION)), "matching UserID should not be re-encrypted");
+
         fails(xml(json("\"itmc\"")), PRODUCT, VERSION);
         fails(xml(json("null")), "WRONG", VERSION);
         fails(xml(json("null")), PRODUCT, "OTHER");
