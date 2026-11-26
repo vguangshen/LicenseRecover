@@ -901,6 +901,17 @@ public final class LicenseRecoverModernGUIAutoRecovery {
                 if (finalCheck.exitCode != 0 || !finalCheck.output.contains("LEGACY_NATIVE_CHECKREG_OK"))
                     throw new IOException("[VERIFY] DS0101 final configuration did not pass the native website check.");
             }
+            // Final read-only assertion: native or web verification may lazily
+            // rewrite config.xml. Never report success if the identity was cleared.
+            if (nativeRegInfoIdentityRepair) {
+                File persistedConfig = new File(d.appRoot, "config.xml");
+                String persisted = readUtf8(persistedConfig);
+                if (!persisted.equals(normalizeNativeRegInfoUserId(
+                        persisted, registrationProduct, d.versionId))) {
+                    throw new IOException("[REGINFO_USERID] native verification changed persisted identity");
+                }
+                log.accept("[dotnet-reginfo] final persisted RegeditInfo.UserID verified.\n");
+            }
             log.accept("[verify] selected native registration and website validation passed while outbound traffic was isolated.\n");
             return new Result(true,
                     legacyDs01xx ? "DS01xx original native registration and website checks passed for " + d.versionId + ". Restart IIS to confirm persistence."

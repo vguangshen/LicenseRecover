@@ -18,4 +18,6 @@ No vendor DLLs are rewritten. Lowercase VM-protected chains, unrelated uppercase
 
 ## Testing and limitations
 Synthetic regression tests cover field-preserving round trip, idempotency, wrong product, wrong version, duplicate UserID, empty RegID, and nonempty mismatching identity.
-This is a draft for source/CI validation and a backed-up real authorized test deployment. The user's ZIP lacks the site-root config.xml, so no real stored license payload has been examined. Do NOT publish as an established real-world functional fix without that verification.
+This is a draft for source/CI validation and a backed-up real authorized test deployment. A subsequent user-provided site-root ZIP contains a YX030107 config.xml with regType=1 and a decryptable native RegInfo envelope (product YX0302, selected RegStr token present, 14 fields). A local, in-memory decoder found UserID=null; decode/replace/encode round trip changed only that field, preserving the remaining 13, and maintained the 752-character encrypted record length. The private original ciphertext, machine identifier and original XML have NOT been committed.
+
+The coordinator also re-reads regName after vendor CheckReInfo / website validation, failing and rolling back if the persisted UserID was cleared. A backed-up IIS business-function test is still necessary; static and offline format checks do not establish complete acceptance.
