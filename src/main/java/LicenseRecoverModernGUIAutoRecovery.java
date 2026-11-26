@@ -1311,7 +1311,7 @@ public final class LicenseRecoverModernGUIAutoRecovery {
         int start = match.start(1), end = match.end(1);
         String oldValue = match.group(1);
         if (match.find()) throw new IOException("[REGINFO_USERID] duplicate UserID field");
-        if ("\"" + USER_ID + "\"".equalsIgnoreCase(oldValue)) return xml;
+        if (("\"" + USER_ID + "\"").equalsIgnoreCase(oldValue)) return xml;
         if (!"null".equals(oldValue) && !"\"\"".equals(oldValue))
             throw new IOException("[REGINFO_USERID] existing nonempty identity is different; refusing overwrite");
         String fixedJson = json.substring(0, start) + "\"" + USER_ID + "\""
